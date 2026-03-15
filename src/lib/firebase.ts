@@ -238,10 +238,9 @@ export const getResources = async (subject?: string) => {
 
   try {
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Resource[];
+    return querySnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }) as Resource)
+      .filter(r => !!r.downloadURL);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'resources');
     return [];
