@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus } from 'lucide-react'
-import { auth, signInWithGoogle, logout } from './lib/firebase'
+import { auth, signInWithGoogle, handleRedirectResult, logout } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -101,6 +101,7 @@ export default function App() {
   const resources = useResources(user, notify)
 
   useEffect(() => {
+    handleRedirectResult().catch(console.error)
     return onAuthStateChanged(auth, u => {
       setUser(u)
       if (u) {
