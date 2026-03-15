@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
-    // Assumed Data Model
+    // Data Model
     // ===============================================================
     //
     // Collection: assessments
@@ -10,9 +10,25 @@ service cloud.firestore {
     //   - subject: string (required)
     //   - topic: string (required)
     //   - difficulty: string
-    //   - questions: string (required)
-    //   - answerKey: string
-    //   - markScheme: string
+    //   - questions: list (required) — array of QuestionItem objects
+    //   - createdAt: timestamp (required)
+    //   - userId: string (required)
+    //   - folderId: string (optional)
+    //
+    // Collection: questions
+    // Fields:
+    //   - subject: string (required)
+    //   - topic: string (required)
+    //   - difficulty: string
+    //   - text: string (required) — markdown question text
+    //   - answer: string (optional)
+    //   - markScheme: string (optional)
+    //   - marks: number (optional)
+    //   - commandWord: string (optional)
+    //   - type: string (optional)
+    //   - hasDiagram: bool (optional)
+    //   - assessmentId: string (optional)
+    //   - folderId: string (optional)
     //   - createdAt: timestamp (required)
     //   - userId: string (required)
     //
@@ -28,16 +44,14 @@ service cloud.firestore {
     }
 
     function isValidAssessment(data) {
-      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'questions', 'answerKey', 'markScheme', 'userId', 'createdAt', 'folderId']) &&
+      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'questions', 'userId', 'createdAt', 'folderId']) &&
              data.subject is string && data.subject.size() > 0 && data.subject.size() < 100 &&
              data.topic is string && data.topic.size() > 0 && data.topic.size() < 200 &&
-             data.questions is string && data.questions.size() > 0 && data.questions.size() < 100000 &&
+             data.questions is list &&
              data.userId == request.auth.uid &&
              data.createdAt is timestamp &&
              (!('folderId' in data) || data.folderId == null || data.folderId is string) &&
-             (!('difficulty' in data) || data.difficulty == null || data.difficulty is string) &&
-             (!('answerKey' in data) || data.answerKey == null || data.answerKey is string) &&
-             (!('markScheme' in data) || data.markScheme == null || data.markScheme is string);
+             (!('difficulty' in data) || data.difficulty == null || data.difficulty is string);
     }
 
     function isValidFolder(data) {
@@ -63,13 +77,16 @@ service cloud.firestore {
     }
 
     function isValidQuestion(data) {
-      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'content', 'answer', 'markScheme', 'userId', 'createdAt', 'assessmentId', 'folderId']) &&
+      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'userId', 'createdAt', 'assessmentId', 'folderId']) &&
              data.subject is string && data.subject.size() > 0 &&
              data.topic is string && data.topic.size() > 0 &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 10000 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 10000 &&
              data.userId == request.auth.uid &&
              data.createdAt is timestamp &&
-             (!('difficulty' in data) || data.difficulty == null || data.difficulty is string) &&
+             (!('marks' in data) || data.marks == null || data.marks is number) &&
+             (!('commandWord' in data) || data.commandWord == null || data.commandWord is string) &&
+             (!('type' in data) || data.type == null || data.type is string) &&
+             (!('hasDiagram' in data) || data.hasDiagram == null || data.hasDiagram is bool) &&
              (!('answer' in data) || data.answer == null || data.answer is string) &&
              (!('markScheme' in data) || data.markScheme == null || data.markScheme is string) &&
              (!('assessmentId' in data) || data.assessmentId == null || data.assessmentId is string) &&

@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
+import type { Assessment, Question, Folder, Resource } from './types'
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -91,80 +92,35 @@ export const signInWithGoogle = async () => {
 
 export const logout = () => auth.signOut();
 
-export interface SavedAssessment {
-  id?: string;
-  subject: string;
-  topic: string;
-  difficulty: string;
-  questions: string;
-  answerKey: string;
-  markScheme: string;
-  createdAt: Timestamp;
-  userId: string;
-  folderId?: string;
-}
-
-export interface Folder {
-  id?: string;
-  name: string;
-  userId: string;
-  createdAt: Timestamp;
-}
-
-export interface Resource {
-  id: string    // required — saveResource returns it
-  name: string
-  subject: string
-  storagePath: string   // "resources/{userId}/{resourceId}/{filename}"
-  downloadURL: string   // Firebase Storage download URL
-  mimeType: string
-  userId: string
-  createdAt: Timestamp
-}
-
-export interface Question {
-  id?: string;
-  subject: string;
-  topic: string;
-  difficulty: string;
-  content: string;
-  answer: string;
-  markScheme: string;
-  userId: string;
-  assessmentId?: string;
-  folderId?: string;
-  createdAt: Timestamp;
-}
-
-export const saveAssessment = async (assessment: Omit<SavedAssessment, 'id' | 'createdAt' | 'userId'>) => {
-  if (!auth.currentUser) throw new Error("User must be authenticated to save");
-  
-  const assessmentsRef = collection(db, 'assessments');
-  try {
-    const data: any = {
-      ...assessment,
-      userId: auth.currentUser.uid,
-      createdAt: serverTimestamp()
-    };
-    
-    // Remove undefined fields to prevent Firestore errors
-    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
-
-    return await addDoc(assessmentsRef, data);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, 'assessments');
+export const saveAssessment = async (
+  data: Omit<Assessment, 'id' | 'createdAt' | 'userId'>
+): Promise<string> => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save")
+  const assessmentsRef = collection(db, 'assessments')
+  const payload: any = {
+    ...data,
+    userId: auth.currentUser.uid,
+    createdAt: serverTimestamp(),
   }
-};
+  Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
+  try {
+    const docRef = await addDoc(assessmentsRef, payload)
+    return docRef.id
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'assessments')
+    throw error
+  }
+}
 
-export const getSavedAssessments = async (folderId?: string) => {
-  if (!auth.currentUser) return [];
-  
-  const assessmentsRef = collection(db, 'assessments');
+export const getSavedAssessments = async (folderId?: string): Promise<Assessment[]> => {
+  if (!auth.currentUser) return []
+
+  const assessmentsRef = collection(db, 'assessments')
   let q = query(
-    assessmentsRef, 
+    assessmentsRef,
     where('userId', '==', auth.currentUser.uid),
     orderBy('createdAt', 'desc')
-  );
+  )
 
   if (folderId) {
     q = query(
@@ -172,20 +128,20 @@ export const getSavedAssessments = async (folderId?: string) => {
       where('userId', '==', auth.currentUser.uid),
       where('folderId', '==', folderId),
       orderBy('createdAt', 'desc')
-    );
+    )
   }
-  
+
   try {
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as SavedAssessment[];
+    const querySnapshot = await getDocs(q)
+    return querySnapshot.docs
+      .map(d => ({ id: d.id, ...d.data() } as Assessment))
+      // Filter out old format (questions: string) records
+      .filter(a => Array.isArray(a.questions))
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'assessments');
-    return [];
+    handleFirestoreError(error, OperationType.LIST, 'assessments')
+    return []
   }
-};
+}
 
 export const deleteAssessment = async (id: string) => {
   const docRef = doc(db, 'assessments', id);
@@ -263,14 +219,14 @@ export const saveResource = async (
 
 export const getResources = async (subject?: string) => {
   if (!auth.currentUser) return [];
-  
+
   const resourcesRef = collection(db, 'resources');
   let q = query(
-    resourcesRef, 
+    resourcesRef,
     where('userId', '==', auth.currentUser.uid),
     orderBy('createdAt', 'desc')
   );
-  
+
   if (subject) {
     q = query(
       resourcesRef,
@@ -279,7 +235,7 @@ export const getResources = async (subject?: string) => {
       orderBy('createdAt', 'desc')
     );
   }
-  
+
   try {
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({
@@ -311,69 +267,73 @@ export const deleteResource = async (resource: Resource): Promise<void> => {
 export const moveAssessment = async (assessmentId: string, folderId: string | null) => {
   const docRef = doc(db, 'assessments', assessmentId);
   try {
-    return await updateDoc(docRef, { 
-      folderId: folderId ? folderId : deleteField() 
+    return await updateDoc(docRef, {
+      folderId: folderId ? folderId : deleteField()
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `assessments/${assessmentId}`);
   }
 };
 
-export const updateAssessment = async (id: string, updates: Partial<SavedAssessment>) => {
-  const docRef = doc(db, 'assessments', id);
+export const updateAssessment = async (
+  id: string,
+  updates: Partial<Omit<Assessment, 'id' | 'userId' | 'createdAt'>>
+): Promise<void> => {
+  const docRef = doc(db, 'assessments', id)
   try {
-    return await updateDoc(docRef, updates);
+    await updateDoc(docRef, updates as any)
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `assessments/${id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `assessments/${id}`)
   }
-};
+}
 
-export const saveQuestion = async (question: Omit<Question, 'id' | 'createdAt' | 'userId'>) => {
-  if (!auth.currentUser) throw new Error("User must be authenticated to save question");
-  const questionsRef = collection(db, 'questions');
+export const saveQuestion = async (
+  data: Omit<Question, 'id' | 'createdAt' | 'userId'>
+): Promise<string> => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save question")
+  const questionsRef = collection(db, 'questions')
   try {
-    const data: any = {
-      ...question,
+    const payload: any = {
+      ...data,
       userId: auth.currentUser.uid,
       createdAt: serverTimestamp()
-    };
-    
-    // Remove undefined fields to prevent Firestore errors
-    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
-
-    return await addDoc(questionsRef, data);
+    }
+    Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
+    const docRef = await addDoc(questionsRef, payload)
+    return docRef.id
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, 'questions');
+    handleFirestoreError(error, OperationType.CREATE, 'questions')
+    throw error
   }
-};
+}
 
-export const getQuestions = async (folderId?: string) => {
-  if (!auth.currentUser) return [];
-  const questionsRef = collection(db, 'questions');
+export const getQuestions = async (folderId?: string): Promise<Question[]> => {
+  if (!auth.currentUser) return []
+  const questionsRef = collection(db, 'questions')
   let q = query(
     questionsRef,
     where('userId', '==', auth.currentUser.uid),
     orderBy('createdAt', 'desc')
-  );
+  )
   if (folderId) {
     q = query(
       questionsRef,
       where('userId', '==', auth.currentUser.uid),
       where('folderId', '==', folderId),
       orderBy('createdAt', 'desc')
-    );
+    )
   }
   try {
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Question[];
+    const querySnapshot = await getDocs(q)
+    return querySnapshot.docs
+      .map(d => ({ id: d.id, ...d.data() } as Question))
+      // Filter out old format (content: string instead of text: string)
+      .filter(q => typeof (q as any).text === 'string')
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'questions');
-    return [];
+    handleFirestoreError(error, OperationType.LIST, 'questions')
+    return []
   }
-};
+}
 
 export const deleteQuestion = async (id: string) => {
   const docRef = doc(db, 'questions', id);
