@@ -264,13 +264,13 @@ export async function getStudentFeedback(
     6. Use Markdown for formatting.
   `;
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: modelName,
     contents: prompt,
     config: {
       systemInstruction: "You are a professional Cambridge IGCSE examiner. Provide constructive, precise feedback based on official mark schemes.",
     },
-  });
+  }));
 
   return response.text || "Could not generate feedback.";
 }
