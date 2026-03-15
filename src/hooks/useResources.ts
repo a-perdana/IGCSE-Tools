@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import type { User } from 'firebase/auth'
 import type { Resource } from '../lib/types'
 import type { NotifyFn } from './useNotifications'
-import { saveResource, getResources, deleteResource as fbDelete } from '../lib/firebase'
+import { saveResource, getResources, deleteResource as fbDelete, storage } from '../lib/firebase'
+import { ref as storageRef, getBlob } from 'firebase/storage'
 
 export function useResources(user: User | null, notify: NotifyFn) {
   const [resources, setResources] = useState<Resource[]>([])
@@ -65,8 +66,9 @@ export function useResources(user: User | null, notify: NotifyFn) {
   }, [])
 
   const getBase64 = useCallback(async (resource: Resource): Promise<string> => {
-    const response = await fetch(resource.downloadURL)
-    const arrayBuffer = await response.arrayBuffer()
+    const sRef = storageRef(storage, resource.storagePath)
+    const blob = await getBlob(sRef)
+    const arrayBuffer = await blob.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
     let binary = ''
     bytes.forEach(b => binary += String.fromCharCode(b))
