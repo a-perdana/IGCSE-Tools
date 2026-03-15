@@ -60,7 +60,47 @@ export interface TestResponse {
   markScheme: string;
 }
 
-export async function generateTest(config: TestRequest): Promise<TestResponse> {
+// ---- Error handling ----
+export interface GeminiError {
+  type: 'rate_limit' | 'model_overloaded' | 'invalid_response' | 'network' | 'unknown'
+  retryable: boolean
+  message: string
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  onRetry?: (attempt: number) => void
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      const status = err?.status ?? err?.code
+      if (status === 429 && i < maxRetries - 1) {
+        onRetry?.(i + 1)
+        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000))
+        continue
+      }
+      if (status === 503) {
+        throw {
+          type: 'model_overloaded',
+          retryable: false,
+          message: 'Model şu an meşgul. Flash modele geçmeyi deneyin.',
+        } satisfies GeminiError
+      }
+      throw err
+    }
+  }
+  throw {
+    type: 'rate_limit',
+    retryable: false,
+    message: 'Rate limit aşıldı. Birkaç dakika bekleyip tekrar deneyin.',
+  } satisfies GeminiError
+}
+// -------------------------
+
+export async function generateTest(config: TestRequest, onRetry?: (attempt: number) => void): Promise<TestResponse> {
   const prompt = `Generate a Cambridge IGCSE ${config.subject} test based on these requirements:
 Topic: ${config.topic}
 Difficulty: ${config.difficulty}
@@ -103,7 +143,7 @@ Follow these rules strictly:
   
   parts.push({ text: prompt });
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: config.model || "gemini-3-flash-preview",
     contents: { parts },
     config: {
@@ -118,8 +158,8 @@ Follow these rules strictly:
         },
         required: ["questions", "answerKey", "markScheme"],
       },
-      systemInstruction: `You are an expert Cambridge IGCSE Assessment Designer for ${config.subject}. 
-Your goal is to create high-quality, syllabus-aligned assessments. 
+      systemInstruction: `You are an expert Cambridge IGCSE Assessment Designer for ${config.subject}.
+Your goal is to create high-quality, syllabus-aligned assessments.
 You MUST provide the questions, the answer key, and a detailed mark scheme.
 
 **Cambridge Command Words Usage**:
@@ -136,12 +176,12 @@ When generating SVG diagrams:
 - **CRITICAL**: Use **camelCase** for all SVG attributes (e.g., \`strokeWidth\`, \`fontSize\`, \`fontFamily\`, \`textAnchor\`, \`dominantBaseline\`).
 - Keep the SVG responsive and centered.
 - For Science, ensure diagrams are technically accurate (e.g., correct circuit symbols, accurate cell organelles).
-- **Formatting**: 
+- **Formatting**:
     - Make the question text **bold**.
     - Always put each answer option (A, B, C, D) on its own line. **IMPORTANT**: Use double newlines between each option to prevent them from merging into one line.
     - Place **Syllabus Reference:** on a new line at the bottom (using double newlines) and make it **bold**.`,
     },
-  });
+  }), 3, onRetry);
 
   return safeJsonParse(response.text || "{}");
 }
@@ -174,7 +214,7 @@ If the assessment is perfect, return it as is.
 
 Format the output as a JSON object with three fields: "questions", "answerKey", and "markScheme".`;
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: model,
     contents: prompt,
     config: {
@@ -189,7 +229,7 @@ Format the output as a JSON object with three fields: "questions", "answerKey", 
         required: ["questions", "answerKey", "markScheme"],
       },
     },
-  });
+  }));
 
   return JSON.parse(response.text || "{}");
 }
@@ -312,7 +352,7 @@ Format the output as a JSON object with four fields:
   
   parts.push({ text: prompt });
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: model,
     contents: { parts },
     config: {
@@ -328,16 +368,16 @@ Format the output as a JSON object with four fields:
         },
         required: ["analysis", "similarQuestions", "answerKey", "markScheme"],
       },
-      systemInstruction: `You are an expert Cambridge IGCSE ${subject} assessment designer. 
-Analyze past paper questions with high precision and generate similar questions that maintain the exact same cognitive demand and style. 
+      systemInstruction: `You are an expert Cambridge IGCSE ${subject} assessment designer.
+Analyze past paper questions with high precision and generate similar questions that maintain the exact same cognitive demand and style.
 Use SVG for any diagrams in the similar questions to ensure they look like official exam papers. Use **camelCase** for SVG attributes.
-**Formatting**: 
+**Formatting**:
     - Question text must be **bold**.
     - Each answer option (A, B, C, D) must be on a new line. **IMPORTANT**: Use double newlines between each option.
     - Place **Syllabus Reference:** on a new line at the bottom (using double newlines) and make it **bold**.
 You MUST provide the analysis, similar questions, answer key, and mark scheme.`,
     },
-  });
+  }));
 
   return safeJsonParse(response.text || "{}");
 }
