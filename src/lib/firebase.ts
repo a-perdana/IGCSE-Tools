@@ -353,3 +353,15 @@ export const moveQuestion = async (questionId: string, folderId: string | null) 
     handleFirestoreError(error, OperationType.UPDATE, `questions/${questionId}`);
   }
 };
+
+export const updateQuestion = async (
+  id: string,
+  updates: Partial<Omit<Question, 'id' | 'userId' | 'createdAt'>>
+): Promise<void> => {
+  const docRef = doc(db, 'questions', id)
+  try {
+    await updateDoc(docRef, updates as any)
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `questions/${id}`)
+  }
+}

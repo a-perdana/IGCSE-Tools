@@ -194,6 +194,15 @@ export default function App() {
     await library.updateAssessment(assessmentId, { questions: [...target.questions, ...newQuestions] })
   }, [library])
 
+  const handleUpdateQuestion = useCallback((questionId: string, updates: Partial<QuestionItem>) => {
+    const assessment = generation.generatedAssessment
+    if (!assessment) return
+    generation.setGeneratedAssessment({
+      ...assessment,
+      questions: assessment.questions.map(q => q.id === questionId ? { ...q, ...updates } : q),
+    })
+  }, [generation])
+
   const handleCopy = useCallback(async (text: string) => {
     const ok = await copyToClipboard(text)
     notify(ok ? 'Copied to clipboard' : 'Copy failed', ok ? 'success' : 'error')
@@ -290,6 +299,7 @@ export default function App() {
             onSelectFolder={setSelectedFolderId}
             onCreateAssessmentFromQuestions={handleCreateAssessmentFromQuestions}
             onAddQuestionsToAssessment={handleAddQuestionsToAssessment}
+            onUpdateQuestion={library.updateQuestion}
           />
         ) : (
           <AssessmentView
@@ -308,6 +318,7 @@ export default function App() {
             onRemoveQuestion={handleRemoveQuestion}
             bankQuestions={library.questions}
             onAddQuestions={handleAddQuestionsToCurrentAssessment}
+            onUpdateQuestion={handleUpdateQuestion}
           />
         )}
       </div>

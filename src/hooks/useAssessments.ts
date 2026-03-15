@@ -12,6 +12,7 @@ import {
   getQuestions,
   deleteQuestion as fbDeleteQ,
   moveQuestion as fbMoveQ,
+  updateQuestion as fbUpdateQ,
   createFolder as fbCreateFolder,
   getFolders,
   deleteFolder as fbDeleteFolder,
@@ -49,16 +50,21 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     try {
       const { id, createdAt, userId, ...data } = assessment
       const newId = await fbSave(data)
-      await Promise.all(assessment.questions.map(q => {
-        const { id: _id, ...qData } = q
-        return fbSaveQ({
-          ...qData,
-          assessmentId: newId,
-          subject: assessment.subject,
-          topic: assessment.topic,
-          difficulty: assessment.difficulty,
-        })
-      }))
+      const existingIds = new Set(questions.map(q => q.id))
+      await Promise.all(
+        assessment.questions
+          .filter(q => !existingIds.has(q.id))
+          .map(q => {
+            const { id: _id, ...qData } = q
+            return fbSaveQ({
+              ...qData,
+              assessmentId: newId,
+              subject: assessment.subject,
+              topic: assessment.topic,
+              difficulty: assessment.difficulty,
+            })
+          })
+      )
       notify('Assessment saved to library', 'success')
       return newId
     } catch (e) {
@@ -66,7 +72,7 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
       console.error(e)
       return null
     }
-  }, [notify])
+  }, [notify, questions])
 
   const saveQuestions = useCallback(async (
     qs: Question[]
@@ -112,6 +118,18 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     }
   }, [notify])
 
+  const updateQuestion = useCallback(async (
+    id: string,
+    updates: Partial<Omit<Question, 'id' | 'userId' | 'createdAt'>>
+  ) => {
+    try {
+      await fbUpdateQ(id, updates)
+      setQuestions(q => q.map(x => x.id === id ? { ...x, ...updates } : x))
+    } catch (e) {
+      notify('Failed to update question', 'error')
+    }
+  }, [notify])
+
   const deleteQuestion = useCallback(async (id: string) => {
     try {
       await fbDeleteQ(id)
@@ -154,7 +172,7 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     assessments, questions, folders, loading,
     loadAll, saveAssessment, saveQuestions,
     deleteAssessment, updateAssessment, moveAssessment,
-    deleteQuestion, moveQuestion,
+    deleteQuestion, updateQuestion, moveQuestion,
     createFolder, deleteFolder,
   }
 }

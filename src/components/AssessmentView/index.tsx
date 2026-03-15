@@ -4,10 +4,11 @@ import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
-import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check } from 'lucide-react'
+import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil } from 'lucide-react'
 import type { Assessment, Question, QuestionItem } from '../../lib/types'
 import { parseSVGSafe } from '../../lib/svg'
 import { exportToPDF } from '../../lib/pdf'
+import { RichEditor } from '../RichEditor'
 
 interface Props {
   assessment: Assessment | null
@@ -25,6 +26,7 @@ interface Props {
   onRemoveQuestion?: (questionId: string) => void
   bankQuestions?: Question[]
   onAddQuestions?: (questions: QuestionItem[]) => void
+  onUpdateQuestion?: (questionId: string, updates: { text?: string; answer?: string; markScheme?: string }) => void
 }
 
 function QuestionMarkdown({ content }: { content: string }) {
@@ -121,13 +123,15 @@ export function AssessmentView({
   assessment, analysisText, isEditing, studentMode,
   onEdit, onCancelEdit, onSave, onSaveToLibrary, onStudentFeedback, onCopy,
   activeTab, onTabChange,
-  onRemoveQuestion, bankQuestions, onAddQuestions,
+  onRemoveQuestion, bankQuestions, onAddQuestions, onUpdateQuestion,
 }: Props) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [studentAnswers, setStudentAnswers] = useState<string[]>([])
   const [feedback, setFeedback] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [showPicker, setShowPicker] = useState(false)
+  const [editingQId, setEditingQId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{ text: string; answer: string; markScheme: string }>({ text: '', answer: '', markScheme: '' })
 
   if (!assessment) {
     return (
@@ -231,40 +235,87 @@ export function AssessmentView({
         ) : (
           <div>
             {activeTab === 'questions' && assessment.questions.map((q, i) => (
-              <div key={q.id} className="mb-6 group">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                    Q{i + 1} · {q.marks}m · {q.commandWord}
-                  </span>
-                  <span className="text-xs text-stone-400">{q.type}</span>
-                  {q.code && (
-                    <span className="text-xs font-mono text-stone-400 bg-stone-100 px-1.5 py-0.5 rounded">
-                      {q.code}
-                    </span>
-                  )}
-                  {onRemoveQuestion && !studentMode && (
-                    <button
-                      onClick={() => onRemoveQuestion(q.id)}
-                      className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 transition-opacity"
-                      title="Remove question"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-                <QuestionMarkdown content={q.text} />
-                {studentMode && (
-                  <textarea
-                    placeholder="Your answer..."
-                    value={studentAnswers[i] ?? ''}
-                    onChange={e => {
-                      const next = [...studentAnswers]
-                      next[i] = e.target.value
-                      setStudentAnswers(next)
-                    }}
-                    className="w-full mt-2 p-2 border border-stone-300 rounded text-sm"
-                    rows={3}
-                  />
+              <div key={q.id}>
+                {editingQId === q.id ? (
+                  <div className="border border-emerald-300 rounded-lg p-3 bg-emerald-50/30 mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-semibold text-emerald-800">Editing Q{i + 1}</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => { onUpdateQuestion?.(q.id, editDraft); setEditingQId(null) }}
+                          className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          onClick={() => setEditingQId(null)}
+                          className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">Question</label>
+                        <RichEditor value={editDraft.text} onChange={v => setEditDraft(d => ({ ...d, text: v }))} minRows={4} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">Answer</label>
+                        <RichEditor value={editDraft.answer} onChange={v => setEditDraft(d => ({ ...d, answer: v }))} minRows={3} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">Mark Scheme</label>
+                        <RichEditor value={editDraft.markScheme} onChange={v => setEditDraft(d => ({ ...d, markScheme: v }))} minRows={3} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-6 group">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+                        Q{i + 1} · {q.marks}m · {q.commandWord}
+                      </span>
+                      <span className="text-xs text-stone-400">{q.type}</span>
+                      {q.code && (
+                        <span className="text-xs font-mono text-stone-400 bg-stone-100 px-1.5 py-0.5 rounded">
+                          {q.code}
+                        </span>
+                      )}
+                      {onUpdateQuestion && !studentMode && (
+                        <button
+                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme }) }}
+                          className="ml-1 opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 transition-opacity"
+                          title="Edit question"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {onRemoveQuestion && !studentMode && (
+                        <button
+                          onClick={() => onRemoveQuestion(q.id)}
+                          className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 transition-opacity"
+                          title="Remove question"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <QuestionMarkdown content={q.text} />
+                    {studentMode && (
+                      <textarea
+                        placeholder="Your answer..."
+                        value={studentAnswers[i] ?? ''}
+                        onChange={e => {
+                          const next = [...studentAnswers]
+                          next[i] = e.target.value
+                          setStudentAnswers(next)
+                        }}
+                        className="w-full mt-2 p-2 border border-stone-300 rounded text-sm"
+                        rows={3}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             ))}

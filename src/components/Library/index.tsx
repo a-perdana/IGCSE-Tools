@@ -7,6 +7,7 @@ import rehypeRaw from 'rehype-raw'
 import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus } from 'lucide-react'
 import type { Assessment, Question, Folder } from '../../lib/types'
 import { parseSVGSafe } from '../../lib/svg'
+import { RichEditor } from '../RichEditor'
 
 interface Props {
   assessments: Assessment[]
@@ -25,6 +26,7 @@ interface Props {
   onSelectFolder: (id: string | null | undefined) => void
   onCreateAssessmentFromQuestions: (questions: Question[]) => void
   onAddQuestionsToAssessment: (assessmentId: string, questions: Question[]) => void
+  onUpdateQuestion: (id: string, updates: Partial<Question>) => void
 }
 
 const svgComponents = {
@@ -50,7 +52,18 @@ function QMarkdown({ content }: { content: string }) {
   )
 }
 
-function QuestionPreviewModal({ question, onClose }: { question: Question; onClose: () => void }) {
+function QuestionPreviewModal({
+  question,
+  onClose,
+  onUpdate,
+}: {
+  question: Question
+  onClose: () => void
+  onUpdate?: (updates: { text: string; answer: string; markScheme: string }) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ text: question.text, answer: question.answer, markScheme: question.markScheme })
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
@@ -67,20 +80,67 @@ function QuestionPreviewModal({ question, onClose }: { question: Question; onClo
               <span className="text-xs font-mono bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">{question.code}</span>
             )}
           </div>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            {onUpdate && (
+              editing ? (
+                <>
+                  <button
+                    onClick={() => { onUpdate(draft); setEditing(false) }}
+                    className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => { setDraft({ text: question.text, answer: question.answer, markScheme: question.markScheme }); setEditing(false) }}
+                    className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="p-1 text-stone-400 hover:text-emerald-600"
+                  title="Edit question"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )
+            )}
+            <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <div className="overflow-y-auto p-4 markdown-body text-sm">
-          <QMarkdown content={question.text} />
-          <div className="mt-4 pt-4 border-t border-stone-100">
-            <p className="text-xs font-semibold text-stone-500 mb-1">Answer</p>
-            <QMarkdown content={question.answer} />
-          </div>
-          <div className="mt-4 pt-4 border-t border-stone-100">
-            <p className="text-xs font-semibold text-stone-500 mb-1">Mark Scheme</p>
-            <QMarkdown content={question.markScheme} />
-          </div>
+          {editing ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Question</label>
+                <RichEditor value={draft.text} onChange={v => setDraft(d => ({ ...d, text: v }))} minRows={4} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Answer</label>
+                <RichEditor value={draft.answer} onChange={v => setDraft(d => ({ ...d, answer: v }))} minRows={3} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Mark Scheme</label>
+                <RichEditor value={draft.markScheme} onChange={v => setDraft(d => ({ ...d, markScheme: v }))} minRows={3} />
+              </div>
+            </div>
+          ) : (
+            <>
+              <QMarkdown content={question.text} />
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                <p className="text-xs font-semibold text-stone-500 mb-1">Answer</p>
+                <QMarkdown content={question.answer} />
+              </div>
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                <p className="text-xs font-semibold text-stone-500 mb-1">Mark Scheme</p>
+                <QMarkdown content={question.markScheme} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -94,6 +154,7 @@ export function Library({
   onCreateFolder, onDeleteFolder,
   selectedFolderId, onSelectFolder,
   onCreateAssessmentFromQuestions, onAddQuestionsToAssessment,
+  onUpdateQuestion,
 }: Props) {
   const [bankView, setBankView] = useState<'assessments' | 'questions'>('assessments')
   const [newFolderName, setNewFolderName] = useState('')
@@ -126,7 +187,7 @@ export function Library({
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Folder Sidebar */}
       <div className="w-56 border-r border-stone-200 p-3 flex flex-col gap-2">
         <div className="flex gap-1">
@@ -348,7 +409,14 @@ export function Library({
 
       {/* Preview Modal */}
       {previewQuestion && (
-        <QuestionPreviewModal question={previewQuestion} onClose={() => setPreviewQuestion(null)} />
+        <QuestionPreviewModal
+          question={previewQuestion}
+          onClose={() => setPreviewQuestion(null)}
+          onUpdate={async (updates) => {
+            await onUpdateQuestion(previewQuestion.id, updates)
+            setPreviewQuestion({ ...previewQuestion, ...updates })
+          }}
+        />
       )}
     </div>
   )
