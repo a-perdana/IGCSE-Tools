@@ -49,6 +49,16 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     try {
       const { id, createdAt, userId, ...data } = assessment
       const newId = await fbSave(data)
+      await Promise.all(assessment.questions.map(q => {
+        const { id: _id, ...qData } = q
+        return fbSaveQ({
+          ...qData,
+          assessmentId: newId,
+          subject: assessment.subject,
+          topic: assessment.topic,
+          difficulty: assessment.difficulty,
+        })
+      }))
       notify('Assessment saved to library', 'success')
       return newId
     } catch (e) {

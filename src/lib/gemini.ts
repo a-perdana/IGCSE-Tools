@@ -158,7 +158,7 @@ When generating SVG diagrams:
   }), 3, onRetry)
 
   const raw = safeJsonParse(response.text || '{}') as { questions: Omit<QuestionItem, 'id'>[] }
-  return (raw.questions ?? []).map(q => ({ ...q, id: crypto.randomUUID() }))
+  return (raw.questions ?? []).map(q => ({ ...sanitizeQuestion(q), id: crypto.randomUUID() }))
 }
 
 export async function auditTest(
@@ -220,7 +220,7 @@ If the assessment is perfect, return it as is.`
 
   const raw = JSON.parse(response.text || '{}') as { questions: Omit<QuestionItem, 'id'>[] }
   return (raw.questions ?? []).map((q, i) => ({
-    ...q,
+    ...sanitizeQuestion(q),
     id: assessment.questions[i]?.id ?? crypto.randomUUID(),
   }))
 }
@@ -268,6 +268,11 @@ export async function getStudentFeedback(
   }))
 
   return response.text || "Could not generate feedback."
+}
+
+function sanitizeQuestion(q: Omit<QuestionItem, 'id'>): Omit<QuestionItem, 'id'> {
+  const fix = (s: string) => s.replace(/\\n/g, '\n')
+  return { ...q, text: fix(q.text), answer: fix(q.answer), markScheme: fix(q.markScheme) }
 }
 
 function safeJsonParse(text: string) {
@@ -377,6 +382,6 @@ Use SVG for any diagrams using **camelCase** attributes.`,
   const raw = safeJsonParse(response.text || '{}')
   return {
     analysis: raw.analysis ?? '',
-    questions: (raw.questions ?? []).map((q: any) => ({ ...q, id: crypto.randomUUID() })),
+    questions: (raw.questions ?? []).map((q: any) => ({ ...sanitizeQuestion(q), id: crypto.randomUUID() })),
   }
 }
