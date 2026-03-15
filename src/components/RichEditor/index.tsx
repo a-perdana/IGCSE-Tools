@@ -10,13 +10,25 @@ interface Props {
 }
 
 function extractSvgBlocks(text: string) {
-  const blocks: { svgContent: string; start: number; end: number }[] = []
-  const regex = /```svg\s*([\s\S]*?)```/g
-  let m
-  while ((m = regex.exec(text)) !== null) {
-    blocks.push({ svgContent: m[1].trim(), start: m.index, end: m.index + m[0].length })
+  const blocks: { svgContent: string; start: number; end: number; fenced: boolean }[] = []
+
+  // ```svg ... ``` fenced blocks
+  const fencedRe = /```svg\s*([\s\S]*?)```/g
+  let m: RegExpExecArray | null
+  while ((m = fencedRe.exec(text)) !== null) {
+    blocks.push({ svgContent: m[1].trim(), start: m.index, end: m.index + m[0].length, fenced: true })
   }
-  return blocks
+
+  // raw <svg>...</svg> tags not already inside a fenced block
+  const rawRe = /<svg[\s\S]*?<\/svg>/gi
+  while ((m = rawRe.exec(text)) !== null) {
+    const inFenced = blocks.some(b => m!.index >= b.start && m!.index < b.end)
+    if (!inFenced) {
+      blocks.push({ svgContent: m[0].trim(), start: m.index, end: m.index + m[0].length, fenced: false })
+    }
+  }
+
+  return blocks.sort((a, b) => a.start - b.start)
 }
 
 function SvgEditorModal({
@@ -160,7 +172,7 @@ export function RichEditor({ value, onChange, placeholder, minRows = 4 }: Props)
     const blocks = extractSvgBlocks(value)
     const block = blocks[index]
     if (!block) return
-    const newBlock = `\`\`\`svg\n${newSvg}\n\`\`\``
+    const newBlock = block.fenced ? `\`\`\`svg\n${newSvg}\n\`\`\`` : newSvg
     onChange(value.slice(0, block.start) + newBlock + value.slice(block.end))
   }
 
