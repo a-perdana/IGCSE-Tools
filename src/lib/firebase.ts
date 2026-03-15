@@ -1,0 +1,379 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  getDocs, 
+  deleteDoc, 
+  doc, 
+  serverTimestamp, 
+  Timestamp, 
+  orderBy, 
+  updateDoc, 
+  deleteField,
+  getDoc
+} from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const googleProvider = new GoogleAuthProvider();
+
+// --- Firestore Error Handling Spec ---
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+// --------------------------------------
+
+export const signInWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error("Error signing in with Google", error);
+    throw error;
+  }
+};
+
+export const logout = () => auth.signOut();
+
+export interface SavedAssessment {
+  id?: string;
+  subject: string;
+  topic: string;
+  difficulty: string;
+  questions: string;
+  answerKey: string;
+  markScheme: string;
+  createdAt: Timestamp;
+  userId: string;
+  folderId?: string;
+}
+
+export interface Folder {
+  id?: string;
+  name: string;
+  userId: string;
+  createdAt: Timestamp;
+}
+
+export interface Resource {
+  id?: string;
+  name: string;
+  subject: string;
+  data: string;
+  mimeType: string;
+  userId: string;
+  createdAt: Timestamp;
+}
+
+export interface Question {
+  id?: string;
+  subject: string;
+  topic: string;
+  difficulty: string;
+  content: string;
+  answer: string;
+  markScheme: string;
+  userId: string;
+  assessmentId?: string;
+  folderId?: string;
+  createdAt: Timestamp;
+}
+
+export const saveAssessment = async (assessment: Omit<SavedAssessment, 'id' | 'createdAt' | 'userId'>) => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save");
+  
+  const assessmentsRef = collection(db, 'assessments');
+  try {
+    const data: any = {
+      ...assessment,
+      userId: auth.currentUser.uid,
+      createdAt: serverTimestamp()
+    };
+    
+    // Remove undefined fields to prevent Firestore errors
+    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
+
+    return await addDoc(assessmentsRef, data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'assessments');
+  }
+};
+
+export const getSavedAssessments = async (folderId?: string) => {
+  if (!auth.currentUser) return [];
+  
+  const assessmentsRef = collection(db, 'assessments');
+  let q = query(
+    assessmentsRef, 
+    where('userId', '==', auth.currentUser.uid),
+    orderBy('createdAt', 'desc')
+  );
+
+  if (folderId) {
+    q = query(
+      assessmentsRef,
+      where('userId', '==', auth.currentUser.uid),
+      where('folderId', '==', folderId),
+      orderBy('createdAt', 'desc')
+    );
+  }
+  
+  try {
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as SavedAssessment[];
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'assessments');
+    return [];
+  }
+};
+
+export const deleteAssessment = async (id: string) => {
+  const docRef = doc(db, 'assessments', id);
+  try {
+    return await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `assessments/${id}`);
+  }
+};
+
+export const createFolder = async (name: string) => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to create folder");
+  const foldersRef = collection(db, 'folders');
+  return addDoc(foldersRef, {
+    name,
+    userId: auth.currentUser.uid,
+    createdAt: serverTimestamp()
+  });
+};
+
+export const getFolders = async () => {
+  if (!auth.currentUser) return [];
+  const foldersRef = collection(db, 'folders');
+  const q = query(
+    foldersRef,
+    where('userId', '==', auth.currentUser.uid),
+    orderBy('createdAt', 'asc')
+  );
+  try {
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Folder[];
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'folders');
+    return [];
+  }
+};
+
+export const deleteFolder = async (id: string) => {
+  const docRef = doc(db, 'folders', id);
+  try {
+    return await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `folders/${id}`);
+  }
+};
+
+export const saveResource = async (resource: Omit<Resource, 'id' | 'createdAt' | 'userId'>) => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save resource");
+  
+  const resourcesRef = collection(db, 'resources');
+  try {
+    const data: any = {
+      ...resource,
+      userId: auth.currentUser.uid,
+      createdAt: serverTimestamp()
+    };
+    
+    // Remove undefined fields to prevent Firestore errors
+    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
+
+    return await addDoc(resourcesRef, data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'resources');
+  }
+};
+
+export const getResources = async (subject?: string) => {
+  if (!auth.currentUser) return [];
+  
+  const resourcesRef = collection(db, 'resources');
+  let q = query(
+    resourcesRef, 
+    where('userId', '==', auth.currentUser.uid),
+    orderBy('createdAt', 'desc')
+  );
+  
+  if (subject) {
+    q = query(
+      resourcesRef,
+      where('userId', '==', auth.currentUser.uid),
+      where('subject', '==', subject),
+      orderBy('createdAt', 'desc')
+    );
+  }
+  
+  try {
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Resource[];
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'resources');
+    return [];
+  }
+};
+
+export const deleteResource = async (id: string) => {
+  const docRef = doc(db, 'resources', id);
+  try {
+    return await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `resources/${id}`);
+  }
+};
+
+export const moveAssessment = async (assessmentId: string, folderId: string | null) => {
+  const docRef = doc(db, 'assessments', assessmentId);
+  try {
+    return await updateDoc(docRef, { 
+      folderId: folderId ? folderId : deleteField() 
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `assessments/${assessmentId}`);
+  }
+};
+
+export const updateAssessment = async (id: string, updates: Partial<SavedAssessment>) => {
+  const docRef = doc(db, 'assessments', id);
+  try {
+    return await updateDoc(docRef, updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `assessments/${id}`);
+  }
+};
+
+export const saveQuestion = async (question: Omit<Question, 'id' | 'createdAt' | 'userId'>) => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save question");
+  const questionsRef = collection(db, 'questions');
+  try {
+    const data: any = {
+      ...question,
+      userId: auth.currentUser.uid,
+      createdAt: serverTimestamp()
+    };
+    
+    // Remove undefined fields to prevent Firestore errors
+    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
+
+    return await addDoc(questionsRef, data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'questions');
+  }
+};
+
+export const getQuestions = async (folderId?: string) => {
+  if (!auth.currentUser) return [];
+  const questionsRef = collection(db, 'questions');
+  let q = query(
+    questionsRef,
+    where('userId', '==', auth.currentUser.uid),
+    orderBy('createdAt', 'desc')
+  );
+  if (folderId) {
+    q = query(
+      questionsRef,
+      where('userId', '==', auth.currentUser.uid),
+      where('folderId', '==', folderId),
+      orderBy('createdAt', 'desc')
+    );
+  }
+  try {
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Question[];
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'questions');
+    return [];
+  }
+};
+
+export const deleteQuestion = async (id: string) => {
+  const docRef = doc(db, 'questions', id);
+  try {
+    return await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `questions/${id}`);
+  }
+};
+
+export const moveQuestion = async (questionId: string, folderId: string | null) => {
+  const docRef = doc(db, 'questions', questionId);
+  try {
+    return await updateDoc(docRef, {
+      folderId: folderId ? folderId : deleteField()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `questions/${questionId}`);
+  }
+};

@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "SavedAssessment": {
+      "title": "Saved Assessment",
+      "description": "A generated IGCSE assessment saved to the question bank.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ID of the assessment." },
+        "subject": { "type": "string", "description": "IGCSE Subject (e.g., Mathematics)." },
+        "topic": { "type": "string", "description": "Specific topic covered." },
+        "difficulty": { "type": "string", "description": "Difficulty level." },
+        "questions": { "type": "string", "description": "Markdown content of questions." },
+        "answerKey": { "type": "string", "description": "Markdown content of answer key." },
+        "markScheme": { "type": "string", "description": "Markdown content of mark scheme." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of creation." },
+        "userId": { "type": "string", "description": "UID of the owner." },
+        "folderId": { "type": "string", "description": "ID of the folder this assessment belongs to (optional)." }
+      },
+      "required": ["subject", "topic", "questions", "userId", "createdAt"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "A folder to categorize assessments.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "userId", "createdAt"]
+    },
+    "Resource": {
+      "title": "Resource",
+      "description": "A saved resource (e.g., syllabus PDF) for reference.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "subject": { "type": "string" },
+        "data": { "type": "string", "description": "Base64 encoded file data." },
+        "mimeType": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "subject", "data", "mimeType", "userId", "createdAt"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "An individual question saved to the question bank.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "content": { "type": "string", "description": "Markdown content of the question." },
+        "answer": { "type": "string", "description": "Markdown content of the answer." },
+        "markScheme": { "type": "string", "description": "Markdown content of the mark scheme." },
+        "userId": { "type": "string" },
+        "assessmentId": { "type": "string", "description": "ID of the assessment batch this question belongs to." },
+        "folderId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subject", "topic", "content", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/assessments/{assessmentId}": {
+      "schema": "SavedAssessment",
+      "description": "Collection of saved assessments."
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Collection of individual questions."
+    },
+    "/resources/{resourceId}": {
+      "schema": "Resource",
+      "description": "Collection of saved resources."
+    },
+    "/folders/{folderId}": {
+      "schema": "Folder",
+      "description": "Collection of folders for categorization."
+    }
+  }
+}

@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 font-sans;
+}
+
+.markdown-body h1 { @apply text-2xl font-bold mb-4 mt-6; }
+.markdown-body h2 { @apply text-xl font-bold mb-3 mt-5; }
+.markdown-body p { @apply mb-4 leading-relaxed; }
+.markdown-body ul { @apply list-disc pl-6 mb-4; }
+.markdown-body ol { @apply list-decimal pl-6 mb-4; }
+.markdown-body li { @apply mb-1; }
+.markdown-body strong { @apply font-bold; }
+.markdown-body em { @apply italic; }
+.markdown-body table { @apply w-full border-collapse mb-6 text-sm; }
+.markdown-body th { @apply bg-stone-50 border border-stone-200 px-4 py-2 text-left font-bold; }
+.markdown-body td { @apply border border-stone-200 px-4 py-2; }
+.markdown-body tr:nth-child(even) { @apply bg-stone-50/50; }
+
+.markdown-body.markdown-emerald {
+  @apply text-emerald-900;
+}
+
+.markdown-body.markdown-emerald h1,
+.markdown-body.markdown-emerald h2,
+.markdown-body.markdown-emerald h3,
+.markdown-body.markdown-emerald h4,
+.markdown-body.markdown-emerald strong {
+  @apply text-emerald-950;
+}
