@@ -3,8 +3,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
 import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus } from 'lucide-react'
 import type { Assessment, Question, Folder } from '../../lib/types'
+import { parseSVGSafe } from '../../lib/svg'
 
 interface Props {
   assessments: Assessment[]
@@ -23,6 +25,29 @@ interface Props {
   onSelectFolder: (id: string | null | undefined) => void
   onCreateAssessmentFromQuestions: (questions: Question[]) => void
   onAddQuestionsToAssessment: (assessmentId: string, questions: Question[]) => void
+}
+
+const svgComponents = {
+  code({ className, children }: any) {
+    if (className === 'language-svg') {
+      const safe = parseSVGSafe(String(children))
+      if (safe) return <div dangerouslySetInnerHTML={{ __html: safe }} className="my-2" />
+      return <span className="text-stone-400 text-xs italic">[Diagram unavailable]</span>
+    }
+    return <code className={className}>{children}</code>
+  }
+}
+
+function QMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkMath, remarkGfm]}
+      rehypePlugins={[rehypeKatex, rehypeRaw]}
+      components={svgComponents}
+    >
+      {content}
+    </ReactMarkdown>
+  )
 }
 
 function QuestionPreviewModal({ question, onClose }: { question: Question; onClose: () => void }) {
@@ -44,20 +69,14 @@ function QuestionPreviewModal({ question, onClose }: { question: Question; onClo
           </button>
         </div>
         <div className="overflow-y-auto p-4 markdown-body text-sm">
-          <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[rehypeKatex]}>
-            {question.text}
-          </ReactMarkdown>
+          <QMarkdown content={question.text} />
           <div className="mt-4 pt-4 border-t border-stone-100">
             <p className="text-xs font-semibold text-stone-500 mb-1">Answer</p>
-            <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[rehypeKatex]}>
-              {question.answer}
-            </ReactMarkdown>
+            <QMarkdown content={question.answer} />
           </div>
           <div className="mt-4 pt-4 border-t border-stone-100">
             <p className="text-xs font-semibold text-stone-500 mb-1">Mark Scheme</p>
-            <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[rehypeKatex]}>
-              {question.markScheme}
-            </ReactMarkdown>
+            <QMarkdown content={question.markScheme} />
           </div>
         </div>
       </div>
