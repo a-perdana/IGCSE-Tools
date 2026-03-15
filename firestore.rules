@@ -48,10 +48,11 @@ service cloud.firestore {
     }
 
     function isValidResource(data) {
-      return hasOnlyAllowedFields(['name', 'subject', 'data', 'mimeType', 'userId', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'subject', 'storagePath', 'downloadURL', 'mimeType', 'userId', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.subject is string && data.subject.size() > 0 &&
-             data.data is string && data.data.size() > 0 && data.data.size() < 1048576 && // 1MB limit
+             data.storagePath is string && data.storagePath.size() > 0 &&
+             data.downloadURL is string && data.downloadURL.size() > 0 &&
              data.mimeType is string &&
              data.userId == request.auth.uid &&
              data.createdAt is timestamp;

@@ -1,26 +1,29 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
-  getDocs, 
-  deleteDoc, 
-  doc, 
-  serverTimestamp, 
-  Timestamp, 
-  orderBy, 
-  updateDoc, 
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  query,
+  where,
+  getDocs,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  Timestamp,
+  orderBy,
+  updateDoc,
   deleteField,
-  getDoc
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // --- Firestore Error Handling Spec ---
@@ -109,13 +112,14 @@ export interface Folder {
 }
 
 export interface Resource {
-  id?: string;
-  name: string;
-  subject: string;
-  data: string;
-  mimeType: string;
-  userId: string;
-  createdAt: Timestamp;
+  id: string    // required — saveResource returns it
+  name: string
+  subject: string
+  storagePath: string   // "resources/{userId}/{resourceId}/{filename}"
+  downloadURL: string   // Firebase Storage download URL
+  mimeType: string
+  userId: string
+  createdAt: Timestamp
 }
 
 export interface Question {
@@ -231,25 +235,31 @@ export const deleteFolder = async (id: string) => {
   }
 };
 
-export const saveResource = async (resource: Omit<Resource, 'id' | 'createdAt' | 'userId'>) => {
-  if (!auth.currentUser) throw new Error("User must be authenticated to save resource");
-  
-  const resourcesRef = collection(db, 'resources');
-  try {
-    const data: any = {
-      ...resource,
-      userId: auth.currentUser.uid,
-      createdAt: serverTimestamp()
-    };
-    
-    // Remove undefined fields to prevent Firestore errors
-    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
-
-    return await addDoc(resourcesRef, data);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, 'resources');
+export const saveResource = async (
+  file: { name: string; data: ArrayBuffer; mimeType: string },
+  subject: string
+): Promise<Resource> => {
+  if (!auth.currentUser) throw new Error("User must be authenticated to save resource")
+  const uid = auth.currentUser.uid
+  const resourcesRef = collection(db, 'resources')
+  const docRef = doc(resourcesRef)
+  const resourceId = docRef.id
+  const path = `resources/${uid}/${resourceId}/${file.name}`
+  const sRef = storageRef(storage, path)
+  await uploadBytes(sRef, file.data, { contentType: file.mimeType })
+  const downloadURL = await getDownloadURL(sRef)
+  const metadata = {
+    name: file.name,
+    subject,
+    storagePath: path,
+    downloadURL,
+    mimeType: file.mimeType,
+    userId: uid,
+    createdAt: serverTimestamp(),
   }
-};
+  await setDoc(docRef, metadata)
+  return { id: resourceId, ...metadata, createdAt: Timestamp.now() }
+}
 
 export const getResources = async (subject?: string) => {
   if (!auth.currentUser) return [];
@@ -282,14 +292,21 @@ export const getResources = async (subject?: string) => {
   }
 };
 
-export const deleteResource = async (id: string) => {
-  const docRef = doc(db, 'resources', id);
+export const deleteResource = async (resource: Resource): Promise<void> => {
+  // Delete from Storage first (if it fails, still clean up Firestore)
   try {
-    return await deleteDoc(docRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `resources/${id}`);
+    const sRef = storageRef(storage, resource.storagePath)
+    await deleteObject(sRef)
+  } catch (e) {
+    console.warn('Storage delete failed, continuing with Firestore cleanup:', e)
   }
-};
+  const docRef = doc(db, 'resources', resource.id)
+  try {
+    await deleteDoc(docRef)
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `resources/${resource.id}`)
+  }
+}
 
 export const moveAssessment = async (assessmentId: string, folderId: string | null) => {
   const docRef = doc(db, 'assessments', assessmentId);
