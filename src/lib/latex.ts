@@ -7,8 +7,11 @@ const BARE_LATEX_RE = /(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alph
  *    (handles MCQ options where question stem has $ but options don't)
  */
 export function preprocessLatex(text: string): string {
+  // Step 0: escape currency dollar signs ($5000, $3.50) so they don't become math delimiters
+  let result = text.replace(/\$(\d)/g, '\\$$1')
+
   // Step 1: merge accidentally split adjacent math blocks
-  let result = text.replace(/\$([^$\n]+?)\$\$([^$\n]+?)\$/g, (_m, a, b) => `$${a}${b}$`)
+  result = result.replace(/\$([^$\n]+?)\$\$([^$\n]+?)\$/g, (_m, a, b) => `$${a}${b}$`)
 
   // Step 2: split by existing $...$ blocks, wrap bare \commands only in plain segments
   const segments = result.split(/(\$[^$\n]+?\$)/g)
