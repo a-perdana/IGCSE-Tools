@@ -10,6 +10,7 @@ import { parseSVGSafe } from '../../lib/svg'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
+import { PageFooter } from '../PageFooter'
 
 interface Props {
   assessment: Assessment | null
@@ -409,6 +410,8 @@ export function AssessmentView({
             )}
           </div>
         )}
+
+        <PageFooter />
 
         {studentMode && onStudentFeedback && (
           <div className="mt-4">
