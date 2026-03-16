@@ -31,6 +31,8 @@ interface Props {
   onUpdateResourceType: (resource: Resource, type: ResourceType) => void
   onToggleShared: (resource: Resource, isShared: boolean) => void
   currentUserId?: string
+  uploading?: boolean
+  processingIds?: Set<string>
   studentMode: boolean
   onStudentModeToggle: () => void
   syllabusContext: string
@@ -67,7 +69,7 @@ const RESOURCE_TYPE_COLORS: Record<ResourceType, string> = {
 export function Sidebar({
   config, onConfigChange, onGenerate, isGenerating, isAuditing, retryCount,
   resources, knowledgeBase, onUploadResource, onAddToKB, onRemoveFromKB, onDeleteResource, onUpdateResourceType,
-  onToggleShared, currentUserId,
+  onToggleShared, currentUserId, uploading, processingIds,
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
   provider, onProviderChange, apiKeys, onApiKeyChange, customModel, onCustomModelChange,
   apiSettingsOpen, onApiSettingsOpenChange,
@@ -323,9 +325,10 @@ export function Sidebar({
                     onUploadResource(pendingFile, config.subject, pendingType)
                     setPendingFile(null)
                   }}
-                  className="flex-1 text-xs py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                  disabled={uploading}
+                  className="flex-1 text-xs py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 flex items-center justify-center gap-1"
                 >
-                  Upload
+                  {uploading ? <><Loader2 className="w-3 h-3 animate-spin" /> Uploading...</> : 'Upload'}
                 </button>
                 <button
                   onClick={() => setPendingFile(null)}
@@ -346,6 +349,7 @@ export function Sidebar({
             const isDeleting = deletingId === r.id
             const isConfirming = confirmDeleteId === r.id
             const isOwner = r.userId === currentUserId
+            const isProcessing = processingIds?.has(r.id) ?? false
             return (
               <div key={r.id} className={`py-1 transition-opacity duration-300 ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1 text-xs">
@@ -357,7 +361,12 @@ export function Sidebar({
                     disabled={isDeleting}
                   />
                   <span className="flex-1 truncate text-stone-700">{r.name}</span>
-                  {isOwner && !isConfirming && !isDeleting && (
+                  {isProcessing && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-amber-600 shrink-0">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" /> AI
+                    </span>
+                  )}
+                  {isOwner && !isConfirming && !isDeleting && !isProcessing && (
                     <button
                       onClick={() => onToggleShared(r, !r.isShared)}
                       title={r.isShared ? 'Shared with all users — click to make private' : 'Private — click to share with all users'}

@@ -16,6 +16,7 @@ export function useResources(user: User | null, notify: NotifyFn) {
   const [resources, setResources] = useState<Resource[]>([])
   const [knowledgeBase, setKnowledgeBase] = useState<Resource[]>([])
   const [uploading, setUploading] = useState(false)
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
 
   const loadResources = useCallback(async (subject?: string) => {
     if (!user) return
@@ -74,11 +75,11 @@ export function useResources(user: User | null, notify: NotifyFn) {
   }, [])
 
   const processSyllabus = useCallback(async (resource: Resource, apiKey: string): Promise<void> => {
-    // Check if already cached
     try {
       const existing = await getSyllabusCache(resource.id)
       if (existing) return
     } catch { return }
+    setProcessingIds(s => new Set(s).add(resource.id))
 
     try {
       const sRef = storageRef(storage, resource.storagePath)
@@ -114,8 +115,9 @@ export function useResources(user: User | null, notify: NotifyFn) {
         notify(`Syllabus "${resource.name}" processed — objectives cached`, 'success')
       }
     } catch (e) {
-      // Silent fail — syllabus processing is best-effort
       console.warn('Syllabus processing failed:', e)
+    } finally {
+      setProcessingIds(s => { const n = new Set(s); n.delete(resource.id); return n })
     }
   }, [notify])
 
@@ -134,6 +136,7 @@ export function useResources(user: User | null, notify: NotifyFn) {
       const existing = await getPastPaperCache(resource.id)
       if (existing) return
     } catch { return }
+    setProcessingIds(s => new Set(s).add(resource.id))
 
     try {
       const sRef = storageRef(storage, resource.storagePath)
@@ -166,6 +169,8 @@ export function useResources(user: User | null, notify: NotifyFn) {
       }
     } catch (e) {
       console.warn('Past paper processing failed:', e)
+    } finally {
+      setProcessingIds(s => { const n = new Set(s); n.delete(resource.id); return n })
     }
   }, [notify])
 
@@ -206,5 +211,6 @@ export function useResources(user: User | null, notify: NotifyFn) {
     loadResources, uploadResource, deleteResource,
     addToKnowledgeBase, removeFromKnowledgeBase, getBase64,
     updateResourceType, updateGeminiUri, processSyllabus, processPastPaper, toggleShared,
+    uploading, processingIds,
   }
 }

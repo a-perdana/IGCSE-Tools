@@ -368,6 +368,8 @@ export default function App() {
         onUpdateResourceType={resources.updateResourceType}
         onToggleShared={resources.toggleShared}
         currentUserId={user?.uid}
+        uploading={resources.uploading}
+        processingIds={resources.processingIds}
         studentMode={studentMode}
         onStudentModeToggle={() => setStudentMode(s => !s)}
         syllabusContext={syllabusContext}
