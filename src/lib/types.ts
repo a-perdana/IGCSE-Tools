@@ -62,6 +62,7 @@ export interface Resource {
   resourceType?: ResourceType
   geminiFileUri?: string
   geminiFileUploadedAt?: Timestamp
+  isShared?: boolean
 }
 
 export interface SyllabusCache {

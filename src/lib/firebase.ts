@@ -235,6 +235,10 @@ export const updateResourceGeminiUri = async (id: string, uri: string): Promise<
   })
 }
 
+export const toggleResourceShared = async (id: string, isShared: boolean): Promise<void> => {
+  await updateDoc(doc(db, 'resources', id), { isShared })
+}
+
 export const saveSyllabusCache = async (
   resourceId: string,
   subject: string,
@@ -273,28 +277,25 @@ export const getPastPaperCache = async (resourceId: string): Promise<PastPaperCa
 
 export const getResources = async (subject?: string) => {
   if (!auth.currentUser) return [];
-
+  const uid = auth.currentUser.uid;
   const resourcesRef = collection(db, 'resources');
-  let q = query(
-    resourcesRef,
-    where('userId', '==', auth.currentUser.uid),
-    orderBy('createdAt', 'desc')
-  );
 
-  if (subject) {
-    q = query(
-      resourcesRef,
-      where('userId', '==', auth.currentUser.uid),
-      where('subject', '==', subject),
-      orderBy('createdAt', 'desc')
-    );
-  }
+  const ownQ = subject
+    ? query(resourcesRef, where('userId', '==', uid), where('subject', '==', subject), orderBy('createdAt', 'desc'))
+    : query(resourcesRef, where('userId', '==', uid), orderBy('createdAt', 'desc'));
+
+  const sharedQ = subject
+    ? query(resourcesRef, where('isShared', '==', true), where('subject', '==', subject), orderBy('createdAt', 'desc'))
+    : query(resourcesRef, where('isShared', '==', true), orderBy('createdAt', 'desc'));
 
   try {
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }) as Resource)
-      .filter(r => !!r.downloadURL);
+    const [ownSnap, sharedSnap] = await Promise.all([getDocs(ownQ), getDocs(sharedQ)]);
+    const own = ownSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Resource).filter(r => !!r.downloadURL);
+    const ownIds = new Set(own.map(r => r.id));
+    const shared = sharedSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }) as Resource)
+      .filter(r => !!r.downloadURL && !ownIds.has(r.id));
+    return [...own, ...shared].sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'resources');
     return [];

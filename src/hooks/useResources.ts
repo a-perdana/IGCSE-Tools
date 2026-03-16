@@ -8,6 +8,7 @@ import {
   updateResourceGeminiUri as fbUpdateGeminiUri,
   saveSyllabusCache, getSyllabusCache,
   savePastPaperCache, getPastPaperCache,
+  toggleResourceShared as fbToggleShared,
 } from '../lib/firebase'
 import { ref as storageRef, getBlob } from 'firebase/storage'
 
@@ -118,6 +119,16 @@ export function useResources(user: User | null, notify: NotifyFn) {
     }
   }, [notify])
 
+  const toggleShared = useCallback(async (resource: Resource, isShared: boolean) => {
+    try {
+      await fbToggleShared(resource.id, isShared)
+      setResources(r => r.map(x => x.id === resource.id ? { ...x, isShared } : x))
+      setKnowledgeBase(kb => kb.map(x => x.id === resource.id ? { ...x, isShared } : x))
+    } catch (e) {
+      notify('Failed to update sharing', 'error')
+    }
+  }, [notify])
+
   const processPastPaper = useCallback(async (resource: Resource, apiKey: string): Promise<void> => {
     try {
       const existing = await getPastPaperCache(resource.id)
@@ -194,6 +205,6 @@ export function useResources(user: User | null, notify: NotifyFn) {
     resources, knowledgeBase, uploading,
     loadResources, uploadResource, deleteResource,
     addToKnowledgeBase, removeFromKnowledgeBase, getBase64,
-    updateResourceType, updateGeminiUri, processSyllabus, processPastPaper,
+    updateResourceType, updateGeminiUri, processSyllabus, processPastPaper, toggleShared,
   }
 }

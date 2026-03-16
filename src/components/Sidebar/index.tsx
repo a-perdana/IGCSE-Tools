@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react'
 import {
   BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
-  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File,
+  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File, Globe, Lock,
 } from 'lucide-react'
 import type { GenerationConfig, Resource, ResourceType } from '../../lib/types'
 import type { AIProvider } from '../../lib/providers'
@@ -29,6 +29,8 @@ interface Props {
   onRemoveFromKB: (id: string) => void
   onDeleteResource: (resource: Resource) => void
   onUpdateResourceType: (resource: Resource, type: ResourceType) => void
+  onToggleShared: (resource: Resource, isShared: boolean) => void
+  currentUserId?: string
   studentMode: boolean
   onStudentModeToggle: () => void
   syllabusContext: string
@@ -65,6 +67,7 @@ const RESOURCE_TYPE_COLORS: Record<ResourceType, string> = {
 export function Sidebar({
   config, onConfigChange, onGenerate, isGenerating, isAuditing, retryCount,
   resources, knowledgeBase, onUploadResource, onAddToKB, onRemoveFromKB, onDeleteResource, onUpdateResourceType,
+  onToggleShared, currentUserId,
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
   provider, onProviderChange, apiKeys, onApiKeyChange, customModel, onCustomModelChange,
   apiSettingsOpen, onApiSettingsOpenChange,
@@ -342,6 +345,7 @@ export function Sidebar({
             const rType = r.resourceType ?? 'other'
             const isDeleting = deletingId === r.id
             const isConfirming = confirmDeleteId === r.id
+            const isOwner = r.userId === currentUserId
             return (
               <div key={r.id} className={`py-1 transition-opacity duration-300 ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1 text-xs">
@@ -353,6 +357,15 @@ export function Sidebar({
                     disabled={isDeleting}
                   />
                   <span className="flex-1 truncate text-stone-700">{r.name}</span>
+                  {isOwner && !isConfirming && !isDeleting && (
+                    <button
+                      onClick={() => onToggleShared(r, !r.isShared)}
+                      title={r.isShared ? 'Shared with all users — click to make private' : 'Private — click to share with all users'}
+                      className={`shrink-0 ${r.isShared ? 'text-emerald-500 hover:text-emerald-700' : 'text-stone-300 hover:text-stone-500'}`}
+                    >
+                      {r.isShared ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                    </button>
+                  )}
                   {isDeleting ? (
                     <Loader2 className="w-3 h-3 text-red-400 animate-spin shrink-0" />
                   ) : isConfirming ? (
@@ -370,23 +383,34 @@ export function Sidebar({
                         Cancel
                       </button>
                     </div>
-                  ) : (
+                  ) : isOwner ? (
                     <button onClick={() => handleDeleteClick(r.id)} className="text-red-400 hover:text-red-600 shrink-0">
                       <Trash2 className="w-3 h-3" />
                     </button>
-                  )}
+                  ) : null}
                 </div>
-                <div className="ml-4 mt-0.5">
-                  <select
-                    value={rType}
-                    onChange={e => onUpdateResourceType(r, e.target.value as ResourceType)}
-                    className={`text-xs px-1.5 py-0.5 rounded font-medium border-0 outline-none cursor-pointer ${RESOURCE_TYPE_COLORS[rType]}`}
-                    disabled={isDeleting}
-                  >
-                    <option value="past_paper">Past Paper</option>
-                    <option value="syllabus">Syllabus</option>
-                    <option value="other">Other</option>
-                  </select>
+                <div className="ml-4 mt-0.5 flex items-center gap-1.5">
+                  {isOwner ? (
+                    <select
+                      value={rType}
+                      onChange={e => onUpdateResourceType(r, e.target.value as ResourceType)}
+                      className={`text-xs px-1.5 py-0.5 rounded font-medium border-0 outline-none cursor-pointer ${RESOURCE_TYPE_COLORS[rType]}`}
+                      disabled={isDeleting}
+                    >
+                      <option value="past_paper">Past Paper</option>
+                      <option value="syllabus">Syllabus</option>
+                      <option value="other">Other</option>
+                    </select>
+                  ) : (
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${RESOURCE_TYPE_COLORS[rType]}`}>
+                      {RESOURCE_TYPE_LABELS[rType]}
+                    </span>
+                  )}
+                  {!isOwner && (
+                    <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
+                      <Globe className="w-2.5 h-2.5" /> Shared
+                    </span>
+                  )}
                 </div>
               </div>
             )

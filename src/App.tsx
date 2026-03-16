@@ -366,6 +366,8 @@ export default function App() {
         onRemoveFromKB={resources.removeFromKnowledgeBase}
         onDeleteResource={resources.deleteResource}
         onUpdateResourceType={resources.updateResourceType}
+        onToggleShared={resources.toggleShared}
+        currentUserId={user?.uid}
         studentMode={studentMode}
         onStudentModeToggle={() => setStudentMode(s => !s)}
         syllabusContext={syllabusContext}

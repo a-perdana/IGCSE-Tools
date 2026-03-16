@@ -144,7 +144,7 @@ service cloud.firestore {
     }
 
     match /resources/{resourceId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isShared == true);
       allow create: if isAuthenticated() && isValidResource(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
