@@ -10,7 +10,7 @@ import {
 } from '../../lib/gemini'
 import { estimateCostIDR, MODEL_PRICING } from '../../lib/pricing'
 import {
-  PROVIDER_LABELS, PROVIDER_MODELS, API_KEY_PLACEHOLDERS, API_KEY_URLS,
+  PROVIDER_LABELS, PROVIDER_MODELS, API_KEY_PLACEHOLDERS, API_KEY_URLS, API_USAGE_URLS,
 } from '../../lib/providers'
 
 const QUESTION_TYPES = ['Mixed', 'Multiple Choice', 'Short Answer', 'Structured']
@@ -296,14 +296,26 @@ export function Sidebar({
                 <div key={p}>
                   <label className="text-xs text-stone-500 mb-1 flex items-center justify-between">
                     <span>{PROVIDER_LABELS[p]} API Key</span>
-                    <a
-                      href={API_KEY_URLS[p]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"
-                    >
-                      Get key <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
+                    <span className="flex items-center gap-2">
+                      <a
+                        href={API_KEY_URLS[p]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"
+                      >
+                        Get key <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                      {apiKeys[p] && (
+                        <a
+                          href={API_USAGE_URLS[p]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-stone-400 hover:text-stone-600 flex items-center gap-0.5"
+                        >
+                          Usage <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                    </span>
                   </label>
                   <div className="flex gap-1">
                     <input

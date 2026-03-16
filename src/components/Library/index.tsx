@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
@@ -48,6 +48,19 @@ const svgComponents = {
   }
 }
 
+/**
+ * Wraps bare LaTeX commands in $...$ so KaTeX can render them.
+ * Handles: \frac, \sqrt, \sum, \int, \times, etc. that appear outside existing delimiters.
+ */
+function preprocessLatex(text: string): string {
+  // Don't double-wrap already-delimited math
+  // Replace bare \command{...}{...} patterns not already inside $...$
+  return text.replace(
+    /(?<!\$)(?<!\$\$)(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|sigma|phi|omega|times|div|pm|leq|geq|neq|approx|cdot|ldots|vec|hat|bar|overline|underline|left|right|mathbf|mathrm|text)\b(?:\{[^}]*\})*(?:\{[^}]*\})*)(?!\$)/g,
+    '$$$1$$$'
+  )
+}
+
 function QMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
@@ -55,7 +68,7 @@ function QMarkdown({ content }: { content: string }) {
       rehypePlugins={[rehypeKatex, rehypeRaw]}
       components={svgComponents}
     >
-      {content}
+      {preprocessLatex(content)}
     </ReactMarkdown>
   )
 }
@@ -200,6 +213,22 @@ export function Library({
   const [addToAssessmentId, setAddToAssessmentId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [subjectFilter, setSubjectFilter] = useState<string>('')
+
+  const subjectOptions = useMemo(() => {
+    const set = new Set<string>()
+    assessments.forEach(a => { if (a.subject) set.add(a.subject) })
+    questions.forEach(q => { if (q.subject) set.add(q.subject) })
+    return Array.from(set).sort()
+  }, [assessments, questions])
+
+  const filteredAssessments = subjectFilter
+    ? assessments.filter(a => a.subject === subjectFilter)
+    : assessments
+
+  const filteredQuestions = subjectFilter
+    ? questions.filter(q => q.subject === subjectFilter)
+    : questions
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return
@@ -286,20 +315,28 @@ export function Library({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Tab switcher */}
-        <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+        {/* Tab switcher + subject filter */}
+        <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
           <button
             onClick={() => { setBankView('assessments'); setSelectedIds(new Set()) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'assessments' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
-            Assessments ({assessments.length})
+            Assessments ({filteredAssessments.length})
           </button>
           <button
             onClick={() => { setBankView('questions'); setSelectedIds(new Set()) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'questions' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
-            Questions ({questions.length})
+            Questions ({filteredQuestions.length})
           </button>
+          <select
+            value={subjectFilter}
+            onChange={e => setSubjectFilter(e.target.value)}
+            className="ml-auto text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600"
+          >
+            <option value="">All subjects</option>
+            {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
 
         {/* Selection action bar */}
@@ -346,7 +383,7 @@ export function Library({
 
           {bankView === 'assessments' && (
             <div className="grid grid-cols-1 gap-3">
-              {assessments.map(a => (
+              {filteredAssessments.map(a => (
                 <div key={a.id} className="border border-stone-200 rounded-lg p-3 hover:border-emerald-300 hover:shadow-sm transition-all bg-white">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -394,15 +431,17 @@ export function Library({
                   </div>
                 </div>
               ))}
-              {assessments.length === 0 && !loading && (
-                <div className="text-stone-400 text-sm text-center py-8">No assessments saved yet.</div>
+              {filteredAssessments.length === 0 && !loading && (
+                <div className="text-stone-400 text-sm text-center py-8">
+                  {subjectFilter ? `No ${subjectFilter} assessments found.` : 'No assessments saved yet.'}
+                </div>
               )}
             </div>
           )}
 
           {bankView === 'questions' && (
             <div className="grid grid-cols-1 gap-2">
-              {questions.map(q => {
+              {filteredQuestions.map(q => {
                 const isSelected = selectedIds.has(q.id)
                 return (
                   <div
@@ -460,8 +499,10 @@ export function Library({
                   </div>
                 )
               })}
-              {questions.length === 0 && !loading && (
-                <div className="text-stone-400 text-sm text-center py-8">No questions saved yet.</div>
+              {filteredQuestions.length === 0 && !loading && (
+                <div className="text-stone-400 text-sm text-center py-8">
+                  {subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
+                </div>
               )}
             </div>
           )}

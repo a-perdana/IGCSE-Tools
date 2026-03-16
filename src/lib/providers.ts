@@ -48,3 +48,9 @@ export const API_KEY_URLS: Record<AIProvider, string> = {
   openai: 'https://platform.openai.com/api-keys',
   anthropic: 'https://console.anthropic.com/settings/keys',
 }
+
+export const API_USAGE_URLS: Record<AIProvider, string> = {
+  gemini: 'https://aistudio.google.com/usage',
+  openai: 'https://platform.openai.com/usage',
+  anthropic: 'https://console.anthropic.com/settings/usage',
+}

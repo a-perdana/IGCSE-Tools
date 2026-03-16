@@ -1,52 +1,65 @@
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
-function injectPrintStyles(): HTMLStyleElement {
-  const style = document.createElement('style')
-  style.id = 'pdf-export-override'
-  style.textContent = `
-    :root {
-      --color-emerald-50: #ecfdf5 !important;
-      --color-emerald-100: #d1fae5 !important;
-      --color-emerald-200: #a7f3d0 !important;
-      --color-emerald-500: #10b981 !important;
-      --color-emerald-600: #059669 !important;
-      --color-emerald-700: #047857 !important;
-      --color-emerald-800: #065f46 !important;
-      --color-stone-50: #fafaf9 !important;
-      --color-stone-100: #f5f5f4 !important;
-      --color-stone-200: #e7e5e4 !important;
-      --color-stone-300: #d6d3d1 !important;
-      --color-stone-600: #57534e !important;
-      --color-stone-700: #44403c !important;
-      --color-stone-800: #292524 !important;
+/**
+ * Converts oklch() color values to rgb() so html2canvas (which doesn't
+ * support oklch) can render Tailwind v4 styles correctly.
+ */
+function oklchToRgbStr(L: number, C: number, H: number, alpha?: number): string {
+  const hRad = H * (Math.PI / 180)
+  const a = C * Math.cos(hRad)
+  const b = C * Math.sin(hRad)
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const lc = l_ ** 3, mc = m_ ** 3, sc = s_ ** 3
+  const clamp = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255)
+  const r = clamp(4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc)
+  const g = clamp(-1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc)
+  const bv = clamp(-0.0041960863 * lc - 0.7034186147 * mc + 1.7076147010 * sc)
+  return alpha !== undefined
+    ? `rgba(${r},${g},${bv},${alpha})`
+    : `rgb(${r},${g},${bv})`
+}
+
+function replaceOklchInCss(css: string): string {
+  return css.replace(
+    /oklch\(\s*([\d.]+%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/g,
+    (_, L, C, H, A) => {
+      const lv = L.includes('%') ? parseFloat(L) / 100 : parseFloat(L)
+      const alpha = A !== undefined
+        ? (A.includes('%') ? parseFloat(A) / 100 : parseFloat(A))
+        : undefined
+      return oklchToRgbStr(lv, parseFloat(C), parseFloat(H), alpha)
     }
-  `
-  document.head.appendChild(style)
-  return style
+  )
 }
 
 export async function exportToPDF(element: HTMLElement, filename: string): Promise<void> {
-  const styleTag = injectPrintStyles()
-  try {
-    const canvas = await html2canvas(element, { useCORS: true, scale: 2 })
-    const imgData = canvas.toDataURL('image/png')
-    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const imgH = (canvas.height * pageW) / canvas.width
-    let heightLeft = imgH
-    let position = 0
+  const canvas = await html2canvas(element, {
+    useCORS: true,
+    scale: 2,
+    backgroundColor: '#ffffff',
+    onclone: (clonedDoc: Document) => {
+      clonedDoc.querySelectorAll('style').forEach(s => {
+        if (s.textContent) s.textContent = replaceOklchInCss(s.textContent)
+      })
+    },
+  })
+  const imgData = canvas.toDataURL('image/png')
+  const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
+  const pageW = pdf.internal.pageSize.getWidth()
+  const pageH = pdf.internal.pageSize.getHeight()
+  const imgH = (canvas.height * pageW) / canvas.width
+  let heightLeft = imgH
+  let position = 0
+  pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH)
+  heightLeft -= pageH
+  while (heightLeft > 0) {
+    position = heightLeft - imgH
+    pdf.addPage()
     pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH)
     heightLeft -= pageH
-    while (heightLeft > 0) {
-      position = heightLeft - imgH
-      pdf.addPage()
-      pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH)
-      heightLeft -= pageH
-    }
-    pdf.save(filename)
-  } finally {
-    styleTag.remove()
   }
+  pdf.save(filename)
 }
