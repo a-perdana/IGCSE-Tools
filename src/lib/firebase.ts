@@ -117,14 +117,22 @@ export const getSavedAssessments = async (folderId?: string): Promise<Assessment
   const publicQuery = query(assessmentsRef, where('isPublic', '==', true))
 
   try {
-    const [ownSnap, publicSnap] = await Promise.all([getDocs(ownQuery), getDocs(publicQuery)])
+    const ownSnap = await getDocs(ownQuery)
     const own = ownSnap.docs.map(d => ({ id: d.id, ...d.data() } as Assessment)).filter(a => Array.isArray(a.questions))
-    const pub = publicSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as Assessment))
-      .filter(a => Array.isArray(a.questions) && a.userId !== uid)
+
+    let pub: Assessment[] = []
+    try {
+      const publicSnap = await getDocs(publicQuery)
+      pub = publicSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Assessment))
+        .filter(a => Array.isArray(a.questions) && a.userId !== uid)
+    } catch {
+      // Public query may fail if no public items exist or rules are still propagating
+    }
+
     const ownIds = new Set(own.map(a => a.id))
-    const merged = [...own, ...pub.filter(a => !ownIds.has(a.id))]
-    return merged.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
+    return [...own, ...pub.filter(a => !ownIds.has(a.id))]
+      .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'assessments')
     return []
@@ -314,14 +322,22 @@ export const getQuestions = async (folderId?: string): Promise<Question[]> => {
   const publicQuery = query(questionsRef, where('isPublic', '==', true))
 
   try {
-    const [ownSnap, publicSnap] = await Promise.all([getDocs(ownQuery), getDocs(publicQuery)])
+    const ownSnap = await getDocs(ownQuery)
     const own = ownSnap.docs.map(d => ({ id: d.id, ...d.data() } as Question)).filter(q => typeof (q as any).text === 'string')
-    const pub = publicSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as Question))
-      .filter(q => typeof (q as any).text === 'string' && q.userId !== uid)
+
+    let pub: Question[] = []
+    try {
+      const publicSnap = await getDocs(publicQuery)
+      pub = publicSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Question))
+        .filter(q => typeof (q as any).text === 'string' && q.userId !== uid)
+    } catch {
+      // Public query may fail if no public items exist or rules are still propagating
+    }
+
     const ownIds = new Set(own.map(q => q.id))
-    const merged = [...own, ...pub.filter(q => !ownIds.has(q.id))]
-    return merged.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
+    return [...own, ...pub.filter(q => !ownIds.has(q.id))]
+      .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'questions')
     return []
