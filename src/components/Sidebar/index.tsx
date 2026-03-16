@@ -79,8 +79,17 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingType, setPendingType] = useState<ResourceType>('other')
+  const [uploadStarted, setUploadStarted] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Clear pending file once upload finishes
+  useEffect(() => {
+    if (uploadStarted && !uploading) {
+      setPendingFile(null)
+      setUploadStarted(false)
+    }
+  }, [uploading, uploadStarted])
 
   const handleDeleteClick = useCallback((id: string) => {
     setConfirmDeleteId(id)
@@ -323,7 +332,7 @@ export function Sidebar({
                 <button
                   onClick={() => {
                     onUploadResource(pendingFile, config.subject, pendingType)
-                    setPendingFile(null)
+                    setUploadStarted(true)
                   }}
                   disabled={uploading}
                   className="flex-1 text-xs py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 flex items-center justify-center gap-1"
