@@ -13,9 +13,10 @@ export interface ProviderModel {
 
 export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash (Recommended)' },
-    { id: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro (Best Quality)' },
-    { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (Budget)' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Recommended)' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Best Quality)' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (Budget)' },
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
   ],
   openai: [
     { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
@@ -31,7 +32,7 @@ export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
 }
 
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
-  gemini: 'gemini-2.5-flash-preview-05-20',
+  gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 }

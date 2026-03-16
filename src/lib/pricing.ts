@@ -1,8 +1,9 @@
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // Google Gemini
-  'gemini-2.5-flash-preview-05-20': { input: 0.15, output: 0.60 },
-  'gemini-2.5-pro-preview-05-06': { input: 1.25, output: 10.00 },
-  'gemini-2.0-flash-lite': { input: 0.075, output: 0.30 },
+  'gemini-2.5-flash': { input: 0.15, output: 0.60 },
+  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
+  'gemini-2.5-flash-lite': { input: 0.075, output: 0.30 },
+  'gemini-3-flash-preview': { input: 0.15, output: 0.60 },
   // OpenAI
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
   'gpt-4o': { input: 2.50, output: 10.00 },
