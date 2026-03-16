@@ -10,7 +10,6 @@ import { parseSVGSafe } from '../../lib/svg'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
-import { PageFooter } from '../PageFooter'
 
 interface Props {
   assessment: Assessment | null
@@ -259,8 +258,11 @@ export function AssessmentView({
         </span>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 markdown-body" ref={contentRef}>
+      {/* Content — flex-col so grow-shrink-0 inner div fills the container when
+          content is short (no visible gap above footer) yet overflows for scroll
+          when content is tall */}
+      <div className="flex-1 overflow-y-auto flex flex-col" ref={contentRef}>
+      <div className="grow shrink-0 p-4 markdown-body">
         {analysisText && (
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
             <strong>Analysis:</strong> {analysisText}
@@ -411,8 +413,6 @@ export function AssessmentView({
           </div>
         )}
 
-        <PageFooter />
-
         {studentMode && onStudentFeedback && (
           <div className="mt-4">
             <button
@@ -438,7 +438,8 @@ export function AssessmentView({
             )}
           </div>
         )}
-      </div>
+      </div>{/* end inner grow div */}
+      </div>{/* end outer scroll div */}
 
       {showPicker && bankQuestions && onAddQuestions && (
         <BankPickerModal

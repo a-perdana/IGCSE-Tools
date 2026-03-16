@@ -9,7 +9,6 @@ import type { Assessment, Question, Folder } from '../../lib/types'
 import { parseSVGSafe } from '../../lib/svg'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
-import { PageFooter } from '../PageFooter'
 
 interface Props {
   assessments: Assessment[]
@@ -585,7 +584,6 @@ export function Library({
               )}
             </div>
           )}
-          <PageFooter />
         </div>
       </div>
 
