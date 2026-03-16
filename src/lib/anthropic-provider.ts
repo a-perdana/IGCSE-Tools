@@ -34,13 +34,14 @@ async function anthropicMessages(
 const QUESTION_SCHEMA = `{
   "questions": [
     {
-      "text": "string (markdown, bold question text)",
-      "answer": "string",
+      "text": "string (markdown, bold question text — do NOT embed A/B/C/D options here for MCQ)",
+      "answer": "string (for MCQ: only the letter A, B, C, or D)",
       "markScheme": "string",
       "marks": number,
       "commandWord": "string",
       "type": "mcq | short_answer | structured",
-      "hasDiagram": boolean
+      "hasDiagram": boolean,
+      "options": ["string (option A text)", "string (option B text)", "string (option C text)", "string (option D text)"]
     }
   ]
 }`
@@ -61,8 +62,14 @@ Cambridge Command Words:
 function sanitize(q: any): Omit<QuestionItem, 'id'> {
   const fix = (s: string) => (s ?? '').replace(/\\n/g, '\n')
   const stripNum = (s: string) => fix(s).replace(/^(\*{0,2})\s*\d+[.)]\s*\*{0,2}\s*/, '$1').trimStart()
+  let text = stripNum(q.text)
+  if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length > 0 && !/\bA\)/.test(text)) {
+    const letters = ['A', 'B', 'C', 'D']
+    const optLines = q.options.slice(0, 4).map((opt: string, i: number) => `${letters[i]}) ${opt}`).join('\n\n')
+    text = `${text}\n\n${optLines}`
+  }
   return {
-    text: stripNum(q.text),
+    text,
     answer: fix(q.answer),
     markScheme: fix(q.markScheme),
     marks: Number(q.marks) || 1,
@@ -104,7 +111,7 @@ ${config.syllabusContext ? `Syllabus Context: ${config.syllabusContext}` : ''}
 Rules:
 1. Generate EXACTLY ${config.count} questions.
 2. CRITICAL: ALL mathematical expressions, variables, equations, and formulas MUST be wrapped in LaTeX inline delimiters: $x^2$, $3x^2 - 5x + 2 = 0$, $\frac{a}{b}$, $H_2O$. NEVER write math as plain text.
-3. FOR MCQ QUESTIONS: The "text" field MUST include the question followed by exactly 4 text-based options (no graphs or diagrams as options). Format: question text, blank line, "A) option", blank line, "B) option", blank line, "C) option", blank line, "D) option". The "answer" field must be ONLY the letter "A", "B", "C", or "D". If 4 text-based options cannot be written, use short_answer instead.
+3. FOR MCQ QUESTIONS: Set type to "mcq". Put the question stem in "text" (no A/B/C/D options embedded there). Put exactly 4 answer choices as plain strings in the "options" array. The "answer" field must be ONLY the letter "A", "B", "C", or "D". If 4 distinct text-based options cannot be written, use short_answer instead.
 4. Add **Syllabus Reference:** at end of each question text.
 
 Respond with ONLY this JSON structure (no other text):

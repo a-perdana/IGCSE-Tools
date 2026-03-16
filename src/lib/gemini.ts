@@ -148,7 +148,7 @@ Rules:
 2. Each question must have: text (markdown, bold), answer, markScheme, marks (integer), commandWord, type (mcq/short_answer/structured), hasDiagram (boolean).
 3. For diagrams, include SVG inside the 'text' field as \`\`\`svg ... \`\`\` using camelCase attributes.
 4. CRITICAL: ALL mathematical expressions, variables, equations, and formulas MUST be wrapped in LaTeX inline delimiters: $x^2$, $3x^2 - 5x + 2 = 0$, $\frac{a}{b}$, $H_2O$. NEVER write math as plain text.
-5. FOR MCQ QUESTIONS: The "text" field MUST include the question followed by exactly 4 text-based options (no graphs or diagrams as options). Format: question text, then a blank line, then each option on its own line: "A) option" then blank line, "B) option" then blank line, "C) option" then blank line, "D) option". The "answer" field must be ONLY the letter "A", "B", "C", or "D". If 4 text-based options cannot be written, use short_answer instead.
+5. FOR MCQ QUESTIONS: Set type to "mcq". Provide exactly 4 answer choices in the "options" array (plain text, no letter prefix). The "answer" field must be ONLY the letter "A", "B", "C", or "D". If 4 distinct text-based options cannot be written, use short_answer instead.
 6. Add **Syllabus Reference:** at end of each question text.`
 
   const parts: any[] = []
@@ -187,6 +187,7 @@ Rules:
                 commandWord: { type: Type.STRING },
                 type: { type: Type.STRING },
                 hasDiagram: { type: Type.BOOLEAN },
+                options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
               },
               required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram'],
             },
@@ -335,10 +336,17 @@ export async function getStudentFeedback(
   return response.text || "Could not generate feedback."
 }
 
-function sanitizeQuestion(q: Omit<QuestionItem, 'id'>): Omit<QuestionItem, 'id'> {
+function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   const fix = (s: string) => (s ?? '').replace(/\\n/g, '\n')
   const stripNum = (s: string) => fix(s).replace(/^(\*{0,2})\s*\d+[.)]\s*\*{0,2}\s*/, '$1').trimStart()
-  return { ...q, text: stripNum(q.text), answer: fix(q.answer), markScheme: fix(q.markScheme) }
+  let text = stripNum(q.text)
+  // Merge options array into text for MCQ if options are not already embedded
+  if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length > 0 && !/\bA\)/.test(text)) {
+    const letters = ['A', 'B', 'C', 'D']
+    const optLines = q.options.slice(0, 4).map((opt: string, i: number) => `${letters[i]}) ${opt}`).join('\n\n')
+    text = `${text}\n\n${optLines}`
+  }
+  return { ...q, text, answer: fix(q.answer), markScheme: fix(q.markScheme) }
 }
 
 function safeJsonParse(text: string) {
@@ -434,6 +442,7 @@ export async function analyzeFile(
                 commandWord: { type: Type.STRING },
                 type: { type: Type.STRING },
                 hasDiagram: { type: Type.BOOLEAN },
+                options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
               },
               required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram'],
             },
