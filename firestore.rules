@@ -82,7 +82,7 @@ service cloud.firestore {
     }
 
     function isValidQuestion(data) {
-      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'code', 'userId', 'createdAt', 'assessmentId', 'folderId', 'isPublic', 'preparedBy']) &&
+      return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'code', 'userId', 'createdAt', 'assessmentId', 'folderId', 'isPublic', 'preparedBy', 'syllabusObjective', 'difficultyStars']) &&
              data.subject is string && data.subject.size() > 0 &&
              data.topic is string && data.topic.size() > 0 &&
              data.text is string && data.text.size() > 0 && data.text.size() < 10000 &&
@@ -97,7 +97,9 @@ service cloud.firestore {
              (!('assessmentId' in data) || data.assessmentId == null || data.assessmentId is string) &&
              (!('folderId' in data) || data.folderId == null || data.folderId is string) &&
              (!('isPublic' in data) || data.isPublic == null || data.isPublic is bool) &&
-             (!('preparedBy' in data) || data.preparedBy == null || data.preparedBy is string);
+             (!('preparedBy' in data) || data.preparedBy == null || data.preparedBy is string) &&
+             (!('syllabusObjective' in data) || data.syllabusObjective == null || data.syllabusObjective is string) &&
+             (!('difficultyStars' in data) || data.difficultyStars == null || data.difficultyStars is number);
     }
 
     // Update validators skip hasOnlyAllowedFields — existing docs may have fields
