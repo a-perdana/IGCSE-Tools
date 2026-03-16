@@ -1,7 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, GeminiError } from './types'
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+function getAI(apiKey?: string) {
+  return new GoogleGenAI({ apiKey: apiKey || process.env.GEMINI_API_KEY || "" });
+}
 
 const SUBJECT_CODES: Record<string, string> = {
   'Mathematics': 'MAT', 'Biology': 'BIO', 'Physics': 'PHY', 'Chemistry': 'CHM',
@@ -80,7 +82,7 @@ async function withRetry<T>(
       const status = err?.status ?? err?.code
       if (status === 429 && i < maxRetries - 1) {
         onRetry?.(i + 1)
-        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000))
+        await new Promise(r => setTimeout(r, Math.pow(2, i) * 5000))
         continue
       }
       if (status === 503) {
@@ -102,9 +104,10 @@ async function withRetry<T>(
 // -------------------------
 
 export async function generateTest(
-  config: GenerationConfig & { references?: { data: string; mimeType: string }[] },
+  config: GenerationConfig & { references?: { data: string; mimeType: string }[]; apiKey?: string },
   onRetry?: (attempt: number) => void
 ): Promise<QuestionItem[]> {
+  const ai = getAI(config.apiKey)
   const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
 Topic: ${config.topic}
 Difficulty: ${config.difficulty}
@@ -190,8 +193,10 @@ When generating SVG diagrams:
 export async function auditTest(
   subject: string,
   assessment: Assessment,
-  model: string = 'gemini-3.1-pro-preview'
+  model: string = 'gemini-3.1-pro-preview',
+  apiKey?: string
 ): Promise<QuestionItem[]> {
+  const ai = getAI(apiKey)
   const questionsText = assessment.questions
     .map((q, i) => `**Q${i + 1}** [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}`)
     .join('\n\n---\n\n')
@@ -260,8 +265,10 @@ export async function getStudentFeedback(
   subject: string,
   assessment: Assessment,
   studentAnswers: string[],
-  modelName: string = 'gemini-3-flash-preview'
+  modelName: string = 'gemini-3-flash-preview',
+  apiKey?: string
 ): Promise<string> {
+  const ai = getAI(apiKey)
   const questionsText = assessment.questions
     .map((q, i) => `**Q${i + 1}** [${q.marks} marks]\n${q.text}\n\nMark Scheme: ${q.markScheme}`)
     .join('\n\n')
@@ -343,8 +350,10 @@ export async function analyzeFile(
   subject: string,
   count: number = 3,
   model: string = 'gemini-3-flash-preview',
-  references?: { data: string; mimeType: string }[]
+  references?: { data: string; mimeType: string }[],
+  apiKey?: string
 ): Promise<AnalyzeFileResult> {
+  const ai = getAI(apiKey)
   const isPdf = mimeType === "application/pdf"
   const prompt = `Analyze this ${isPdf ? "past paper PDF" : "screenshot"} of a Cambridge IGCSE ${subject} question.
 1. Explain the topic and learning objectives it covers.

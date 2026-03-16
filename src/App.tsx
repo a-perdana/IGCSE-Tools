@@ -9,6 +9,7 @@ import { useNotifications } from './hooks/useNotifications'
 import { useAssessments } from './hooks/useAssessments'
 import { useGeneration } from './hooks/useGeneration'
 import { useResources } from './hooks/useResources'
+import { useApiSettings } from './hooks/useApiSettings'
 import { Sidebar } from './components/Sidebar'
 import { AssessmentView } from './components/AssessmentView'
 import { Library as LibraryView } from './components/Library'
@@ -96,8 +97,9 @@ export default function App() {
   const [showNewAssessmentModal, setShowNewAssessmentModal] = useState(false)
 
   const { notifications, notify, dismiss } = useNotifications()
+  const { apiKey, setApiKey, customModel, setCustomModel } = useApiSettings()
   const library = useAssessments(user, notify)
-  const generation = useGeneration(notify)
+  const generation = useGeneration(notify, apiKey || undefined)
   const resources = useResources(user, notify)
 
   useEffect(() => {
@@ -120,8 +122,9 @@ export default function App() {
   }, [view, selectedFolderId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = useCallback(() => {
-    generation.generate({ ...config, syllabusContext }, resources.knowledgeBase, resources.getBase64)
-  }, [config, syllabusContext, resources.knowledgeBase, resources.getBase64, generation])
+    const effectiveModel = customModel.trim() || config.model
+    generation.generate({ ...config, model: effectiveModel, syllabusContext }, resources.knowledgeBase, resources.getBase64)
+  }, [config, customModel, syllabusContext, resources.knowledgeBase, resources.getBase64, generation])
 
   // Smart save: update if already in Firestore, else create new
   const handleSave = useCallback(async () => {
@@ -250,6 +253,10 @@ export default function App() {
         onStudentModeToggle={() => setStudentMode(s => !s)}
         syllabusContext={syllabusContext}
         onSyllabusContextChange={setSyllabusContext}
+        apiKey={apiKey}
+        onApiKeyChange={setApiKey}
+        customModel={customModel}
+        onCustomModelChange={setCustomModel}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">

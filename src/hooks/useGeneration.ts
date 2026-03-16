@@ -5,7 +5,7 @@ import { generateTest, auditTest, getStudentFeedback as fbFeedback, analyzeFile 
 import { Timestamp } from 'firebase/firestore'
 import { auth } from '../lib/firebase'
 
-export function useGeneration(notify: NotifyFn) {
+export function useGeneration(notify: NotifyFn, apiKey?: string) {
   const [generatedAssessment, setGeneratedAssessment] = useState<Assessment | null>(null)
   const [analysisText, setAnalysisText] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -28,12 +28,13 @@ export function useGeneration(notify: NotifyFn) {
           mimeType: r.mimeType,
         }))
       )
-      const questions = await generateTest({ ...config, references }, (attempt) => {
+      const questions = await generateTest({ ...config, references, apiKey }, (attempt) => {
         setRetryCount(attempt)
         notify(`Rate limit, retrying (${attempt}/3)...`, 'info')
       })
       setIsAuditing(true)
       notify('Auditing assessment quality...', 'info')
+      await new Promise(r => setTimeout(r, 3000))
       const draft: Assessment = {
         id: crypto.randomUUID(),
         subject: config.subject,
@@ -43,7 +44,7 @@ export function useGeneration(notify: NotifyFn) {
         userId: auth.currentUser?.uid ?? '',
         createdAt: Timestamp.now(),
       }
-      const auditedQuestions = await auditTest(config.subject, draft, config.model)
+      const auditedQuestions = await auditTest(config.subject, draft, config.model, apiKey)
       setGeneratedAssessment({ ...draft, questions: auditedQuestions })
       notify('Assessment generated successfully!', 'success')
     } catch (e: any) {
@@ -79,7 +80,8 @@ export function useGeneration(notify: NotifyFn) {
         subject,
         3,
         model,
-        references
+        references,
+        apiKey
       )
       setAnalysisText(result.analysis)
       setGeneratedAssessment({
@@ -109,7 +111,8 @@ export function useGeneration(notify: NotifyFn) {
         generatedAssessment.subject,
         generatedAssessment,
         studentAnswers,
-        model
+        model,
+        apiKey
       )
       notify('Feedback ready', 'success')
       return fb

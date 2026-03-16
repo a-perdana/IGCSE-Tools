@@ -1,5 +1,5 @@
-import React, { useRef } from 'react'
-import { BrainCircuit, Calculator, Loader2, Database, Trash2, Plus } from 'lucide-react'
+import React, { useRef, useState } from 'react'
+import { BrainCircuit, Calculator, Loader2, Database, Trash2, Plus, KeyRound, Eye, EyeOff, ChevronDown, ChevronRight } from 'lucide-react'
 import type { GenerationConfig, Resource } from '../../lib/types'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from '../../lib/gemini'
 import { estimateCostIDR, MODEL_PRICING } from '../../lib/pricing'
@@ -24,14 +24,21 @@ interface Props {
   onStudentModeToggle: () => void
   syllabusContext: string
   onSyllabusContextChange: (v: string) => void
+  apiKey: string
+  onApiKeyChange: (v: string) => void
+  customModel: string
+  onCustomModelChange: (v: string) => void
 }
 
 export function Sidebar({
   config, onConfigChange, onGenerate, isGenerating, isAuditing, retryCount,
   resources, knowledgeBase, onUploadResource, onAddToKB, onRemoveFromKB, onDeleteResource,
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
+  apiKey, onApiKeyChange, customModel, onCustomModelChange,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const inputTokens = Math.round(1500 + (syllabusContext.length / 4))
   const outputTokens = config.count * 600
@@ -218,6 +225,57 @@ export function Sidebar({
               </div>
             )
           })}
+        </div>
+        {/* API Settings */}
+        <div className="border-t border-stone-200 pt-3">
+          <button
+            onClick={() => setSettingsOpen(o => !o)}
+            className="flex items-center justify-between w-full text-xs font-medium text-stone-600 mb-2"
+          >
+            <span className="flex items-center gap-1">
+              <KeyRound className="w-3.5 h-3.5" /> API Settings
+            </span>
+            {settingsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+          {settingsOpen && (
+            <div className="flex flex-col gap-2">
+              <div>
+                <label className="text-xs text-stone-500 mb-1 block">Gemini API Key</label>
+                <div className="flex gap-1">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={e => onApiKeyChange(e.target.value)}
+                    placeholder="AIza..."
+                    className="flex-1 text-xs border border-stone-300 rounded-lg px-2 py-1.5 font-mono min-w-0"
+                  />
+                  <button
+                    onClick={() => setShowApiKey(s => !s)}
+                    className="p-1.5 text-stone-400 hover:text-stone-600 border border-stone-300 rounded-lg"
+                    title={showApiKey ? 'Hide' : 'Show'}
+                  >
+                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                {apiKey && (
+                  <p className="text-xs text-emerald-600 mt-0.5">Using your API key</p>
+                )}
+                {!apiKey && (
+                  <p className="text-xs text-stone-400 mt-0.5">Using shared key (may hit rate limits)</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-stone-500 mb-1 block">Custom Model ID <span className="text-stone-400">(overrides dropdown)</span></label>
+                <input
+                  type="text"
+                  value={customModel}
+                  onChange={e => onCustomModelChange(e.target.value)}
+                  placeholder="e.g. gemini-2.0-flash"
+                  className="w-full text-xs border border-stone-300 rounded-lg px-2 py-1.5 font-mono"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
