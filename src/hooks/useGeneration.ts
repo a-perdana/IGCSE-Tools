@@ -1,17 +1,18 @@
 import { useState, useCallback } from 'react'
-import type { Assessment, QuestionItem, AnalyzeFileResult, GenerationConfig, GeminiError, Resource } from '../lib/types'
+import type { Assessment, QuestionItem, AnalyzeFileResult, GenerationConfig, AIError, Resource } from '../lib/types'
+import type { AIProvider } from '../lib/providers'
 import type { NotifyFn } from './useNotifications'
-import { generateTest, auditTest, getStudentFeedback as fbFeedback, analyzeFile as fbAnalyze } from '../lib/gemini'
+import { generateTest, auditTest, getStudentFeedback as aiFeedback, analyzeFile as aiAnalyze } from '../lib/ai'
 import { Timestamp } from 'firebase/firestore'
 import { auth } from '../lib/firebase'
 
-export function useGeneration(notify: NotifyFn, apiKey?: string) {
+export function useGeneration(notify: NotifyFn, provider: AIProvider = 'gemini', apiKey?: string) {
   const [generatedAssessment, setGeneratedAssessment] = useState<Assessment | null>(null)
   const [analysisText, setAnalysisText] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isAuditing, setIsAuditing] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
-  const [error, setError] = useState<GeminiError | null>(null)
+  const [error, setError] = useState<AIError | null>(null)
 
   const generate = useCallback(async (
     config: GenerationConfig,
@@ -30,7 +31,7 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
       )
       const questions = await generateTest({ ...config, references, apiKey }, (attempt) => {
         setRetryCount(attempt)
-        notify(`Rate limit, retrying (${attempt}/3)...`, 'info')
+        notify(`Rate limit hit, retrying (${attempt}/3)...`, 'info')
       })
       setIsAuditing(true)
       notify('Auditing assessment quality...', 'info')
@@ -44,19 +45,18 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
         userId: auth.currentUser?.uid ?? '',
         createdAt: Timestamp.now(),
       }
-      const auditedQuestions = await auditTest(config.subject, draft, config.model, apiKey)
+      const auditedQuestions = await auditTest(config.subject, draft, config.model, config.provider, apiKey)
       setGeneratedAssessment({ ...draft, questions: auditedQuestions })
       notify('Assessment generated successfully!', 'success')
     } catch (e: any) {
-      const ge = e as GeminiError
-      const msg = ge.message ?? 'Failed to generate assessment'
-      setError(ge)
-      notify(msg, 'error')
+      const ae = e as AIError
+      setError(ae)
+      notify(ae.message ?? 'Failed to generate assessment', 'error')
     } finally {
       setIsGenerating(false)
       setIsAuditing(false)
     }
-  }, [notify])
+  }, [notify, provider, apiKey])
 
   const analyzeFile = useCallback(async (
     file: { base64: string; mimeType: string },
@@ -74,12 +74,13 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
           mimeType: r.mimeType,
         }))
       )
-      const result: AnalyzeFileResult = await fbAnalyze(
+      const result: AnalyzeFileResult = await aiAnalyze(
         file.base64,
         file.mimeType,
         subject,
         3,
         model,
+        provider,
         references,
         apiKey
       )
@@ -95,11 +96,13 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
       })
       notify('File analyzed successfully!', 'success')
     } catch (e: any) {
-      notify((e as GeminiError).message ?? 'Failed to analyze file', 'error')
+      const ae = e as AIError
+      setError(ae)
+      notify(ae.message ?? 'Failed to analyze file', 'error')
     } finally {
       setIsGenerating(false)
     }
-  }, [notify])
+  }, [notify, provider, apiKey])
 
   const getStudentFeedback = useCallback(async (
     studentAnswers: string[],
@@ -107,20 +110,21 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
   ) => {
     if (!generatedAssessment) return
     try {
-      const fb = await fbFeedback(
+      const fb = await aiFeedback(
         generatedAssessment.subject,
         generatedAssessment,
         studentAnswers,
         model,
+        provider,
         apiKey
       )
       notify('Feedback ready', 'success')
       return fb
-    } catch (e) {
+    } catch {
       notify('Failed to get feedback', 'error')
       return null
     }
-  }, [generatedAssessment, notify])
+  }, [generatedAssessment, notify, provider, apiKey])
 
   return {
     generatedAssessment,

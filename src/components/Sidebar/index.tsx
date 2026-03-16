@@ -1,11 +1,19 @@
-import React, { useRef, useState } from 'react'
-import { BrainCircuit, Calculator, Loader2, Database, Trash2, Plus, KeyRound, Eye, EyeOff, ChevronDown, ChevronRight } from 'lucide-react'
+import React, { useRef, useState, useEffect } from 'react'
+import {
+  BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
+  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink,
+} from 'lucide-react'
 import type { GenerationConfig, Resource } from '../../lib/types'
-import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from '../../lib/gemini'
+import type { AIProvider } from '../../lib/providers'
+import {
+  IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS,
+} from '../../lib/gemini'
 import { estimateCostIDR, MODEL_PRICING } from '../../lib/pricing'
+import {
+  PROVIDER_LABELS, PROVIDER_MODELS, API_KEY_PLACEHOLDERS, API_KEY_URLS,
+} from '../../lib/providers'
 
 const QUESTION_TYPES = ['Mixed', 'Multiple Choice', 'Short Answer', 'Structured']
-const MODELS = Object.keys(MODEL_PRICING)
 
 interface Props {
   config: GenerationConfig
@@ -24,8 +32,11 @@ interface Props {
   onStudentModeToggle: () => void
   syllabusContext: string
   onSyllabusContextChange: (v: string) => void
-  apiKey: string
-  onApiKeyChange: (v: string) => void
+  // API settings
+  provider: AIProvider
+  onProviderChange: (p: AIProvider) => void
+  apiKeys: Record<AIProvider, string>
+  onApiKeyChange: (p: AIProvider, key: string) => void
   customModel: string
   onCustomModelChange: (v: string) => void
   apiSettingsOpen?: boolean
@@ -36,20 +47,29 @@ export function Sidebar({
   config, onConfigChange, onGenerate, isGenerating, isAuditing, retryCount,
   resources, knowledgeBase, onUploadResource, onAddToKB, onRemoveFromKB, onDeleteResource,
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
-  apiKey, onApiKeyChange, customModel, onCustomModelChange,
+  provider, onProviderChange, apiKeys, onApiKeyChange, customModel, onCustomModelChange,
   apiSettingsOpen, onApiSettingsOpenChange,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (apiSettingsOpen) setSettingsOpen(true)
   }, [apiSettingsOpen])
 
+  const toggleSettings = () => {
+    const next = !settingsOpen
+    setSettingsOpen(next)
+    onApiSettingsOpenChange?.(next)
+  }
+
+  const models = PROVIDER_MODELS[provider] ?? []
+  const effectiveModel = customModel.trim() || config.model
   const inputTokens = Math.round(1500 + (syllabusContext.length / 4))
   const outputTokens = config.count * 600
-  const costIDR = estimateCostIDR(config.model, inputTokens, outputTokens)
+  const costIDR = estimateCostIDR(effectiveModel, inputTokens, outputTokens)
+  const currentApiKey = apiKeys[provider] ?? ''
 
   return (
     <div className="w-80 border-r border-stone-200 bg-stone-50 flex flex-col h-full overflow-y-auto">
@@ -61,6 +81,20 @@ export function Sidebar({
       </div>
 
       <div className="p-4 flex flex-col gap-3 flex-1">
+        {/* Provider */}
+        <div>
+          <label className="text-xs font-medium text-stone-600 mb-1 block">AI Provider</label>
+          <select
+            value={provider}
+            onChange={e => onProviderChange(e.target.value as AIProvider)}
+            className="w-full text-sm border border-stone-300 rounded-lg px-2 py-1.5 bg-white"
+          >
+            {(Object.keys(PROVIDER_LABELS) as AIProvider[]).map(p => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Subject */}
         <div>
           <label className="text-xs font-medium text-stone-600 mb-1 block">Subject</label>
@@ -109,7 +143,7 @@ export function Sidebar({
           />
         </div>
 
-        {/* Type */}
+        {/* Question Type */}
         <div>
           <label className="text-xs font-medium text-stone-600 mb-1 block">Question Type</label>
           <select
@@ -123,14 +157,22 @@ export function Sidebar({
 
         {/* Model */}
         <div>
-          <label className="text-xs font-medium text-stone-600 mb-1 block">AI Model</label>
+          <label className="text-xs font-medium text-stone-600 mb-1 block">Model</label>
           <select
             value={config.model}
             onChange={e => onConfigChange({ model: e.target.value })}
             className="w-full text-sm border border-stone-300 rounded-lg px-2 py-1.5 bg-white"
+            disabled={!!customModel.trim()}
           >
-            {MODELS.map(m => <option key={m}>{m}</option>)}
+            {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
+          <input
+            type="text"
+            value={customModel}
+            onChange={e => onCustomModelChange(e.target.value)}
+            placeholder="Custom model ID (overrides dropdown)"
+            className="w-full text-xs border border-stone-300 rounded-lg px-2 py-1.5 mt-1 font-mono"
+          />
         </div>
 
         {/* Calculator */}
@@ -161,6 +203,7 @@ export function Sidebar({
         {/* Cost estimate */}
         <div className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1.5">
           Estimated cost: ~Rp {costIDR.toLocaleString('id-ID')}
+          {!MODEL_PRICING_HAS(effectiveModel) && <span className="text-stone-400"> (estimate)</span>}
         </div>
 
         {/* Student mode */}
@@ -178,7 +221,7 @@ export function Sidebar({
           {isGenerating ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              {isAuditing ? 'Auditing...' : retryCount > 0 ? `Retry ${retryCount}/3...` : 'Generating...'}
+              {isAuditing ? 'Auditing...' : retryCount > 0 ? `Retrying ${retryCount}/3...` : 'Generating...'}
             </>
           ) : (
             <>
@@ -233,58 +276,65 @@ export function Sidebar({
             )
           })}
         </div>
+
         {/* API Settings */}
         <div className="border-t border-stone-200 pt-3">
           <button
-            onClick={() => { setSettingsOpen(o => { const next = !o; onApiSettingsOpenChange?.(next); return next }) }}
+            onClick={toggleSettings}
             className="flex items-center justify-between w-full text-xs font-medium text-stone-600 mb-2"
           >
             <span className="flex items-center gap-1">
               <KeyRound className="w-3.5 h-3.5" /> API Settings
+              {!currentApiKey && <span className="ml-1 text-amber-500 font-normal">(shared key)</span>}
             </span>
             {settingsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
+
           {settingsOpen && (
-            <div className="flex flex-col gap-2">
-              <div>
-                <label className="text-xs text-stone-500 mb-1 block">Gemini API Key</label>
-                <div className="flex gap-1">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={e => onApiKeyChange(e.target.value)}
-                    placeholder="AIza..."
-                    className="flex-1 text-xs border border-stone-300 rounded-lg px-2 py-1.5 font-mono min-w-0"
-                  />
-                  <button
-                    onClick={() => setShowApiKey(s => !s)}
-                    className="p-1.5 text-stone-400 hover:text-stone-600 border border-stone-300 rounded-lg"
-                    title={showApiKey ? 'Hide' : 'Show'}
-                  >
-                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
+            <div className="flex flex-col gap-3">
+              {(Object.keys(PROVIDER_LABELS) as AIProvider[]).map(p => (
+                <div key={p}>
+                  <label className="text-xs text-stone-500 mb-1 flex items-center justify-between">
+                    <span>{PROVIDER_LABELS[p]} API Key</span>
+                    <a
+                      href={API_KEY_URLS[p]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"
+                    >
+                      Get key <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </label>
+                  <div className="flex gap-1">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={apiKeys[p] ?? ''}
+                      onChange={e => onApiKeyChange(p, e.target.value)}
+                      placeholder={API_KEY_PLACEHOLDERS[p]}
+                      className="flex-1 text-xs border border-stone-300 rounded-lg px-2 py-1.5 font-mono min-w-0"
+                    />
+                    {p === provider && (
+                      <button
+                        onClick={() => setShowApiKey(s => !s)}
+                        className="p-1.5 text-stone-400 hover:text-stone-600 border border-stone-300 rounded-lg shrink-0"
+                      >
+                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                  {apiKeys[p] && (
+                    <p className="text-xs text-emerald-600 mt-0.5">Using your {PROVIDER_LABELS[p]} key</p>
+                  )}
                 </div>
-                {apiKey && (
-                  <p className="text-xs text-emerald-600 mt-0.5">Using your API key</p>
-                )}
-                {!apiKey && (
-                  <p className="text-xs text-stone-400 mt-0.5">Using shared key (may hit rate limits)</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-stone-500 mb-1 block">Custom Model ID <span className="text-stone-400">(overrides dropdown)</span></label>
-                <input
-                  type="text"
-                  value={customModel}
-                  onChange={e => onCustomModelChange(e.target.value)}
-                  placeholder="e.g. gemini-2.0-flash"
-                  className="w-full text-xs border border-stone-300 rounded-lg px-2 py-1.5 font-mono"
-                />
-              </div>
+              ))}
             </div>
           )}
         </div>
       </div>
     </div>
   )
+}
+
+function MODEL_PRICING_HAS(modelId: string): boolean {
+  return modelId in MODEL_PRICING
 }

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus } from 'lucide-react'
-import type { GeminiError } from './lib/types'
+import type { AIError } from './lib/types'
 import { auth, signInWithGoogle, handleRedirectResult, logout } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
+import { DEFAULT_MODELS } from './lib/providers'
 import { useNotifications } from './hooks/useNotifications'
 import { useAssessments } from './hooks/useAssessments'
 import { useGeneration } from './hooks/useGeneration'
@@ -18,18 +19,19 @@ import { Notifications } from './components/Notifications'
 import { copyToClipboard } from './lib/clipboard'
 
 const DEFAULT_CONFIG: GenerationConfig = {
+  provider: 'gemini',
   subject: 'Mathematics',
   topic: 'Mixed Topics',
   difficulty: 'Balanced',
   count: 10,
   type: 'Mixed',
   calculator: true,
-  model: 'gemini-3-flash-preview',
+  model: DEFAULT_MODELS['gemini'],
   syllabusContext: '',
 }
 
 function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
-  error: GeminiError
+  error: AIError
   onDismiss: () => void
   onRetry: () => void
   onOpenApiSettings: () => void
@@ -43,7 +45,7 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-semibold text-amber-800">
-            {isRateLimit ? 'API İstek Limiti Aşıldı' : isOverloaded ? 'Model Şu An Meşgul' : 'Bir Hata Oluştu'}
+            {isRateLimit ? 'API Rate Limit Reached' : isOverloaded ? 'Model Overloaded' : 'Generation Failed'}
           </p>
           <button onClick={onDismiss} className="text-amber-400 hover:text-amber-600 shrink-0">
             <X className="w-3.5 h-3.5" />
@@ -51,9 +53,9 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
         </div>
         <p className="text-xs text-amber-700 mt-1">
           {isRateLimit
-            ? 'Ortak API key\'in dakikalık/günlük limiti doldu. Bunu çözmek için:'
+            ? 'The shared API key has hit its per-minute or daily limit. To fix this:'
             : isOverloaded
-            ? 'Seçili model şu an aşırı yüklenmiş. Bunu çözmek için:'
+            ? 'The selected model is currently overloaded. To fix this:'
             : error.message}
         </p>
         {(isRateLimit || isOverloaded) && (
@@ -66,9 +68,9 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
                     onClick={onOpenApiSettings}
                     className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-amber-900"
                   >
-                    <KeyRound className="w-3 h-3" /> Kendi Gemini API key'ini ekle
+                    <KeyRound className="w-3 h-3" /> Add your own API key
                   </button>
-                  {' '}— Google AI Studio'dan ücretsiz alabilirsin.
+                  {' '}— available free from your provider's console.
                 </span>
               </li>
             )}
@@ -76,22 +78,22 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
               <li className="flex items-start gap-1.5">
                 <span className="font-bold shrink-0">1.</span>
                 <span>
-                  Sidebar'daki{' '}
+                  Open{' '}
                   <button onClick={onOpenApiSettings} className="font-semibold underline underline-offset-2 hover:text-amber-900">
                     API Settings
                   </button>
-                  'ten daha basit bir model seç (örn. <code className="bg-amber-100 px-0.5 rounded">gemini-2.0-flash</code>).
+                  {' '}and switch to a lighter model (e.g. <code className="bg-amber-100 px-0.5 rounded">gemini-2.0-flash</code> or <code className="bg-amber-100 px-0.5 rounded">gpt-4o-mini</code>).
                 </span>
               </li>
             )}
             <li className="flex items-start gap-1.5">
-              <span className="font-bold shrink-0">{isRateLimit ? '2.' : '2.'}</span>
-              <span>Birkaç dakika bekleyip tekrar dene.</span>
+              <span className="font-bold shrink-0">2.</span>
+              <span>Wait a few minutes, then try again.</span>
             </li>
             {isRateLimit && (
               <li className="flex items-start gap-1.5">
                 <span className="font-bold shrink-0">3.</span>
-                <span>Sidebar'dan soru sayısını azalt (şu an çok fazlaysa).</span>
+                <span>Reduce the number of questions in the sidebar.</span>
               </li>
             )}
           </ol>
@@ -101,13 +103,13 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
             onClick={onRetry}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
           >
-            <RefreshCw className="w-3 h-3" /> Tekrar Dene
+            <RefreshCw className="w-3 h-3" /> Retry
           </button>
           <button
             onClick={onDismiss}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-50"
           >
-            <Minus className="w-3 h-3" /> Kapat
+            <Minus className="w-3 h-3" /> Dismiss
           </button>
         </div>
       </div>
@@ -186,9 +188,9 @@ export default function App() {
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
 
   const { notifications, notify, dismiss } = useNotifications()
-  const { apiKey, setApiKey, customModel, setCustomModel } = useApiSettings()
+  const { provider, setProvider, apiKeys, setApiKey, currentApiKey, customModel, setCustomModel, defaultModel } = useApiSettings()
   const library = useAssessments(user, notify)
-  const generation = useGeneration(notify, apiKey || undefined)
+  const generation = useGeneration(notify, provider, currentApiKey || undefined)
   const resources = useResources(user, notify)
 
   useEffect(() => {
@@ -212,8 +214,8 @@ export default function App() {
 
   const handleGenerate = useCallback(() => {
     const effectiveModel = customModel.trim() || config.model
-    generation.generate({ ...config, model: effectiveModel, syllabusContext }, resources.knowledgeBase, resources.getBase64)
-  }, [config, customModel, syllabusContext, resources.knowledgeBase, resources.getBase64, generation])
+    generation.generate({ ...config, provider, model: effectiveModel, syllabusContext }, resources.knowledgeBase, resources.getBase64)
+  }, [config, provider, customModel, syllabusContext, resources.knowledgeBase, resources.getBase64, generation])
 
   // Smart save: update if already in Firestore, else create new
   const handleSave = useCallback(async () => {
@@ -342,7 +344,12 @@ export default function App() {
         onStudentModeToggle={() => setStudentMode(s => !s)}
         syllabusContext={syllabusContext}
         onSyllabusContextChange={setSyllabusContext}
-        apiKey={apiKey}
+        provider={provider}
+        onProviderChange={p => {
+          setProvider(p)
+          setConfig(c => ({ ...c, provider: p, model: DEFAULT_MODELS[p] }))
+        }}
+        apiKeys={apiKeys}
         onApiKeyChange={setApiKey}
         customModel={customModel}
         onCustomModelChange={setCustomModel}

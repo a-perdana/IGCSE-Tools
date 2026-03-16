@@ -1,13 +1,16 @@
 import { Timestamp } from 'firebase/firestore'
+import type { AIProvider } from './providers'
+
+export type { AIProvider }
 
 export interface QuestionItem {
   id: string
-  code?: string          // e.g. BIO-6.1-A3F9
-  text: string           // markdown — soru metni
-  answer: string         // markdown — cevap
-  markScheme: string     // markdown — puan şeması
+  code?: string
+  text: string
+  answer: string
+  markScheme: string
   marks: number
-  commandWord: string    // "Calculate", "Explain", vs.
+  commandWord: string
   type: 'mcq' | 'short_answer' | 'structured'
   hasDiagram: boolean
 }
@@ -53,6 +56,7 @@ export interface Resource {
 }
 
 export interface GenerationConfig {
+  provider: AIProvider
   subject: string
   topic: string
   difficulty: string
@@ -68,11 +72,14 @@ export interface AnalyzeFileResult {
   questions: QuestionItem[]
 }
 
-export interface GeminiError {
+export interface AIError {
   type: 'rate_limit' | 'model_overloaded' | 'invalid_response' | 'network' | 'unknown'
   retryable: boolean
   message: string
 }
+
+/** @deprecated use AIError */
+export type GeminiError = AIError
 
 export interface Notification {
   id: string

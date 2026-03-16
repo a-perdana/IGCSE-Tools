@@ -70,7 +70,7 @@ export const CAMBRIDGE_COMMAND_WORDS = {
 
 // ---- Error handling ----
 
-async function withRetry<T>(
+export async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries = 3,
   onRetry?: (attempt: number) => void
@@ -89,7 +89,7 @@ async function withRetry<T>(
         throw {
           type: 'model_overloaded',
           retryable: false,
-          message: 'Model şu an meşgul. Flash modele geçmeyi deneyin.',
+          message: 'Model is currently overloaded. Try switching to a Flash model.',
         } satisfies GeminiError
       }
       throw err
@@ -98,7 +98,7 @@ async function withRetry<T>(
   throw {
     type: 'rate_limit',
     retryable: false,
-    message: 'Rate limit aşıldı. Birkaç dakika bekleyip tekrar deneyin.',
+    message: 'Rate limit exceeded. Please wait a few minutes and try again.',
   } satisfies GeminiError
 }
 // -------------------------
