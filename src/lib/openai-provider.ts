@@ -1,6 +1,6 @@
 import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, AIError } from './types'
 import type { Reference } from './ai'
-import { withRetry } from './gemini'
+import { withRetry, DIFFICULTY_GUIDANCE, PAST_PAPER_FOCUS } from './gemini'
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
@@ -94,12 +94,13 @@ function generateCode(subject: string): string {
   return `${subj}-?-${shortId}`
 }
 
-function buildOpenAIReferenceContext(references: Reference[]): string {
+function buildOpenAIReferenceContext(references: Reference[], difficulty?: string): string {
   const pastPapers = references.filter(r => r.resourceType === 'past_paper')
   const syllabuses = references.filter(r => r.resourceType === 'syllabus')
   let context = ''
   if (pastPapers.length > 0) {
-    context += `\nIMPORTANT: You have been provided ${pastPapers.length} authentic Cambridge IGCSE past paper(s) as image references. Match their exact question style, difficulty, command words, and mark allocation.\n`
+    const focusInstruction = difficulty ? (PAST_PAPER_FOCUS[difficulty] ?? '') : ''
+    context += `\nIMPORTANT: You have been provided ${pastPapers.length} authentic Cambridge IGCSE past paper(s) as image references. Match their exact question style, command words, and mark allocation.\n${focusInstruction}\n`
   }
   if (syllabuses.length > 0) {
     const cached = syllabuses.filter(r => r.syllabusText)
@@ -119,11 +120,11 @@ export async function generateTest(
 ): Promise<QuestionItem[]> {
   const key = config.apiKey ?? ''
   const refContext = config.references && config.references.length > 0
-    ? buildOpenAIReferenceContext(config.references)
+    ? buildOpenAIReferenceContext(config.references, config.difficulty)
     : ''
   const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
 Topic: ${config.topic}
-Difficulty: ${config.difficulty}
+${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 Number of Questions: ${config.count}
 Question Type: ${config.type}
 Calculator: ${config.calculator ? 'Allowed' : 'Not Allowed'}
@@ -152,10 +153,61 @@ Respond with JSON matching this schema: ${QUESTION_SCHEMA}`
   )
 
   const parsed = JSON.parse(raw) as { questions: any[] }
-  return (parsed.questions ?? []).map(q => ({
+  let questions: QuestionItem[] = (parsed.questions ?? []).map(q => ({
     ...sanitize(q),
     id: crypto.randomUUID(),
     code: generateCode(config.subject),
+  }))
+
+  if (config.difficulty === 'Challenging' && questions.length > 0) {
+    questions = await critiqueForDifficulty(questions, config.subject, config.model, key, onRetry)
+  }
+
+  return questions
+}
+
+async function critiqueForDifficulty(
+  questions: QuestionItem[],
+  subject: string,
+  model: string,
+  apiKey: string,
+  onRetry?: (attempt: number) => void,
+): Promise<QuestionItem[]> {
+  const questionsText = questions
+    .map((q, i) => `Q${i + 1} [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}`)
+    .join('\n\n---\n\n')
+
+  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a difficulty audit for ${subject}.
+
+REQUIRED DIFFICULTY: Challenging
+- Target: Only 10–20% of students answer fully correctly
+- Must use higher-order thinking: Evaluate, Deduce, Predict, Suggest (NOT State/Name/Define)
+- Must require 3+ cognitive steps or multi-stage synthesis
+- Must place content in UNFAMILIAR contexts
+
+QUESTIONS TO AUDIT:
+${questionsText}
+
+TASK:
+1. Score each question 1–10 for difficulty (1 = trivial recall, 10 = A* discriminator)
+2. Any question scoring below 7 MUST be rewritten to reach 7+
+3. When rewriting: use unfamiliar context, require more synthesis steps, upgrade command word
+4. Keep the same syllabus topic and mark value
+5. Return ALL questions (revised or unchanged) as JSON matching: ${QUESTION_SCHEMA}`
+
+  const systemPrompt = `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions are genuinely challenging — at the A* discrimination level. Be strict: if a question can be answered from memory, rewrite it.
+ALWAYS respond with ONLY valid JSON — no markdown fences, no extra text outside the JSON object.`
+
+  const raw = await withRetry(() =>
+    openaiChat([{ role: 'user', content: prompt }], model, apiKey, systemPrompt),
+    3, onRetry
+  )
+
+  const parsed = JSON.parse(raw) as { questions: any[] }
+  return (parsed.questions ?? []).map((q, i) => ({
+    ...sanitize(q),
+    id: questions[i]?.id ?? crypto.randomUUID(),
+    code: questions[i]?.code ?? generateCode(subject),
   }))
 }
 

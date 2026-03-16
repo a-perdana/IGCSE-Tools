@@ -1,6 +1,6 @@
 import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig } from './types'
 import type { Reference } from './ai'
-import { withRetry } from './gemini'
+import { withRetry, DIFFICULTY_GUIDANCE, PAST_PAPER_FOCUS } from './gemini'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 
@@ -96,14 +96,15 @@ function safeParseJson(text: string): any {
   }
 }
 
-function buildAnthropicReferenceParts(references: Reference[]): any[] {
+function buildAnthropicReferenceParts(references: Reference[], difficulty?: string): any[] {
   const parts: any[] = []
   const pastPapers = references.filter(r => r.resourceType === 'past_paper')
   const syllabuses = references.filter(r => r.resourceType === 'syllabus')
   const others = references.filter(r => !r.resourceType || r.resourceType === 'other')
 
   if (pastPapers.length > 0) {
-    parts.push({ type: 'text', text: `REFERENCE PAST PAPERS (${pastPapers.length} document${pastPapers.length > 1 ? 's' : ''}): The following are authentic Cambridge IGCSE past papers. Study them carefully and replicate their exact question style, phrasing, difficulty calibration, command word usage, and mark allocation patterns. Your generated questions MUST feel indistinguishable from these official papers.` })
+    const focusInstruction = difficulty ? (PAST_PAPER_FOCUS[difficulty] ?? '') : ''
+    parts.push({ type: 'text', text: `REFERENCE PAST PAPERS (${pastPapers.length} document${pastPapers.length > 1 ? 's' : ''}): The following are authentic Cambridge IGCSE past papers. Study them carefully and replicate their exact question style, phrasing, command word usage, and mark allocation patterns. Your generated questions MUST feel indistinguishable from these official papers.\n\n${focusInstruction}` })
     pastPapers.forEach(ref => {
       const isImage = ref.mimeType.startsWith('image/')
       const isPdf = ref.mimeType === 'application/pdf'
@@ -141,7 +142,7 @@ export async function generateTest(
   const key = config.apiKey ?? ''
   const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
 Topic: ${config.topic}
-Difficulty: ${config.difficulty}
+${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 Number of Questions: ${config.count}
 Question Type: ${config.type}
 Calculator: ${config.calculator ? 'Allowed' : 'Not Allowed'}
@@ -157,7 +158,7 @@ Respond with ONLY this JSON structure (no other text):
 ${QUESTION_SCHEMA}`
 
   const content: any[] = config.references && config.references.length > 0
-    ? buildAnthropicReferenceParts(config.references)
+    ? buildAnthropicReferenceParts(config.references, config.difficulty)
     : []
 
   content.push({ type: 'text', text: prompt })
@@ -168,10 +169,64 @@ ${QUESTION_SCHEMA}`
   )
 
   const parsed = safeParseJson(raw)
-  return (parsed.questions ?? []).map((q: any) => ({
+  let questions: QuestionItem[] = (parsed.questions ?? []).map((q: any) => ({
     ...sanitize(q),
     id: crypto.randomUUID(),
     code: generateCode(config.subject),
+  }))
+
+  if (config.difficulty === 'Challenging' && questions.length > 0) {
+    questions = await critiqueForDifficulty(questions, config.subject, config.model, key, onRetry)
+  }
+
+  return questions
+}
+
+async function critiqueForDifficulty(
+  questions: QuestionItem[],
+  subject: string,
+  model: string,
+  apiKey: string,
+  onRetry?: (attempt: number) => void,
+): Promise<QuestionItem[]> {
+  const questionsText = questions
+    .map((q, i) => `Q${i + 1} [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}`)
+    .join('\n\n---\n\n')
+
+  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a difficulty audit for ${subject}.
+
+REQUIRED DIFFICULTY: Challenging
+- Target: Only 10–20% of students answer fully correctly
+- Must use higher-order thinking: Evaluate, Deduce, Predict, Suggest (NOT State/Name/Define)
+- Must require 3+ cognitive steps or multi-stage synthesis
+- Must place content in UNFAMILIAR contexts
+
+QUESTIONS TO AUDIT:
+${questionsText}
+
+TASK:
+1. Score each question 1–10 for difficulty (1 = trivial recall, 10 = A* discriminator)
+2. Any question scoring below 7 MUST be rewritten to reach 7+
+3. When rewriting: use unfamiliar context, require more synthesis steps, upgrade command word
+4. Keep the same syllabus topic and mark value
+5. Return ALL questions (revised or unchanged) as JSON
+
+Respond with ONLY this JSON structure (no other text):
+${QUESTION_SCHEMA}`
+
+  const systemPrompt = `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions are genuinely challenging — at the A* discrimination level. Be strict: if a question can be answered from memory, rewrite it.
+ALWAYS respond with ONLY valid JSON — no markdown fences, no extra text outside the JSON object.`
+
+  const raw = await withRetry(() =>
+    anthropicMessages([{ role: 'user', content: prompt }], systemPrompt, model, apiKey),
+    3, onRetry
+  )
+
+  const parsed = safeParseJson(raw)
+  return (parsed.questions ?? []).map((q: any, i: number) => ({
+    ...sanitize(q),
+    id: questions[i]?.id ?? crypto.randomUUID(),
+    code: questions[i]?.code ?? generateCode(subject),
   }))
 }
 

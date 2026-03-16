@@ -58,6 +58,42 @@ export const IGCSE_TOPICS: Record<string, string[]> = {
 
 export const DIFFICULTY_LEVELS = ["Easy", "Medium", "Challenging", "Balanced"];
 
+export const DIFFICULTY_GUIDANCE: Record<string, string> = {
+  Easy: `DIFFICULTY: Easy
+- Target: 80–90% of students should answer correctly
+- Bloom's Level: L1 Remember / L2 Understand
+- Marks per question: 1–2
+- Command words: State, Name, Define, List, Identify, Label
+- Style: Single concept, direct recall, familiar textbook contexts, one-step calculations
+- MCQ distractors: clearly wrong to a student who knows the topic`,
+
+  Medium: `DIFFICULTY: Medium
+- Target: 40–60% of students should answer correctly
+- Bloom's Level: L3 Apply / L4 Analyse
+- Marks per question: 2–4
+- Command words: Describe, Explain, Calculate, Show, Draw
+- Style: Apply knowledge to given scenarios, combine 2 concepts, 2–3 step calculations
+- MCQ distractors: plausible but distinguishable with careful reasoning`,
+
+  Challenging: `DIFFICULTY: Challenging — STRICTLY ENFORCE the following:
+- Target: Only 10–20% of students should answer fully correctly (A* discriminator questions)
+- Bloom's Level: L4 Analyse / L5 Evaluate / L6 Create
+- Marks per question: 4–8 (multi-part questions encouraged)
+- Command words: Evaluate, Discuss, Suggest, Compare, Deduce, Predict — NOT "State" or "Name"
+- MANDATORY requirements for EVERY question:
+  1. Place knowledge in UNFAMILIAR contexts (novel scenarios, not textbook examples)
+  2. Require chaining 3+ concepts or calculation steps — no single-step answers
+  3. Where possible, synthesise across two syllabus topics (e.g. stoichiometry + energetics)
+  4. Extended response questions (≥4 marks) must demand a structured argument with evidence
+  5. Calculations must require rearranging formulae and multi-stage working
+  6. MCQ: all four options must be plausible misconceptions; correct answer requires rigorous reasoning
+  7. Mark scheme must have 4+ distinct marking points
+- A question that a student can answer from memory alone is NOT acceptable for this difficulty`,
+
+  Balanced: `DIFFICULTY: Balanced — distribute across: Easy ~25% (80–90% pass rate), Medium ~50% (40–60% pass rate), Challenging ~25% (10–20% pass rate).
+Include a variety of command words and mark ranges (1–6 marks).`,
+}
+
 export const CAMBRIDGE_COMMAND_WORDS = {
   "Describe": "State the points of a topic / give characteristics and main features.",
   "Explain": "Set out purposes or reasons / make the relationships between things evident / provide why and/or how and support with relevant evidence.",
@@ -149,14 +185,22 @@ export async function uploadToGeminiFileApi(
   return (uploaded as any).uri as string
 }
 
-function buildReferenceParts(references: Reference[]): any[] {
+export const PAST_PAPER_FOCUS: Record<string, string> = {
+  Easy: `Focus EXCLUSIVELY on the easiest questions in these papers: opening questions, part (a) sub-parts, 1–2 mark items, and any question using "State", "Name", or "Define". Ignore all other questions.`,
+  Medium: `Focus on the mid-section questions in these papers: 2–4 mark items, "Describe" and "Explain" questions, and calculation questions with 2–3 steps. Ignore both the very easy opening questions and the hardest final questions.`,
+  Challenging: `Focus EXCLUSIVELY on the HARDEST questions in these papers: the final questions of each section, all questions worth 4+ marks, any "Evaluate", "Discuss", or extended writing question, and multi-part structured questions. These are the questions that differentiate A* from A students. Replicate ONLY this level of difficulty — completely ignore the easier questions in the papers.`,
+  Balanced: `Use the full range of questions across the papers to represent all difficulty levels proportionally.`,
+}
+
+function buildReferenceParts(references: Reference[], difficulty?: string): any[] {
   const parts: any[] = []
   const pastPapers = references.filter(r => r.resourceType === 'past_paper')
   const syllabuses = references.filter(r => r.resourceType === 'syllabus')
   const others = references.filter(r => !r.resourceType || r.resourceType === 'other')
 
   if (pastPapers.length > 0) {
-    parts.push({ text: `REFERENCE PAST PAPERS (${pastPapers.length} document${pastPapers.length > 1 ? 's' : ''}): The following are authentic Cambridge IGCSE past papers. Study them carefully and replicate their exact question style, phrasing, difficulty calibration, command word usage, diagram style, and mark allocation patterns. Your generated questions MUST feel indistinguishable from these official papers.` })
+    const focusInstruction = difficulty ? (PAST_PAPER_FOCUS[difficulty] ?? '') : ''
+    parts.push({ text: `REFERENCE PAST PAPERS (${pastPapers.length} document${pastPapers.length > 1 ? 's' : ''}): The following are authentic Cambridge IGCSE past papers. Study them carefully and replicate their exact question style, phrasing, command word usage, diagram style, and mark allocation patterns. Your generated questions MUST feel indistinguishable from these official papers.\n\n${focusInstruction}` })
     pastPapers.forEach(ref => {
       if (ref.pastPaperText) {
         // Use cached text extraction — much cheaper than sending the full PDF
@@ -204,7 +248,7 @@ export async function generateTest(
   const ai = getAI(config.apiKey)
   const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
 Topic: ${config.topic}
-Difficulty: ${config.difficulty}
+${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 Number of Questions: ${config.count}
 Question Type: ${config.type}
 Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
@@ -219,7 +263,7 @@ Rules:
 6. Add **Syllabus Reference:** at end of each question text.`
 
   const parts: any[] = config.references && config.references.length > 0
-    ? buildReferenceParts(config.references)
+    ? buildReferenceParts(config.references, config.difficulty)
     : []
 
   parts.push({ text: prompt })
@@ -270,9 +314,89 @@ When generating SVG diagrams:
   }), 3, onRetry)
 
   const raw = safeJsonParse(response.text || '{}') as { questions: Omit<QuestionItem, 'id'>[] }
-  return (raw.questions ?? []).map(q => {
+  let questions: QuestionItem[] = (raw.questions ?? []).map(q => {
     const sanitized = sanitizeQuestion(q)
     return { ...sanitized, id: crypto.randomUUID(), code: generateQuestionCode(config.subject, sanitized.text) }
+  })
+
+  if (config.difficulty === 'Challenging' && questions.length > 0) {
+    questions = await critiqueForDifficulty(questions, config.subject, config.model || 'gemini-3-flash-preview', ai, onRetry)
+  }
+
+  return questions
+}
+
+async function critiqueForDifficulty(
+  questions: QuestionItem[],
+  subject: string,
+  model: string,
+  ai: ReturnType<typeof getAI>,
+  onRetry?: (attempt: number) => void,
+): Promise<QuestionItem[]> {
+  const questionsText = questions
+    .map((q, i) => `Q${i + 1} [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}`)
+    .join('\n\n---\n\n')
+
+  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a difficulty audit for ${subject}.
+
+REQUIRED DIFFICULTY: Challenging
+- Target: Only 10–20% of students answer fully correctly
+- Must use higher-order thinking: Evaluate, Deduce, Predict, Suggest (NOT State/Name/Define)
+- Must require 3+ cognitive steps or multi-stage synthesis
+- Must place content in UNFAMILIAR contexts
+
+QUESTIONS TO AUDIT:
+${questionsText}
+
+TASK:
+1. Score each question 1–10 for difficulty (1 = trivial recall, 10 = A* discriminator)
+2. Any question scoring below 7 MUST be rewritten to reach 7+
+3. When rewriting: use unfamiliar context, require more synthesis steps, upgrade command word
+4. Keep the same syllabus topic and mark value
+5. Return ALL questions (revised or unchanged) as JSON`
+
+  const response = await withRetry(() => ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      maxOutputTokens: 8192,
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          questions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                text: { type: Type.STRING },
+                answer: { type: Type.STRING },
+                markScheme: { type: Type.STRING },
+                marks: { type: Type.NUMBER },
+                commandWord: { type: Type.STRING },
+                type: { type: Type.STRING },
+                hasDiagram: { type: Type.BOOLEAN },
+                options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
+              },
+              required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram'],
+            },
+          },
+        },
+        required: ['questions'],
+      },
+      systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions are genuinely challenging — at the A* discrimination level. Be strict: if a question can be answered from memory, rewrite it.`,
+    },
+  }), 3, onRetry)
+
+  const raw = safeJsonParse(response.text || '{}') as { questions: any[] }
+  return (raw.questions ?? []).map((q, i) => {
+    const sanitized = sanitizeQuestion(q)
+    const existing = questions[i]
+    return {
+      ...sanitized,
+      id: existing?.id ?? crypto.randomUUID(),
+      code: existing?.code ?? generateQuestionCode(subject, sanitized.text),
+    }
   })
 }
 
