@@ -14,7 +14,7 @@ async function anthropicMessages(
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2024-10-22',
       'content-type': 'application/json',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
