@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
 import {
   getFirestore,
   collection,
@@ -81,17 +81,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // --------------------------------------
 
 export const signInWithGoogle = async () => {
-  await signInWithRedirect(auth, googleProvider);
-};
-
-export const handleRedirectResult = async () => {
-  try {
-    const result = await getRedirectResult(auth);
-    return result?.user ?? null;
-  } catch (error) {
-    console.error("Error getting redirect result", error);
-    throw error;
-  }
+  await signInWithPopup(auth, googleProvider);
 };
 
 export const logout = () => auth.signOut();

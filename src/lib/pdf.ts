@@ -35,14 +35,35 @@ function replaceOklchInCss(css: string): string {
   )
 }
 
+const COLOR_PROPS = [
+  'color', 'background-color', 'border-color',
+  'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+  'outline-color', 'fill', 'stroke', 'text-decoration-color', 'caret-color',
+  'column-rule-color', 'accent-color',
+]
+
 export async function exportToPDF(element: HTMLElement, filename: string): Promise<void> {
   const canvas = await html2canvas(element, {
     useCORS: true,
     scale: 2,
     backgroundColor: '#ffffff',
     onclone: (clonedDoc: Document) => {
+      // Replace oklch in <style> tag text
       clonedDoc.querySelectorAll('style').forEach(s => {
         if (s.textContent) s.textContent = replaceOklchInCss(s.textContent)
+      })
+      // html2canvas reads computed styles directly; CSS variables resolve to oklch.
+      // Force-resolve each element's color properties as inline styles.
+      const view = clonedDoc.defaultView
+      if (!view) return
+      clonedDoc.querySelectorAll<HTMLElement>('*').forEach(el => {
+        const computed = view.getComputedStyle(el)
+        for (const prop of COLOR_PROPS) {
+          const val = computed.getPropertyValue(prop)
+          if (val.includes('oklch')) {
+            el.style.setProperty(prop, replaceOklchInCss(val))
+          }
+        }
       })
     },
   })
