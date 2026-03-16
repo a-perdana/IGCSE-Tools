@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect, useCallback } from 'react'
 import {
   BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
   KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File,
@@ -74,6 +74,22 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingType, setPendingType] = useState<ResourceType>('other')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDeleteClick = useCallback((id: string) => {
+    setConfirmDeleteId(id)
+  }, [])
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!confirmDeleteId) return
+    const resource = resources.find(r => r.id === confirmDeleteId)
+    if (!resource) { setConfirmDeleteId(null); return }
+    setConfirmDeleteId(null)
+    setDeletingId(confirmDeleteId)
+    await onDeleteResource(resource)
+    setDeletingId(null)
+  }, [confirmDeleteId, resources, onDeleteResource])
 
   useEffect(() => {
     if (apiSettingsOpen) setSettingsOpen(true)
@@ -324,25 +340,48 @@ export function Sidebar({
           {resources.map(r => {
             const inKB = knowledgeBase.some(x => x.id === r.id)
             const rType = r.resourceType ?? 'other'
+            const isDeleting = deletingId === r.id
+            const isConfirming = confirmDeleteId === r.id
             return (
-              <div key={r.id} className="py-1">
+              <div key={r.id} className={`py-1 transition-opacity duration-300 ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1 text-xs">
                   <input
                     type="checkbox"
                     checked={inKB}
                     onChange={() => inKB ? onRemoveFromKB(r.id) : onAddToKB(r)}
                     className="accent-emerald-600 shrink-0"
+                    disabled={isDeleting}
                   />
                   <span className="flex-1 truncate text-stone-700">{r.name}</span>
-                  <button onClick={() => onDeleteResource(r)} className="text-red-400 hover:text-red-600 shrink-0">
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {isDeleting ? (
+                    <Loader2 className="w-3 h-3 text-red-400 animate-spin shrink-0" />
+                  ) : isConfirming ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={handleDeleteConfirm}
+                        className="text-[10px] px-1.5 py-0.5 bg-red-500 text-white rounded hover:bg-red-600"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="text-[10px] px-1.5 py-0.5 bg-stone-200 text-stone-600 rounded hover:bg-stone-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => handleDeleteClick(r.id)} className="text-red-400 hover:text-red-600 shrink-0">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
                 <div className="ml-4 mt-0.5">
                   <select
                     value={rType}
                     onChange={e => onUpdateResourceType(r, e.target.value as ResourceType)}
                     className={`text-xs px-1.5 py-0.5 rounded font-medium border-0 outline-none cursor-pointer ${RESOURCE_TYPE_COLORS[rType]}`}
+                    disabled={isDeleting}
                   >
                     <option value="past_paper">Past Paper</option>
                     <option value="syllabus">Syllabus</option>
