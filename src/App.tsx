@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
-import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus } from 'lucide-react'
+import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus } from 'lucide-react'
+import type { GeminiError } from './lib/types'
 import { auth, signInWithGoogle, handleRedirectResult, logout } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
@@ -25,6 +26,93 @@ const DEFAULT_CONFIG: GenerationConfig = {
   calculator: true,
   model: 'gemini-3-flash-preview',
   syllabusContext: '',
+}
+
+function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
+  error: GeminiError
+  onDismiss: () => void
+  onRetry: () => void
+  onOpenApiSettings: () => void
+}) {
+  const isRateLimit = error.type === 'rate_limit'
+  const isOverloaded = error.type === 'model_overloaded'
+
+  return (
+    <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 flex gap-3">
+      <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-semibold text-amber-800">
+            {isRateLimit ? 'API İstek Limiti Aşıldı' : isOverloaded ? 'Model Şu An Meşgul' : 'Bir Hata Oluştu'}
+          </p>
+          <button onClick={onDismiss} className="text-amber-400 hover:text-amber-600 shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <p className="text-xs text-amber-700 mt-1">
+          {isRateLimit
+            ? 'Ortak API key\'in dakikalık/günlük limiti doldu. Bunu çözmek için:'
+            : isOverloaded
+            ? 'Seçili model şu an aşırı yüklenmiş. Bunu çözmek için:'
+            : error.message}
+        </p>
+        {(isRateLimit || isOverloaded) && (
+          <ol className="mt-2 flex flex-col gap-1.5 text-xs text-amber-800">
+            {isRateLimit && (
+              <li className="flex items-start gap-1.5">
+                <span className="font-bold shrink-0">1.</span>
+                <span>
+                  <button
+                    onClick={onOpenApiSettings}
+                    className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-amber-900"
+                  >
+                    <KeyRound className="w-3 h-3" /> Kendi Gemini API key'ini ekle
+                  </button>
+                  {' '}— Google AI Studio'dan ücretsiz alabilirsin.
+                </span>
+              </li>
+            )}
+            {isOverloaded && (
+              <li className="flex items-start gap-1.5">
+                <span className="font-bold shrink-0">1.</span>
+                <span>
+                  Sidebar'daki{' '}
+                  <button onClick={onOpenApiSettings} className="font-semibold underline underline-offset-2 hover:text-amber-900">
+                    API Settings
+                  </button>
+                  'ten daha basit bir model seç (örn. <code className="bg-amber-100 px-0.5 rounded">gemini-2.0-flash</code>).
+                </span>
+              </li>
+            )}
+            <li className="flex items-start gap-1.5">
+              <span className="font-bold shrink-0">{isRateLimit ? '2.' : '2.'}</span>
+              <span>Birkaç dakika bekleyip tekrar dene.</span>
+            </li>
+            {isRateLimit && (
+              <li className="flex items-start gap-1.5">
+                <span className="font-bold shrink-0">3.</span>
+                <span>Sidebar'dan soru sayısını azalt (şu an çok fazlaysa).</span>
+              </li>
+            )}
+          </ol>
+        )}
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+          >
+            <RefreshCw className="w-3 h-3" /> Tekrar Dene
+          </button>
+          <button
+            onClick={onDismiss}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-50"
+          >
+            <Minus className="w-3 h-3" /> Kapat
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function NewAssessmentModal({ onConfirm, onClose }: {
@@ -95,6 +183,7 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false)
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
   const [showNewAssessmentModal, setShowNewAssessmentModal] = useState(false)
+  const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
 
   const { notifications, notify, dismiss } = useNotifications()
   const { apiKey, setApiKey, customModel, setCustomModel } = useApiSettings()
@@ -257,6 +346,8 @@ export default function App() {
         onApiKeyChange={setApiKey}
         customModel={customModel}
         onCustomModelChange={setCustomModel}
+        apiSettingsOpen={apiSettingsOpen}
+        onApiSettingsOpenChange={setApiSettingsOpen}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -287,6 +378,16 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {/* Error banner */}
+        {generation.error && (
+          <ErrorBanner
+            error={generation.error}
+            onDismiss={() => generation.setError(null)}
+            onRetry={() => { generation.setError(null); handleGenerate() }}
+            onOpenApiSettings={() => { setApiSettingsOpen(true) }}
+          />
+        )}
 
         {/* Main content */}
         {view === 'library' ? (

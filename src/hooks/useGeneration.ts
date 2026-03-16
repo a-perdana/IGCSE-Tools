@@ -130,6 +130,7 @@ export function useGeneration(notify: NotifyFn, apiKey?: string) {
     isAuditing,
     retryCount,
     error,
+    setError,
     generate,
     analyzeFile,
     getStudentFeedback,

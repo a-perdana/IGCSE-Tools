@@ -28,6 +28,8 @@ interface Props {
   onApiKeyChange: (v: string) => void
   customModel: string
   onCustomModelChange: (v: string) => void
+  apiSettingsOpen?: boolean
+  onApiSettingsOpenChange?: (open: boolean) => void
 }
 
 export function Sidebar({
@@ -35,10 +37,15 @@ export function Sidebar({
   resources, knowledgeBase, onUploadResource, onAddToKB, onRemoveFromKB, onDeleteResource,
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
   apiKey, onApiKeyChange, customModel, onCustomModelChange,
+  apiSettingsOpen, onApiSettingsOpenChange,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  React.useEffect(() => {
+    if (apiSettingsOpen) setSettingsOpen(true)
+  }, [apiSettingsOpen])
 
   const inputTokens = Math.round(1500 + (syllabusContext.length / 4))
   const outputTokens = config.count * 600
@@ -229,7 +236,7 @@ export function Sidebar({
         {/* API Settings */}
         <div className="border-t border-stone-200 pt-3">
           <button
-            onClick={() => setSettingsOpen(o => !o)}
+            onClick={() => { setSettingsOpen(o => { const next = !o; onApiSettingsOpenChange?.(next); return next }) }}
             className="flex items-center justify-between w-full text-xs font-medium text-stone-600 mb-2"
           >
             <span className="flex items-center gap-1">
