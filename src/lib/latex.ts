@@ -3,12 +3,20 @@ const BARE_LATEX_RE = /(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alph
 /**
  * Fixes AI LaTeX output before passing to KaTeX:
  * 1. Merges adjacent $a$$b$ blocks the AI accidentally split (→ $ab$)
- * 2. If text has no $ at all, wraps bare \commands in $...$
+ * 2. Wraps bare \commands in $...$ — only in segments NOT already inside $...$
+ *    (handles MCQ options where question stem has $ but options don't)
  */
 export function preprocessLatex(text: string): string {
+  // Step 1: merge accidentally split adjacent math blocks
   let result = text.replace(/\$([^$\n]+?)\$\$([^$\n]+?)\$/g, (_m, a, b) => `$${a}${b}$`)
-  if (!result.includes('$')) {
-    result = result.replace(BARE_LATEX_RE, (match) => `$${match}$`)
-  }
+
+  // Step 2: split by existing $...$ blocks, wrap bare \commands only in plain segments
+  const segments = result.split(/(\$[^$\n]+?\$)/g)
+  result = segments.map((seg, i) => {
+    // Odd indices are already-wrapped math blocks — leave untouched
+    if (i % 2 === 1) return seg
+    return seg.replace(BARE_LATEX_RE, (match) => `$${match}$`)
+  }).join('')
+
   return result
 }
