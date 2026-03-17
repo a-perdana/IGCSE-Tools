@@ -11,6 +11,14 @@ import { auth } from '../lib/firebase'
 
 const GEMINI_URI_VALID_MS = 46 * 60 * 60 * 1000
 
+function normalizeGenerationQuestionType(type: string): string {
+  const v = type.trim().toLowerCase()
+  if (v === 'multiple choice' || v === 'multiple_choice' || v === 'mcq') return 'MCQ (only type="mcq")'
+  if (v === 'short answer' || v === 'short_answer') return 'Short Answer (only type="short_answer")'
+  if (v === 'structured') return 'Structured (only type="structured")'
+  return 'Mixed'
+}
+
 function formatPastPaperText(cache: {
   examples?: string
   summary?: string
@@ -167,7 +175,12 @@ export function useGeneration(
       const references = await buildReferences(
         knowledgeBaseResources, getBase64, provider, apiKey, updateGeminiUri
       )
-      const questions = await generateTest({ ...config, references, apiKey }, (attempt) => {
+      const questions = await generateTest({
+        ...config,
+        type: normalizeGenerationQuestionType(config.type),
+        references,
+        apiKey,
+      }, (attempt) => {
         setRetryCount(attempt)
         notify(`Rate limit hit, retrying (${attempt}/3)...`, 'info')
       })

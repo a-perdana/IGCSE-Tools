@@ -3,9 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import rehypeRaw from 'rehype-raw'
 import { Bold, Italic, List, ListOrdered, Minus, Eye, EyeOff, X, Trash2 } from 'lucide-react'
-import { parseSVGSafe } from '../../lib/svg'
+import { parseSVGSafe, normalizeSvgMarkdown } from '../../lib/svg'
 
 interface Props {
   value: string
@@ -256,10 +255,10 @@ export function RichEditor({ value, onChange, placeholder, minRows = 4 }: Props)
           <div className="px-3 py-2 text-sm markdown-body" style={{ minHeight: `${minRows * 1.6}rem` }}>
             <ReactMarkdown
               remarkPlugins={[remarkMath, remarkGfm]}
-              rehypePlugins={[rehypeKatex, rehypeRaw]}
+              rehypePlugins={[rehypeKatex]}
               components={previewComponents}
             >
-              {value}
+              {normalizeSvgMarkdown(value)}
             </ReactMarkdown>
           </div>
 

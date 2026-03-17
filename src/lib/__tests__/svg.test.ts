@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSVGSafe } from '../svg'
+import { parseSVGSafe, normalizeSvgMarkdown } from '../svg'
 
 describe('parseSVGSafe', () => {
   it('returns outerHTML for valid SVG', () => {
@@ -24,5 +24,21 @@ describe('parseSVGSafe', () => {
     const result = parseSVGSafe(nested)
     expect(result).not.toBeNull()
     expect(result).toContain('<rect')
+  })
+})
+
+describe('normalizeSvgMarkdown', () => {
+  it('wraps raw svg blocks with fenced svg markdown', () => {
+    const input = 'Question text\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\nMore text'
+    const result = normalizeSvgMarkdown(input)
+    expect(result).toContain('```svg')
+    expect(result).toContain('</svg>\n```')
+  })
+
+  it('fixes malformed svg prefix like svg<svg', () => {
+    const input = 'svg<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+    const result = normalizeSvgMarkdown(input)
+    expect(result).not.toContain('svg<svg')
+    expect(result).toContain('<svg xmlns=')
   })
 })

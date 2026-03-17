@@ -3,10 +3,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import rehypeRaw from 'rehype-raw'
 import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe } from 'lucide-react'
 import type { Assessment, Question, Folder } from '../../lib/types'
-import { parseSVGSafe } from '../../lib/svg'
+import { parseSVGSafe, normalizeSvgMarkdown } from '../../lib/svg'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 
@@ -59,10 +58,10 @@ function QMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkMath, remarkGfm]}
-      rehypePlugins={[rehypeKatex, rehypeRaw]}
+      rehypePlugins={[rehypeKatex]}
       components={svgComponents}
     >
-      {preprocessLatex(content)}
+      {preprocessLatex(normalizeSvgMarkdown(content))}
     </ReactMarkdown>
   )
 }

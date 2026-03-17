@@ -3,29 +3,29 @@ import { estimateCostIDR, MODEL_PRICING } from '../pricing'
 
 describe('estimateCostIDR', () => {
   it('calculates cost for flash model', () => {
-    const cost = estimateCostIDR('gemini-3-flash-preview', 1_000_000, 1_000_000)
-    // (0.10 + 0.40) * 15800 = 7900
-    expect(cost).toBe(7900)
+    const cost = estimateCostIDR('gemini-2.5-flash', 1_000_000, 1_000_000)
+    // (0.15 + 0.60) * 15800 = 11850
+    expect(cost).toBe(11850)
   })
 
   it('calculates cost for pro model', () => {
-    const cost = estimateCostIDR('gemini-3.1-pro-preview', 1_000_000, 1_000_000)
-    // (1.25 + 5.00) * 15800 = 98750
-    expect(cost).toBe(98750)
+    const cost = estimateCostIDR('gemini-2.5-pro', 1_000_000, 1_000_000)
+    // (1.25 + 10.00) * 15800 = 177750
+    expect(cost).toBe(177750)
   })
 
-  it('falls back to flash pricing for unknown model', () => {
-    const flash = estimateCostIDR('gemini-3-flash-preview', 100_000, 100_000)
+  it('falls back to default pricing for unknown model', () => {
+    const fallback = Math.round(((0.1 * 100_000 / 1_000_000) + (0.4 * 100_000 / 1_000_000)) * 15800)
     const unknown = estimateCostIDR('gemini-unknown-model', 100_000, 100_000)
-    expect(unknown).toBe(flash)
+    expect(unknown).toBe(fallback)
   })
 
   it('returns 0 for 0 tokens', () => {
-    expect(estimateCostIDR('gemini-3-flash-preview', 0, 0)).toBe(0)
+    expect(estimateCostIDR('gemini-2.5-flash', 0, 0)).toBe(0)
   })
 
   it('MODEL_PRICING contains both models', () => {
-    expect(MODEL_PRICING).toHaveProperty('gemini-3-flash-preview')
-    expect(MODEL_PRICING).toHaveProperty('gemini-3.1-pro-preview')
+    expect(MODEL_PRICING).toHaveProperty('gemini-2.5-flash')
+    expect(MODEL_PRICING).toHaveProperty('gemini-2.5-pro')
   })
 })

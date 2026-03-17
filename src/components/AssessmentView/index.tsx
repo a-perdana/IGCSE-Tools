@@ -3,10 +3,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import rehypeRaw from 'rehype-raw'
 import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2 } from 'lucide-react'
 import type { Assessment, Question, QuestionItem } from '../../lib/types'
-import { parseSVGSafe } from '../../lib/svg'
+import { parseSVGSafe, normalizeSvgMarkdown } from '../../lib/svg'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
@@ -35,7 +34,7 @@ function QuestionMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkMath, remarkGfm]}
-      rehypePlugins={[rehypeKatex, rehypeRaw]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         code({ className, children }) {
           if (className === 'language-svg') {
@@ -56,7 +55,7 @@ function QuestionMarkdown({ content }: { content: string }) {
         }
       }}
     >
-      {preprocessLatex(content)}
+      {preprocessLatex(normalizeSvgMarkdown(content))}
     </ReactMarkdown>
   )
 }

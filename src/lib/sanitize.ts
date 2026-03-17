@@ -1,7 +1,29 @@
 import type { QuestionItem } from './types'
+import { normalizeSvgMarkdown } from './svg'
 
 const SUBJECT_CODES: Record<string, string> = {
   Mathematics: 'MAT', Biology: 'BIO', Physics: 'PHY', Chemistry: 'CHM',
+}
+
+function normalizeQuestionType(raw: unknown): QuestionItem['type'] {
+  const v = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (v === 'mcq' || v === 'multiple_choice' || v === 'multiplechoice') return 'mcq'
+  if (v === 'structured' || v === 'essay' || v === 'long_answer') return 'structured'
+  return 'short_answer'
+}
+
+function extractMcqOptionsFromText(text: string): string[] {
+  const matches = Array.from(text.matchAll(/^\s*([A-D])[).:\-]\s+(.+)\s*$/gmi))
+  const byLetter: Record<string, string> = {}
+  for (const m of matches) byLetter[m[1].toUpperCase()] = m[2].trim()
+  const ordered = ['A', 'B', 'C', 'D']
+    .map(letter => byLetter[letter])
+    .filter((x): x is string => Boolean(x))
+  return ordered.length === 4 ? ordered : []
+}
+
+function hasMcqLabelsInText(text: string): boolean {
+  return /^\s*A[).:\-]\s+/mi.test(text) && /^\s*D[).:\-]\s+/mi.test(text)
 }
 
 /** Normalise a raw AI-generated question object into a typed QuestionItem (minus id). */
@@ -11,11 +33,17 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
     fix(s).replace(/^(\*{0,2})\s*\d+[.)]\s*\*{0,2}\s*/, '$1').trimStart()
 
   let text = stripNum(q.text ?? '')
+  const type = normalizeQuestionType(q.type)
+  const optionsFromModel = Array.isArray(q.options) ? q.options.slice(0, 4).map((x: unknown) => String(x ?? '').trim()).filter(Boolean) : []
+  const extractedOptions = extractMcqOptionsFromText(text)
+  const options = type === 'mcq'
+    ? (optionsFromModel.length === 4 ? optionsFromModel : extractedOptions)
+    : []
+
   // Merge options array into question text for MCQ if options aren't already embedded
-  if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length > 0 && !/\bA\)/.test(text)) {
+  if (type === 'mcq' && options.length === 4 && !hasMcqLabelsInText(text)) {
     const letters = ['A', 'B', 'C', 'D']
-    const optLines = q.options
-      .slice(0, 4)
+    const optLines = options
       .map((opt: string, i: number) => `${letters[i]}) ${opt}`)
       .join('\n\n')
     text = `${text}\n\n${optLines}`
@@ -25,13 +53,14 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   const assessmentObjective = (['AO1', 'AO2', 'AO3'] as const).find(ao => aoRaw.includes(ao))
 
   return {
-    text,
-    answer: fix(q.answer),
-    markScheme: fix(q.markScheme),
+    text: normalizeSvgMarkdown(text),
+    answer: normalizeSvgMarkdown(fix(q.answer)),
+    markScheme: normalizeSvgMarkdown(fix(q.markScheme)),
     marks: Number(q.marks) || 1,
     commandWord: q.commandWord ?? '',
-    type: q.type ?? 'short_answer',
+    type,
     hasDiagram: Boolean(q.hasDiagram),
+    ...(type === 'mcq' && options.length === 4 ? { options } : {}),
     ...(q.code ? { code: q.code } : {}),
     ...(q.syllabusObjective ? { syllabusObjective: q.syllabusObjective } : {}),
     ...(assessmentObjective ? { assessmentObjective } : {}),
