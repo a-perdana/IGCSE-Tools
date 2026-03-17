@@ -302,6 +302,44 @@ function tryAutoGeometryFromText(text: string): DiagramSpec | undefined {
     } as DiagramSpec
   }
 
+  // Pattern: "line AB is parallel to line CD. Line EF is a straight line."
+  // Build a standard parallel-lines-with-transversal geometry diagram.
+  const parallelLines = clean.match(/\bline\s+([A-Z]{2})\s+is parallel to\s+line\s+([A-Z]{2})\b/i)
+  if (parallelLines) {
+    const l1 = parallelLines[1].toUpperCase()
+    const l2 = parallelLines[2].toUpperCase()
+    const t = clean.match(/\bline\s+([A-Z]{2})\s+is a straight line\b/i)?.[1]?.toUpperCase()
+
+    const [a, b] = l1.split('')
+    const [c, d] = l2.split('')
+    const [e, f] = (t && t.length === 2 ? t : 'EF').split('')
+
+    const points: Record<string, [number, number]> = {
+      [a]: [1, 7.5],
+      [b]: [9, 7.5],
+      [c]: [1, 3],
+      [d]: [9, 3],
+      [e]: [6.8, 9],
+      [f]: [3.6, 1.5],
+    }
+
+    const angles = /\bx\b/i.test(clean)
+      ? [{ at: e, between: [a, f] as [string, string], label: 'x' }]
+      : undefined
+
+    return {
+      diagramType: 'geometry',
+      points,
+      segments: [
+        { from: a, to: b },
+        { from: c, to: d },
+        { from: e, to: f },
+      ],
+      parallel: [[l1, l2]],
+      ...(angles ? { angles } : {}),
+    } as DiagramSpec
+  }
+
   // Pattern: "angle a" / "angle α" classification style question
   const symbolicAngle = clean.match(/\bangle\s+([a-zα-ω])\b/i)
   if (symbolicAngle) {

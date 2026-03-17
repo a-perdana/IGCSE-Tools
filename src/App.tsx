@@ -17,6 +17,7 @@ import { AssessmentView } from './components/AssessmentView'
 import { Library as LibraryView } from './components/Library'
 import { Notifications } from './components/Notifications'
 import { copyToClipboard } from './lib/clipboard'
+import { repairQuestionItem } from './lib/sanitize'
 
 const DEFAULT_CONFIG: GenerationConfig = {
   provider: 'gemini',
@@ -389,6 +390,13 @@ export default function App() {
     notify(ok ? 'Copied to clipboard' : 'Copy failed', ok ? 'success' : 'error')
   }, [notify])
 
+  const displayAssessment = generation.generatedAssessment
+    ? {
+        ...generation.generatedAssessment,
+        questions: generation.generatedAssessment.questions.map(repairQuestionItem),
+      }
+    : null
+
   if (!user) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
@@ -559,7 +567,7 @@ export default function App() {
           />
         ) : (
           <AssessmentView
-            assessment={generation.generatedAssessment}
+            assessment={displayAssessment}
             analysisText={generation.analysisText}
             isEditing={isEditing}
             studentMode={studentMode}
