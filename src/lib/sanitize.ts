@@ -279,7 +279,7 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   })()
 
   // Detect questions that say "in the diagram" but have no SVG or structured diagram field.
-  const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram|on the diagram|shown on the (grid|diagram|figure|graph)|the (grid|figure|graph) shows|shown in the (figure|graph|grid)|as shown (below|above)|on the (grid|graph) (below|above|shown)|shown on a (grid|graph)|coordinates? (?:of|shown)|point [A-Z] shown)\b/i.test(normalizedText)
+  const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram|on the diagram|shown on the (grid|diagram|figure|graph)|the (grid|figure|graph) shows|shown in the (figure|graph|grid)|as shown (below|above)|on the (grid|graph) (below|above|shown)|shown on a (grid|graph)|coordinates? (?:of|shown)|point [A-Z] shown|in the (triangle|circle|polygon|quadrilateral|rectangle|trapezium|parallelogram)|the (triangle|circle|polygon|quadrilateral) [A-Z]{2,}|angle [A-Z]{2,3}\s*=|triangle [A-Z]{3})\b/i.test(normalizedText)
   const hasSvg = /```svg/i.test(normalizedText)
   const diagramMissing = (referencesDiagram || Boolean(q.hasDiagram)) && !hasSvg && !diagram
 

@@ -527,19 +527,21 @@ GENERATION RULES:
 6. Diagrams: If a question requires a visual element, populate the "diagram" JSON field — do NOT embed SVG in the question text. Set hasDiagram=true.
    The "diagram" field must have a "diagramType" plus its required data:
 
+   • "geometry" — PREFERRED for ALL geometry questions (triangles, circles, polygons, angles).
+     Named points in a 0-10 coordinate space. Renderer auto-scales. ALWAYS use this for geometry/shape questions.
+     points: array of {name,x,y} objects — e.g. [{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}]
+     segments: [{from:"A",to:"B",label:"8 cm"}]
+     angles: [{at:"B",between:["A","C"],label:"70°"}]
+     perpendicular: [{"seg1":"AB","seg2":"BC"}] — draws right-angle marker
+     Example triangle ABC with angles BAC=50°, ABC=70° (BCA=60°):
+     {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":5,"y":8},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"A","to":"C"}],"angles":[{"at":"A","between":["B","C"],"label":"50°"},{"at":"B","between":["A","C"],"label":"70°"},{"at":"C","between":["A","B"],"label":"60°"}]}
+
    • "cartesian_grid" — Cartesian coordinate grid.
      Required: xMin, xMax, yMin, yMax, gridStep (usually 1 or 2).
      Optional: points [{label,x,y,color}], segments [{x1,y1,x2,y2,dashed}], polygons [{vertices:[{x,y,label}],fill}].
      Example: {"diagramType":"cartesian_grid","xMin":-2,"xMax":6,"yMin":-3,"yMax":5,"gridStep":1,"points":[{"label":"P","x":3,"y":2}]}
 
-   • "geometric_shape" — Labelled triangle, rectangle, or circle with dimension annotations.
-     Canvas: 400×300 (default). Place vertices with ~40px margin.
-     Example triangle (right-angled at A): A(60,260), B(340,260), C(60,80)
-     Required in each shape: "kind" ("triangle"/"rectangle"/"circle"/"polygon")
-     - For triangle/polygon: "vertices":[{x,y,label}], "sides":[{label:"8 cm",fromVertex:0,toVertex:1}], "rightAngleAt":0 (vertex index)
-     - For rectangle: x, y, width, height; "sides" for dimension labels; corners are indexed 0=TL,1=TR,2=BR,3=BL
-     - For circle: cx, cy, radius
-     Optional: viewWidth, viewHeight, labels:[{text,x,y}]
+   • "geometric_shape" — AVOID unless absolutely necessary. Use "geometry" instead.
 
    • "number_line" — Number line with marked points or inequality ranges.
      Required: min, max, step.
