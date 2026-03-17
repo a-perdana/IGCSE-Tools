@@ -19,6 +19,9 @@ function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
   for (const key of ['points', 'segments', 'polygons', 'shapes', 'nlPoints', 'ranges', 'bars'] as const) {
     if (d[key] == null) d[key] = []
   }
+  // Reject diagrams with no renderable content (avoid blank boxes)
+  if (dt === 'geometric_shape' && (d.shapes as unknown[]).length === 0) return undefined
+  if (dt === 'bar_chart' && (d.bars as unknown[]).length === 0) return undefined
   return raw as DiagramSpec
 }
 

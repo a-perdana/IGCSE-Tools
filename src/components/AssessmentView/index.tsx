@@ -372,7 +372,7 @@ export function AssessmentView({
                       )}
                       {q.syllabusObjective && (
                         <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full" title="Syllabus objective">
-                          📋 {q.syllabusObjective}
+                          📋 {q.syllabusObjective.replace(/\$[^$]*\$/g, '').replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1').replace(/\\[a-zA-Z]+/g, '').trim()}
                         </span>
                       )}
                       {onUpdateQuestion && !studentMode && (

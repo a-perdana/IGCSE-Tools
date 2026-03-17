@@ -32,7 +32,7 @@ export function preprocessLatex(text: string): string {
   //   2a) wrap power-expressions (e.g. x^2, 2x^2+7x, 108^{\circ}) FIRST
   //   2b) then wrap remaining bare \commands with BARE_LATEX_RE
   // Running 2a before 2b avoids BARE_LATEX_RE grabbing \circ out of 108^{\circ}
-  const POWER_RE = /\b([a-zA-Z0-9]+(?:\^(?:\{[^}]*\}|[a-zA-Z0-9]+))(?:[a-zA-Z0-9]*)?(?:\s*[+\-]\s*[0-9]*[a-zA-Z]*(?:\^(?:\{[^}]*\}|[a-zA-Z0-9]+))?[a-zA-Z0-9]*)*)/g
+  const POWER_RE = /\b([a-zA-Z0-9]+(?:\^(?:\{[^}]*\}|[a-zA-Z0-9]+))(?:\s*[+\-]\s*[0-9]*[a-zA-Z]*(?:\^(?:\{[^}]*\}|[a-zA-Z0-9]+))?[a-zA-Z0-9]*)*)/g
 
   const segments = result.split(/(\$[^$\n]+?\$)/g)
   result = segments.map((seg, i) => {
