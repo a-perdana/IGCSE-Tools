@@ -207,6 +207,116 @@ function tryAutoCartesianDiagram(answer: string, options: string[]): DiagramSpec
   } as DiagramSpec
 }
 
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+/** Build a simple geometry diagram from common angle/triangle phrasings so
+ *  diagram-referenced questions remain answerable even when provider omits diagram JSON. */
+function tryAutoGeometryFromText(text: string): DiagramSpec | undefined {
+  const clean = text
+    .replace(/\$+/g, '')
+    .replace(/\\angle/g, '∠')
+    .replace(/\\triangle/g, 'triangle')
+    .replace(/\\degree/g, '°')
+    .replace(/\\left/g, '')
+    .replace(/\\right/g, '')
+    .replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1')
+    .replace(/\\[a-zA-Z]+/g, ' ')
+    .replace(/âˆ’/g, '-')
+
+  // Pattern: "AB is a straight line. C is a point on AB. ∠ACD = 110°"
+  const straightAngle = clean.match(/\b([A-Z])([A-Z])\s+is a straight line\b[\s\S]*?\b([A-Z])\s+is a point on\s+([A-Z])([A-Z])\b[\s\S]*?(?:∠|angle)\s*([A-Z]{3})\s*=\s*(\d+(?:\.\d+)?)\s*°?/i)
+  if (straightAngle) {
+    const line1 = straightAngle[1].toUpperCase()
+    const line2 = straightAngle[2].toUpperCase()
+    const pointOnLine = straightAngle[3].toUpperCase()
+    const on1 = straightAngle[4].toUpperCase()
+    const on2 = straightAngle[5].toUpperCase()
+    const angleName = straightAngle[6].toUpperCase()
+    const angleValue = clamp(Number(straightAngle[7]), 10, 170)
+    if ((line1 !== on1 || line2 !== on2) && (line1 !== on2 || line2 !== on1)) return undefined
+    if (angleName[1] !== pointOnLine) return undefined
+
+    const points: Record<string, [number, number]> = {
+      [line1]: [1.5, 5],
+      [pointOnLine]: [5, 5],
+      [line2]: [8.5, 5],
+    }
+    const rad = (180 - angleValue) * Math.PI / 180
+    const dx = 3 * Math.cos(rad)
+    const dy = 3 * Math.sin(rad)
+    const rayPoint = angleName[2]
+    points[rayPoint] = [clamp(5 + dx, 0.5, 9.5), clamp(5 + dy, 0.5, 9.5)]
+
+    return {
+      diagramType: 'geometry',
+      points,
+      segments: [
+        { from: line1, to: line2 },
+        { from: pointOnLine, to: rayPoint },
+      ],
+      angles: [{ at: pointOnLine, between: [angleName[0], angleName[2]], label: `${angleValue}°` }],
+    } as DiagramSpec
+  }
+
+  // Pattern: "∠ACD = 110°" (or "angle ACD = 110")
+  const namedAngle = clean.match(/(?:∠|angle)\s*([A-Z]{3})\s*=\s*(\d+(?:\.\d+)?)\s*°?/i)
+  if (namedAngle) {
+    const [a, v, b] = namedAngle[1].toUpperCase().split('')
+    const angleValue = clamp(Number(namedAngle[2]), 10, 170)
+    const rad = (180 - angleValue) * Math.PI / 180
+    const d2x = 3 * Math.cos(rad)
+    const d2y = 3 * Math.sin(rad)
+    return {
+      diagramType: 'geometry',
+      points: {
+        [v]: [5, 5],
+        [a]: [2, 5],
+        [b]: [clamp(5 + d2x, 0.5, 9.5), clamp(5 + d2y, 0.5, 9.5)],
+      },
+      segments: [
+        { from: v, to: a },
+        { from: v, to: b },
+      ],
+      angles: [{ at: v, between: [a, b], label: `${angleValue}°` }],
+    } as DiagramSpec
+  }
+
+  // Pattern: "triangle ABC"
+  const tri = clean.match(/\btriangle\s+([A-Z]{3})\b/i)
+  if (tri) {
+    const [a, b, c] = tri[1].toUpperCase().split('')
+    return {
+      diagramType: 'geometry',
+      points: {
+        [a]: [1.5, 1.5],
+        [b]: [5, 8.5],
+        [c]: [8.5, 1.8],
+      },
+      segments: [
+        { from: a, to: b },
+        { from: b, to: c },
+        { from: a, to: c },
+      ],
+    } as DiagramSpec
+  }
+
+  // Pattern: "angle a" / "angle α" classification style question
+  const symbolicAngle = clean.match(/\bangle\s+([a-zα-ω])\b/i)
+  if (symbolicAngle) {
+    const label = symbolicAngle[1]
+    return {
+      diagramType: 'geometry',
+      points: { O: [5, 5], A: [2, 8], B: [8.5, 5.8] },
+      segments: [{ from: 'O', to: 'A' }, { from: 'O', to: 'B' }],
+      angles: [{ at: 'O', between: ['A', 'B'], label }],
+    } as DiagramSpec
+  }
+
+  return undefined
+}
+
 const SUBJECT_CODES: Record<string, string> = {
   Mathematics: 'MAT', Biology: 'BIO', Physics: 'PHY', Chemistry: 'CHM',
 }
@@ -260,6 +370,7 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   const assessmentObjective = (['AO1', 'AO2', 'AO3'] as const).find(ao => aoRaw.includes(ao))
 
   const normalizedText = normalizeSvgMarkdown(text)
+  const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram|on the diagram|shown on the (grid|diagram|figure|graph)|the (grid|figure|graph) shows|shown in the (figure|graph|grid)|as shown (below|above)|on the (grid|graph) (below|above|shown)|shown on a (grid|graph)|coordinates? (?:of|shown)|point [A-Z] shown|in the (triangle|circle|polygon|quadrilateral|rectangle|trapezium|parallelogram)|the (triangle|circle|polygon|quadrilateral) [A-Z]{2,}|angle [A-Z]{2,3}\s*=|triangle [A-Z]{3})\b/i.test(normalizedText)
   const rawDiagram = normalizeDiagram(q.diagram)
 
   // Auto-generate a cartesian_grid when the model didn't provide one.
@@ -267,9 +378,11 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   // from the question, which is more accurate than inferring from MCQ option values.
   const diagram = rawDiagram ?? (() => {
     // 1. Extract labeled coordinate points from question text, e.g. A(-1,4) or P(-4,1)
-    if (q.hasDiagram) {
+    if (q.hasDiagram || referencesDiagram) {
       const fromText = tryAutoCartesianFromText(normalizedText)
       if (fromText) return fromText
+      const fromGeometry = tryAutoGeometryFromText(normalizedText)
+      if (fromGeometry) return fromGeometry
     }
     // 2. Fallback: all MCQ options are coordinate pairs → plot the correct answer as point P
     if (type === 'mcq' && options.length >= 2) {
@@ -279,7 +392,6 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   })()
 
   // Detect questions that say "in the diagram" but have no SVG or structured diagram field.
-  const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram|on the diagram|shown on the (grid|diagram|figure|graph)|the (grid|figure|graph) shows|shown in the (figure|graph|grid)|as shown (below|above)|on the (grid|graph) (below|above|shown)|shown on a (grid|graph)|coordinates? (?:of|shown)|point [A-Z] shown|in the (triangle|circle|polygon|quadrilateral|rectangle|trapezium|parallelogram)|the (triangle|circle|polygon|quadrilateral) [A-Z]{2,}|angle [A-Z]{2,3}\s*=|triangle [A-Z]{3})\b/i.test(normalizedText)
   const hasSvg = /```svg/i.test(normalizedText)
   const diagramMissing = (referencesDiagram || Boolean(q.hasDiagram)) && !hasSvg && !diagram
 
@@ -290,7 +402,7 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
     marks: Number(q.marks) || 1,
     commandWord: q.commandWord ?? '',
     type,
-    hasDiagram: diagramMissing ? false : Boolean(q.hasDiagram),
+    hasDiagram: diagramMissing ? false : Boolean(q.hasDiagram || diagram),
     ...(diagramMissing ? { diagramMissing: true } : {}),
     ...(diagram ? { diagram } : {}),
     ...(type === 'mcq' && options.length === 4 ? { options } : {}),
@@ -301,6 +413,18 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
       ? { difficultyStars: Math.min(3, Math.max(1, Number(q.difficultyStars))) as 1 | 2 | 3 }
       : {}),
   }
+}
+
+/** Repairs missing diagram fields on an existing QuestionItem by re-running
+ *  sanitize fallback inference, while preserving stable identity fields. */
+export function repairQuestionItem<T extends QuestionItem>(q: T): T {
+  const sanitized = sanitizeQuestion(q)
+  return {
+    ...q,
+    ...sanitized,
+    id: q.id,
+    ...(q.code ? { code: q.code } : {}),
+  } as T
 }
 
 /** Generate a short question code like MAT-C4.1-A4BF.
@@ -317,3 +441,4 @@ export function generateQuestionCode(
   const shortId = Math.random().toString(36).substring(2, 6).toUpperCase()
   return `${subj}-${syl}-${shortId}`
 }
+

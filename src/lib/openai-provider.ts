@@ -62,6 +62,7 @@ const QUESTION_SCHEMA = `{
       "commandWord": "string (Cambridge command word)",
       "type": "mcq | short_answer | structured",
       "hasDiagram": boolean,
+      "diagram": { "diagramType": "geometry | cartesian_grid | geometric_shape | number_line | bar_chart", "...": "diagram data (omit when hasDiagram=false)" },
       "syllabusObjective": "string (e.g. 'C4.1 – Define the term acid in terms of proton donation')",
       "assessmentObjective": "AO1 | AO2 | AO3",
       "difficultyStars": 1 or 2 or 3,
@@ -159,6 +160,10 @@ GENERATION RULES:
 7. assessmentObjective: "AO1" (knowledge/recall), "AO2" (application/analysis), or "AO3" (experimental).
 8. difficultyStars: 1 = recall (1–2 marks), 2 = application (2–4 marks), 3 = synthesis/eval (4+ marks).
 9. marks: MCQ = 1; short_answer = 1–3; structured = sum of all sub-part marks.
+10. Diagrams: if a question references a visual ("diagram", "figure", "grid", "triangle", "angle shown"), set hasDiagram=true and include a valid "diagram" object.
+    - Use "geometry" for geometry/angle/triangle questions.
+    - Use "cartesian_grid" for coordinate-graph questions.
+    - NEVER set hasDiagram=true with missing or empty diagram.
 
 Respond with JSON matching this schema: ${QUESTION_SCHEMA}`
 

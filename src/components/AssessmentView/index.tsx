@@ -10,6 +10,7 @@ import { DiagramRenderer } from '../DiagramRenderer'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
+import { repairQuestionItem } from '../../lib/sanitize'
 
 interface Props {
   assessment: Assessment | null
@@ -217,20 +218,25 @@ export function AssessmentView({
   }
 
   const questionsText = assessment.questions
+    .map(repairQuestionItem)
     .map((q, i) => `### Question ${i + 1} [${q.marks} marks]\n\n${q.text}`)
     .join('\n\n---\n\n')
   const answerKeyText = assessment.questions
+    .map(repairQuestionItem)
     .map((q, i) => `### Q${i + 1}\n\n${q.answer}`)
     .join('\n\n')
   const markSchemeText = assessment.questions
+    .map(repairQuestionItem)
     .map((q, i) => `### Q${i + 1} Mark Scheme [${q.marks} marks]\n\n${q.markScheme}`)
     .join('\n\n')
+
+  const renderedQuestions = assessment.questions.map(repairQuestionItem)
 
   const currentText = activeTab === 'questions' ? questionsText
     : activeTab === 'answerKey' ? answerKeyText
     : markSchemeText
 
-  const currentIds = new Set(assessment.questions.map(q => q.id))
+  const currentIds = new Set(renderedQuestions.map(q => q.id))
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -243,7 +249,7 @@ export function AssessmentView({
               onClick={() => onTabChange(tab)}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium ${activeTab === tab ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
             >
-              {tab === 'questions' ? `Questions (${assessment.questions.length})` : tab === 'answerKey' ? 'Answer Key' : 'Mark Scheme'}
+              {tab === 'questions' ? `Questions (${renderedQuestions.length})` : tab === 'answerKey' ? 'Answer Key' : 'Mark Scheme'}
             </button>
           ))}
         </div>
@@ -313,7 +319,7 @@ export function AssessmentView({
           />
         ) : (
           <div>
-            {activeTab === 'questions' && assessment.questions.map((q, i) => (
+            {activeTab === 'questions' && renderedQuestions.map((q, i) => (
               <div key={q.id}>
                 {editingQId === q.id ? (
                   <div className="border border-emerald-300 rounded-lg p-3 bg-emerald-50/30 mb-6">
@@ -396,7 +402,7 @@ export function AssessmentView({
                           </button>
                           <button
                             onClick={() => onMoveQuestion(q.id, 'down')}
-                            disabled={i === assessment.questions.length - 1}
+                            disabled={i === renderedQuestions.length - 1}
                             className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"
                             title="Move down"
                           >
