@@ -38,7 +38,7 @@ export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
     if (Array.isArray(pts)) {
       const dict: Record<string, [number, number]> = {}
       for (const p of pts as Record<string, unknown>[]) {
-        const name = String(p.name ?? '')
+        const name = String(p.name ?? p.label ?? p.id ?? '')
         if (!name) return undefined
         const x = Number(p.x), y = Number(p.y)
         if (!isFiniteNum(x) || !isFiniteNum(y)) return undefined

@@ -30,6 +30,11 @@ export function preprocessLatex(text: string): string {
   result = result.replace(/\^\{circ\}/g, '^{\\circ}')
   // ^ ext{...} → ^{\text{...}}  (model writes "ext" instead of "\text")
   result = result.replace(/\^ ?ext\{([^}]*)\}/g, '^{\\text{$1}}')
+  // 45\[o] or 45\[°] → 45^{\circ}  (model uses \[o] as degree shorthand)
+  result = result.replace(/(\d+(?:\.\d+)?)\\\[o\]/g, '$1^{\\circ}')
+  result = result.replace(/(\d+(?:\.\d+)?)\\\[°\]/g, '$1^{\\circ}')
+  // 45[o] (no backslash) → 45^{\circ}
+  result = result.replace(/(\d+(?:\.\d+)?)\[o\]/g, '$1^{\\circ}')
 
   // Step 1: merge accidentally split adjacent math blocks
   result = result.replace(/\$([^$\n]+?)\$\$([^$\n]+?)\$/g, (_m, a, b) => `$${a}${b}$`)

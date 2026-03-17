@@ -423,15 +423,16 @@ If the question says "the shape shown" or "the diagram shows" without specifying
 
 Pick the correct diagramType and fill in all required fields. ALL coordinate values MUST be plain integers or decimals — never null, never strings.
 
-• "geometry" — PREFERRED for geometry/triangle/angle/shape questions. Named points in a 0-10 coordinate space. Renderer auto-scales to SVG.
-    points: {"A":[x,y],"B":[x,y],...} — 2-10 named points, coordinates in range 0-10
-    segments: [{from:"A",to:"B",label:"8 cm",dashed:false}]
-    angles: [{at:"B",between:["A","C"],label:"60°"}]
-    parallel: [{"seg1":"AB","seg2":"CD"}] — segment pairs that are parallel (draws tick marks)
-    perpendicular: [{"seg1":"AB","seg2":"BC"}] — segment pairs at 90° (draws square marker)
-    labels: [{"text":"label","at":"A","dx":5,"dy":0}]
-    Example right triangle with AB=8cm BC=6cm right angle B:
+• "geometry" — PREFERRED for ALL geometry/triangle/angle/parallel-lines questions. Named points in 0-10 space. Renderer auto-scales.
+    points: [{name:"A",x:1,y:1},{name:"B",x:5,y:8},...] — array of named points, all coords 0-10
+    segments: [{from:"A",to:"B",label:"8 cm"}]
+    angles: [{at:"B",between:["A","C"],label:"70°"}]
+    parallel: [{"seg1":"AB","seg2":"CD"}] — tick marks on parallel segments
+    perpendicular: [{"seg1":"AB","seg2":"BC"}] — right-angle marker
+    Example right triangle AB=8cm BC=6cm right angle at B:
     {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"8 cm"},{"from":"B","to":"C","label":"6 cm"},{"from":"A","to":"C"}],"perpendicular":[{"seg1":"AB","seg2":"BC"}]}
+    Example parallel lines AB ∥ CD with transversal EF, angle BEF=65°:
+    {"diagramType":"geometry","points":[{"name":"A","x":0,"y":7},{"name":"B","x":10,"y":7},{"name":"C","x":0,"y":3},{"name":"D","x":10,"y":3},{"name":"E","x":6,"y":7},{"name":"F","x":4,"y":3}],"segments":[{"from":"A","to":"B"},{"from":"C","to":"D"},{"from":"E","to":"F"}],"angles":[{"at":"E","between":["B","F"],"label":"65°"}],"parallel":[{"seg1":"AB","seg2":"CD"}]}
 • "cartesian_grid" — for coordinate geometry, graphs, plotting points. xMin,xMax,yMin,yMax (integers),gridStep(1 or 2); points:[{label,x,y}]; segments:[{x1,y1,x2,y2}]
 • "geometric_shape" — AVOID; use "geometry" instead for most shapes. For complex multi-shape diagrams only. Canvas 400×300 px.
 • "number_line" — min,max,step; nlPoints:[{value,open,label}]; ranges:[{from,to}]
