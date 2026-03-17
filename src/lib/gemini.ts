@@ -460,8 +460,11 @@ GENERATION RULES:
      Required: bars:[{label,value}].
      Optional: title, xLabel, yLabel, yMax.
 
-   NEVER write "In the diagram...", "The diagram shows...", or "as shown below" without providing a diagram field.
-   If none of the four types fits, rewrite the question to not require a diagram (set hasDiagram=false).
+   CRITICAL DIAGRAM RULE — this is mandatory, not optional:
+   • If hasDiagram=true, the "diagram" field MUST be a complete non-null object with valid data. NEVER output hasDiagram=true with diagram=null.
+   • If you cannot provide valid diagram data, set hasDiagram=false and rewrite the question so it does NOT mention any visual element ("the diagram", "the grid", "shown below", etc.).
+   • NEVER write "State the coordinates of point P shown on the grid" or any similar question that asks a student to read from a visual without providing that visual in the diagram field.
+   • For Cartesian coordinate questions (C3.x): choose actual coordinates for point(s), plot them in the diagram, and use nearby wrong coordinates as MCQ distractors. The diagram must always accompany such questions.
 
 7. syllabusObjective: the SPECIFIC Cambridge IGCSE learning objective assessed. Format: "REF – objective statement" (e.g. "C4.1 – Define the term acid in terms of proton donation"). ONE sentence max. Do NOT add this as a line in the question text.
 
@@ -538,11 +541,13 @@ ASSESSMENT OBJECTIVES:
 - AO2 (Application): apply, calculate, interpret data, deduce — typically 2–4 mark questions
 - AO3 (Experimental): plan, evaluate methods, identify variables — typically 2–4 mark questions
 
-DIAGRAMS:
+DIAGRAMS (MANDATORY RULES):
 - Use the structured "diagram" JSON field — never embed raw SVG in question text.
+- If hasDiagram=true, diagram MUST be a valid non-null object. hasDiagram=true with diagram=null is FORBIDDEN.
 - Choose the correct diagramType: "cartesian_grid", "geometric_shape", "number_line", or "bar_chart".
 - All text labels in diagram data must be plain text — no LaTeX. Write "5.2 m" not "$5.2 \\text{ m}$", "60°" not "$60^\\circ$".
-- Provide only the data needed to answer the question — no decorative or irrelevant elements.`,
+- Provide only the data needed to answer the question — no decorative or irrelevant elements.
+- Cartesian coordinate questions: ALWAYS provide the cartesian_grid with points/segments plotted. This is non-negotiable.`,
     },
     })
     const usage = getGeminiUsage(response)
