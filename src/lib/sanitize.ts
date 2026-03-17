@@ -59,8 +59,15 @@ function parseCoord(s: string): { x: number; y: number } | null {
 /** Scan question text for labeled coordinate points like A(-1, 4) or B(3, -2)
  *  and auto-generate a cartesian_grid with those points (and a connecting segment). */
 function tryAutoCartesianFromText(text: string): DiagramSpec | undefined {
-  // Strip LaTeX delimiters and normalise unicode minus before matching
-  const clean = text.replace(/\$+/g, '').replace(/−/g, '-').replace(/\\left\s*\(/g, '(').replace(/\\right\s*\)/g, ')')
+  // Aggressively strip LaTeX so coordinates like $P(1,\, 8)$ become P(1, 8)
+  const clean = text
+    .replace(/\$+/g, '')                              // remove $ delimiters
+    .replace(/−/g, '-')                               // unicode minus
+    .replace(/\\left\s*\(/g, '(')                     // \left( → (
+    .replace(/\\right\s*\)/g, ')')                    // \right) → )
+    .replace(/\\[,;!]\s*/g, ' ')                      // LaTeX spacing \, \; \! → space
+    .replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1')         // \cmd{X} → X
+    .replace(/\\[a-zA-Z]+/g, ' ')                     // remaining \cmd → space
   const pointRe = /\b([A-Z])\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g
   const matches = [...clean.matchAll(pointRe)]
   if (matches.length === 0) return undefined
@@ -78,6 +85,7 @@ function tryAutoCartesianFromText(text: string): DiagramSpec | undefined {
   const allY = points.map(p => p.y)
   const boundX = Math.ceil(Math.max(...allX.map(Math.abs), 3)) + 1
   const boundY = Math.ceil(Math.max(...allY.map(Math.abs), 3)) + 1
+  const gridStep = Math.max(boundX, boundY) > 8 ? 2 : 1
   const segments = points.length >= 2
     ? [{ x1: points[0].x, y1: points[0].y, x2: points[1].x, y2: points[1].y }]
     : []
@@ -86,7 +94,7 @@ function tryAutoCartesianFromText(text: string): DiagramSpec | undefined {
     diagramType: 'cartesian_grid',
     xMin: -boundX, xMax: boundX,
     yMin: -boundY, yMax: boundY,
-    gridStep: 1,
+    gridStep,
     points: points.map(p => ({ label: p.label, x: p.x, y: p.y, color: '#7c3aed' })),
     segments,
     polygons: [],
