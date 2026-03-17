@@ -413,6 +413,12 @@ export function AssessmentView({
                         </button>
                       )}
                     </div>
+                    {q.diagramMissing && (
+                      <div className="mb-2 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                        <span className="shrink-0 mt-0.5">⚠</span>
+                        <span>Diagram was not generated for this question — it may be unanswerable. Try regenerating.</span>
+                      </div>
+                    )}
                     <QuestionMarkdown content={q.text} />
                     {studentMode && (
                       <textarea

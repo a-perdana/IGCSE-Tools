@@ -53,14 +53,23 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
   const aoRaw = (q.assessmentObjective ?? '').toString().toUpperCase()
   const assessmentObjective = (['AO1', 'AO2', 'AO3'] as const).find(ao => aoRaw.includes(ao))
 
+  const normalizedText = normalizeSvgMarkdown(text)
+
+  // Detect questions that say "in the diagram" but have no SVG — makes them unanswerable.
+  // Strip the diagram reference so it's still readable, and force hasDiagram=false.
+  const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram)\b/i.test(normalizedText)
+  const hasSvg = /```svg/i.test(normalizedText)
+  const diagramMissing = referencesDiagram && !hasSvg
+
   return {
-    text: normalizeSvgMarkdown(text),
+    text: normalizedText,
     answer: normalizeSvgMarkdown(fix(q.answer)),
     markScheme: normalizeSvgMarkdown(fix(q.markScheme)),
     marks: Number(q.marks) || 1,
     commandWord: q.commandWord ?? '',
     type,
-    hasDiagram: Boolean(q.hasDiagram),
+    hasDiagram: diagramMissing ? false : Boolean(q.hasDiagram),
+    ...(diagramMissing ? { diagramMissing: true } : {}),
     ...(type === 'mcq' && options.length === 4 ? { options } : {}),
     ...(q.code ? { code: q.code } : {}),
     ...(q.syllabusObjective ? { syllabusObjective: q.syllabusObjective } : {}),

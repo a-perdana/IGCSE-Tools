@@ -13,6 +13,8 @@ export interface QuestionItem {
   commandWord: string
   type: 'mcq' | 'short_answer' | 'structured'
   hasDiagram: boolean
+  /** True when the question text references a diagram but no SVG was generated — question may be unanswerable */
+  diagramMissing?: boolean
   syllabusObjective?: string
   difficultyStars?: 1 | 2 | 3
   /** Cambridge Assessment Objective: AO1 Knowledge, AO2 Application, AO3 Experimental */
