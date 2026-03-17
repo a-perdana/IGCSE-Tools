@@ -1,7 +1,7 @@
 import type { QuestionItem, DiagramSpec } from './types'
 import { normalizeSvgMarkdown } from './svg'
 
-const KNOWN_DIAGRAM_TYPES = new Set(['cartesian_grid', 'geometric_shape', 'number_line', 'bar_chart'])
+const KNOWN_DIAGRAM_TYPES = new Set(['cartesian_grid', 'geometric_shape', 'number_line', 'bar_chart', 'geometry'])
 
 export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -32,6 +32,39 @@ export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
 
   // Reject diagrams with no renderable content (avoid blank boxes)
   if (dt === 'bar_chart' && (d.bars as unknown[]).length === 0) return undefined
+  if (dt === 'geometry') {
+    let pts = d.points
+    // Gemini schema forces points to be an array — convert [{name,x,y}] → {name: [x,y]}
+    if (Array.isArray(pts)) {
+      const dict: Record<string, [number, number]> = {}
+      for (const p of pts as Record<string, unknown>[]) {
+        const name = String(p.name ?? '')
+        if (!name) return undefined
+        const x = Number(p.x), y = Number(p.y)
+        if (!isFiniteNum(x) || !isFiniteNum(y)) return undefined
+        dict[name] = [x, y]
+      }
+      if (Object.keys(dict).length < 2) return undefined
+      d.points = dict
+      pts = dict
+    } else if (!pts || typeof pts !== 'object') {
+      return undefined
+    } else {
+      // Object dict format — coerce coordinates
+      const entries = Object.entries(pts as Record<string, unknown>)
+      if (entries.length < 2) return undefined
+      for (const [, coord] of entries) {
+        if (Array.isArray(coord) && coord.length >= 2) {
+          (coord as unknown[])[0] = Number((coord as unknown[])[0])
+          ;(coord as unknown[])[1] = Number((coord as unknown[])[1])
+          if (!isFiniteNum((coord as unknown[])[0]) || !isFiniteNum((coord as unknown[])[1])) return undefined
+        } else {
+          return undefined
+        }
+      }
+    }
+    return raw as DiagramSpec
+  }
   if (dt === 'geometric_shape') {
     const shapes = d.shapes as Record<string, unknown>[]
     if (shapes.length === 0) return undefined

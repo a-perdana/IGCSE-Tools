@@ -47,7 +47,19 @@ export interface BarChartSpec {
   yMax?: number
 }
 
-export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec
+/** Semantic geometry diagram — named points in 0-10 coordinate space.
+ *  Renderer scales to SVG and auto-draws angle arcs, right-angle markers, parallel ticks. */
+export interface GeometryDiagramSpec {
+  diagramType: 'geometry'
+  points: Record<string, [number, number]>
+  segments?: Array<{ from: string; to: string; label?: string; dashed?: boolean }>
+  angles?: Array<{ at: string; between: [string, string]; label: string }>
+  parallel?: Array<[string, string]>       // e.g. ["AB","CD"] — draw tick marks
+  perpendicular?: Array<[string, string]>  // e.g. ["AB","BC"] — draw square marker
+  labels?: Array<{ text: string; at: string; offset?: [number, number] }>
+}
+
+export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec | GeometryDiagramSpec
 
 // ────────────────────────────────────────────────────────────────────────────
 

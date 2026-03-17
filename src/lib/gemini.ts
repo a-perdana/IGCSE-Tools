@@ -390,6 +390,8 @@ const DIAGRAM_SCHEMA = {
     title: { type: Type.STRING, nullable: true },
     xLabel: { type: Type.STRING, nullable: true },
     yLabel: { type: Type.STRING, nullable: true },
+    // geometry type — named points dict (object, not array)
+    // Note: using Type.OBJECT here covers both the cartesian points array and geometry points dict
     // All array fields: untyped items to avoid schema complexity
     points:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     segments: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
@@ -398,6 +400,10 @@ const DIAGRAM_SCHEMA = {
     nlPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     ranges:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     bars:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    angles:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    parallel: { type: Type.ARRAY, nullable: true, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+    perpendicular: { type: Type.ARRAY, nullable: true, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+    labels:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
   },
 }
 
@@ -418,15 +424,17 @@ QUESTION: ${question.text}${optText}${ansText}
 
 Pick the correct diagramType and fill in all required fields. ALL coordinate values MUST be plain integers or decimals — never null, never strings.
 
-• "cartesian_grid" — xMin,xMax,yMin,yMax (integers),gridStep(1 or 2); points:[{label,x,y}]; segments:[{x1,y1,x2,y2}]
-• "geometric_shape" — canvas 400×300 px, keep all coordinates 40–380 x, 20–280 y.
-    shapes:[{kind,vertices,sides,rightAngleAt,cx,cy,radius,x,y,width,height,labels}]
-    - triangle/polygon: vertices:[{x,y,label}] (integers), sides:[{label:"8 cm",fromVertex:0,toVertex:1}], rightAngleAt: vertex index for right angle
-    - rectangle: x,y,width,height (integers), sides:[{label,fromVertex,toVertex}] corners indexed 0=TL 1=TR 2=BR 3=BL
-    - circle: cx,cy,radius (integers), labels:[{text,x,y}]
-    - line: vertices:[{x,y,label}]
-    Example right triangle AB=8cm BC=6cm right angle B:
-    {"diagramType":"geometric_shape","shapes":[{"kind":"triangle","vertices":[{"x":80,"y":240,"label":"A"},{"x":80,"y":100,"label":"B"},{"x":260,"y":240,"label":"C"}],"sides":[{"label":"8 cm","fromVertex":0,"toVertex":1},{"label":"6 cm","fromVertex":1,"toVertex":2}],"rightAngleAt":1}]}
+• "geometry" — PREFERRED for geometry/triangle/angle/shape questions. Named points in a 0-10 coordinate space. Renderer auto-scales to SVG.
+    points: {"A":[x,y],"B":[x,y],...} — 2-10 named points, coordinates in range 0-10
+    segments: [{from:"A",to:"B",label:"8 cm",dashed:false}]
+    angles: [{at:"B",between:["A","C"],label:"60°"}]
+    parallel: [["AB","CD"]] — segment name pairs that are parallel (draws tick marks)
+    perpendicular: [["AB","BC"]] — segment name pairs at 90° (draws square marker)
+    labels: [{text:"label",at:"A",offset:[5,0]}]
+    Example right triangle with AB=8cm BC=6cm right angle B:
+    {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"8 cm"},{"from":"B","to":"C","label":"6 cm"},{"from":"A","to":"C"}],"perpendicular":[["AB","BC"]]}
+• "cartesian_grid" — for coordinate geometry, graphs, plotting points. xMin,xMax,yMin,yMax (integers),gridStep(1 or 2); points:[{label,x,y}]; segments:[{x1,y1,x2,y2}]
+• "geometric_shape" — AVOID; use "geometry" instead for most shapes. For complex multi-shape diagrams only. Canvas 400×300 px.
 • "number_line" — min,max,step; nlPoints:[{value,open,label}]; ranges:[{from,to}]
 • "bar_chart" — bars:[{label,value}]; title,xLabel,yLabel optional
 All label strings: plain text only, no LaTeX or dollar signs.`
@@ -458,6 +466,10 @@ All label strings: plain text only, no LaTeX or dollar signs.`
             nlPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
             ranges:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
             bars:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            angles:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            parallel: { type: Type.ARRAY, nullable: true, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+            perpendicular: { type: Type.ARRAY, nullable: true, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+            labels:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
           },
           required: ['diagramType'],
         },
