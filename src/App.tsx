@@ -466,6 +466,9 @@ export default function App() {
         onProviderChange={p => {
           setProvider(p)
           setConfig(c => ({ ...c, provider: p, model: DEFAULT_MODELS[p] }))
+          if (p !== 'gemini') {
+            notify('Quality audit is only available with Gemini. Generated questions will not be audited for Cambridge IGCSE standards.', 'info')
+          }
         }}
         apiKeys={apiKeys}
         onApiKeyChange={setApiKey}
