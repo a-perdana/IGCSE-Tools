@@ -302,6 +302,27 @@ function tryAutoGeometryFromText(text: string): DiagramSpec | undefined {
     } as DiagramSpec
   }
 
+  // Pattern: regular polygon symmetry questions (e.g. regular pentagon)
+  const regPoly = clean.match(/\bregular\s+(pentagon|hexagon|heptagon|octagon|nonagon|decagon)\b/i)
+  if (regPoly) {
+    const sidesByName: Record<string, number> = {
+      pentagon: 5, hexagon: 6, heptagon: 7, octagon: 8, nonagon: 9, decagon: 10,
+    }
+    const n = sidesByName[regPoly[1].toLowerCase()]
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, n).split('')
+    const cx = 5, cy = 5, r = 3.8
+    const points: Record<string, [number, number]> = {}
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (2 * Math.PI * i) / n
+      points[letters[i]] = [cx + r * Math.cos(ang), cy + r * Math.sin(ang)]
+    }
+    const segments = Array.from({ length: n }, (_, i) => ({
+      from: letters[i],
+      to: letters[(i + 1) % n],
+    }))
+    return { diagramType: 'geometry', points, segments } as DiagramSpec
+  }
+
   // Pattern: "line AB is parallel to line CD. Line EF is a straight line."
   // Build a standard parallel-lines-with-transversal geometry diagram.
   const parallelLines = clean.match(/\bline\s+([A-Z]{2})\s+is parallel to\s+line\s+([A-Z]{2})\b/i)
