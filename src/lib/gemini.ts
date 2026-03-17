@@ -399,7 +399,6 @@ const DIAGRAM_SCHEMA = {
     ranges:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     bars:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
   },
-  required: ['diagramType'],
 }
 
 export async function generateTest(
