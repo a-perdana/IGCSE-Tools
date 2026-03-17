@@ -9,8 +9,9 @@ const BARE_LATEX_RE = /(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alph
 export function preprocessLatex(text: string): string {
   // Step 0: escape currency dollar signs ($5000, $3.50) but NOT math blocks like $1000 \times 4$
   // Currency pattern: $digits followed by space+letter (plain English word, not LaTeX command/operator)
-  // "$5000 at a rate" → \$5000   |   "$1000 \times" → unchanged   |   "$4$" → unchanged
-  let result = text.replace(/\$(\d[\d,.]*)(?=\s[a-zA-Z])/g, (_, digits) => `\\$${digits}`)
+  // "$5000 at a rate" → &#36;5000   |   "$1000 \times" → unchanged   |   "$4$" → unchanged
+  // Use HTML entity &#36; instead of \$ so the backslash doesn't show in rendered output
+  let result = text.replace(/\$(\d[\d,.]*)(?=\s[a-zA-Z])/g, (_, digits) => `&#36;${digits}`)
 
   // Step 0.5: repair malformed inline sequences like \alpha$$\beta
   // produced by some model outputs; this avoids KaTeX parse errors.

@@ -83,15 +83,20 @@ export function normalizeSvgMarkdown(text: string): string {
     if (!inFenced) wraps.push({ start, end, raw: m[0] })
   }
 
-  if (wraps.length === 0) return fixedPrefix
+  if (wraps.length === 0) {
+    // Even if no raw SVGs need wrapping, ensure existing fenced blocks
+    // are preceded by a newline so markdown treats them as block-level code
+    return fixedPrefix.replace(/([^\n])(\s*```svg)/g, '$1\n$2')
+  }
 
   let out = ''
   let cursor = 0
   for (const w of wraps) {
     out += fixedPrefix.slice(cursor, w.start)
-    out += `\`\`\`svg\n${w.raw}\n\`\`\``
+    out += `\n\`\`\`svg\n${w.raw}\n\`\`\`\n`
     cursor = w.end
   }
   out += fixedPrefix.slice(cursor)
-  return out
+  // Also fix any pre-existing fenced blocks that lack a leading newline
+  return out.replace(/([^\n])(\s*```svg)/g, '$1\n$2')
 }
