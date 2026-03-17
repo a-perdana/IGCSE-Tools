@@ -35,6 +35,19 @@ export function preprocessLatex(text: string): string {
   result = result.replace(/(\d+(?:\.\d+)?)\\\[°\]/g, '$1^{\\circ}')
   // 45[o] (no backslash) → 45^{\circ}
   result = result.replace(/(\d+(?:\.\d+)?)\[o\]/g, '$1^{\\circ}')
+  // 120°xto or 120°xtо — unicode degree followed by "xto" junk → 120°
+  // This happens when model writes "120°\text{o}" or similar that gets mangled
+  result = result.replace(/(\d+(?:\.\d+)?)°xto\b/g, '$1^{\\circ}')
+  result = result.replace(/°xto\b/g, '^{\\circ}')
+  // ^{e}xto or ^exto patterns → ^{\circ}
+  result = result.replace(/\^\{e\}xto\b/g, '^{\\circ}')
+  result = result.replace(/\^exto\b/g, '^{\\circ}')
+
+  // Step 0.7: strip stray "xto" that appears after degree symbols inside LaTeX
+  // Model sometimes writes $120^{\circ}xto$ — "xto" is spurious text after the degree
+  result = result.replace(/(\^\\?\{?\\circ\}?|°)\s*xto\b/g, '^{\\circ}')
+  // Also handle unicode degree + xto outside math context
+  result = result.replace(/°\s*xto\b/g, '^{\\circ}')
 
   // Step 1: merge accidentally split adjacent math blocks
   result = result.replace(/\$([^$\n]+?)\$\$([^$\n]+?)\$/g, (_m, a, b) => `$${a}${b}$`)
