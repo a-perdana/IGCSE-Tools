@@ -39,23 +39,36 @@ function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
   return raw as DiagramSpec
 }
 
+/** Strip LaTeX wrappers and normalise a raw option string so coordinate parsing works
+ *  even when the model wraps values in $...$, \left(...\right), etc. */
+function stripForCoordParse(s: string): string {
+  return s
+    .replace(/\$+/g, '')           // remove $ delimiters
+    .replace(/\\left\s*\(/g, '(')  // \left( → (
+    .replace(/\\right\s*\)/g, ')') // \right) → )
+    .replace(/\\\s/g, ' ')         // escaped spaces
+    .trim()
+}
+
+function parseCoord(s: string): { x: number; y: number } | null {
+  const clean = stripForCoordParse(s)
+  const m = clean.match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?$/)
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : null
+}
+
 /** If all MCQ options are coordinate pairs and the answer is also a coordinate pair,
  *  auto-generate a cartesian_grid diagram so the question is actually answerable. */
 function tryAutoCartesianDiagram(answer: string, options: string[]): DiagramSpec | undefined {
-  const coordRe = /^\s*\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?\s*$/
-  const parsed = options.map(o => {
-    const m = o.match(coordRe)
-    return m ? { x: Number(m[1]), y: Number(m[2]) } : null
-  })
+  const parsed = options.map(o => parseCoord(o))
   if (parsed.length < 2 || parsed.some(c => c === null)) return undefined
 
-  // Answer may be "A", "(2, 3)", "A) (2, 3)", etc.
+  // Answer may be "A", "(2, 3)", "$(-2, 3)$", "A) (2, 3)", etc.
   let px: number, py: number
-  const directMatch = answer.match(coordRe)
+  const directMatch = parseCoord(answer)
   if (directMatch) {
-    px = Number(directMatch[1]); py = Number(directMatch[2])
+    px = directMatch.x; py = directMatch.y
   } else {
-    const letter = answer.trim().match(/^[A-D]/i)?.[0]?.toUpperCase()
+    const letter = stripForCoordParse(answer).match(/^[A-D]/i)?.[0]?.toUpperCase()
     if (!letter) return undefined
     const idx = ['A', 'B', 'C', 'D'].indexOf(letter)
     const opt = parsed[idx]
