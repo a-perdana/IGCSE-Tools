@@ -515,25 +515,17 @@ BIOLOGY & CHEMISTRY — structural diagrams (use svg_template when question asks
   Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
   IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
 
-LAYER 3 — TikZ (QuickLaTeX). Use for geometry AND complex apparatus when existing types fall short.
+LAYER 3 — "tikz" (QuickLaTeX). Use ONLY for complex apparatus/structures that have no matching svg_template.
 
-• "tikz" — TikZ code rendered to PNG via QuickLaTeX. Use for:
-  - Any geometry: parallel lines, angles, triangles, constructions (PREFER over "geometry" type)
-  - Complex apparatus not in svg_template: chromatography, filtration, titration, circuit diagrams
-  - Any diagram that needs precise drawing
+• "tikz" — TikZ code rendered to PNG. Use for: chromatography, filtration, titration setup, microscope, circuit diagrams, any lab apparatus not covered by svg_template.
+  DO NOT use tikz for geometry/angles/triangles — use the "geometry" type instead.
   Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture} block.
-  Packages available: tikz, pgfplots (compat=1.18), usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
-  CRITICAL: In JSON strings ALL backslashes must be doubled (\\\\). E.g. \\\\draw, \\\\node, \\\\begin.
-  Use coordinates in cm (typical range 0–8). Keep diagrams clean and labelled.
+  Packages: tikz, usetikzlibrary{arrows.meta,positioning,patterns}
+  CRITICAL: In JSON strings ALL backslashes must be doubled (\\\\). Semicolons end every TikZ statement.
+  Use only simple primitives: \\\\draw, \\\\node, \\\\fill. Avoid +() relative coords, arc, and complex paths.
 
-  Example — parallel lines + transversal (AB‖CD, angle AEF=72°):
-    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw (0,2) -- (6,2) node[right]{B} node[pos=0,left]{A};\\n\\\\draw (0,0) -- (6,0) node[right]{D} node[pos=0,left]{C};\\n\\\\draw (1.5,3) -- (3.5,-1) node[below]{F};\\n\\\\coordinate (E) at (2.4,2);\\n\\\\node[above right] at (E) {E};\\n\\\\fill (E) circle (1.5pt);\\n\\\\node[above left] at (2.4,2) {$72^\\\\circ$};\\n\\\\node[below right] at (2.8,0) {$x$};\\n\\\\draw[->|,>=stealth,thin] (2,2.5) arc[start angle=130,end angle=180,radius=0.5];\\n\\\\end{tikzpicture}"
-
-  Example — right triangle ABC (right angle at B, AB=8 cm, BC=6 cm):
-    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw (0,0) node[left]{A} -- (0,4) node[left]{B} -- (3,0) node[right]{C} -- cycle;\\n\\\\draw (0,0.3) -- (0.3,0.3) -- (0.3,0);\\n\\\\node[left] at (0,2) {8 cm};\\n\\\\node[below] at (1.5,0) {6 cm};\\n\\\\end{tikzpicture}"
-
-  Example — complex apparatus (Bunsen burner + flask):
-    tikzCode:"\\\\begin{tikzpicture}[scale=0.9]\\n\\\\draw (1,0) -- (1,1.5) -- (0.5,1.5);\\n\\\\draw (0.5,1.5) arc[start angle=180,end angle=0,radius=0.5];\\n\\\\draw (1.5,1.5) -- (1,1.5);\\n\\\\node[below] at (1,0) {Gas supply};\\n\\\\end{tikzpicture}"
+  Example — paper chromatography:
+    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw[thick] (0,0) rectangle (3,5);\\n\\\\draw[dashed] (0,0.5) -- (3,0.5);\\n\\\\node[below] at (1.5,0) {Chromatography paper};\\n\\\\node at (0.8,0.5) {\\\\textbullet};\\n\\\\node[below] at (0.8,0.4) {ink};\\n\\\\fill[blue!20] (0,0) rectangle (3,0.3);\\n\\\\node[right] at (3,0.15) {solvent};\\n\\\\end{tikzpicture}"
 
 All label strings: plain text only, no LaTeX or dollar signs.`
 
@@ -753,20 +745,17 @@ GENERATION RULES:
      Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
      IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
 
-   LAYER 3 — "tikz" (QuickLaTeX). Use when existing types cannot accurately represent the diagram.
-   • "tikz" — TikZ code rendered to PNG. PREFER over "geometry" type for angles/parallel-lines/triangles.
+   LAYER 3 — "tikz" (QuickLaTeX). Use ONLY for complex lab apparatus with no matching svg_template.
+   • "tikz" — TikZ code rendered to PNG. DO NOT use for geometry/angles — use "geometry" type instead.
      Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture}.
-     CRITICAL: In JSON strings escape ALL backslashes as \\\\ (four chars). E.g. \\\\draw not \\draw.
-     Available: tikz, pgfplots (compat=1.18), usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
-     Example parallel lines (AB‖CD, transversal EF, angle AEF=72°):
-     {"diagramType":"tikz","tikzCode":"\\\\begin{tikzpicture}\\n\\\\draw (0,2) -- (6,2) node[right]{B} node[pos=0,left]{A};\\n\\\\draw (0,0) -- (6,0) node[right]{D} node[pos=0,left]{C};\\n\\\\draw (1.5,3) -- (3.5,-1);\\n\\\\node[above left] at (2.4,2) {$72^\\\\circ$};\\n\\\\node[below right] at (2.8,0) {$x$};\\n\\\\end{tikzpicture}"}
-     Example right triangle (right angle at B, AB=8 cm, BC=6 cm):
-     {"diagramType":"tikz","tikzCode":"\\\\begin{tikzpicture}\\n\\\\draw (0,0) node[left]{A} -- (0,4) node[left]{B} -- (3,0) node[right]{C} -- cycle;\\n\\\\draw (0,0.3) -- (0.3,0.3) -- (0.3,0);\\n\\\\node[left] at (0,2) {8 cm};\\n\\\\node[below] at (1.5,0) {6 cm};\\n\\\\end{tikzpicture}"}
+     CRITICAL: In JSON strings escape ALL backslashes as \\\\ (four chars). Every statement ends with semicolon.
+     Use only simple commands: \\\\draw, \\\\node, \\\\fill. Avoid +() relative coords and complex arcs.
+     Available: tikz, usetikzlibrary{arrows.meta,positioning,patterns}
 
    SUBJECT-SPECIFIC DIAGRAM SELECTION RULES:
-   - Mathematics: PREFER tikz over geometry for angles/parallel lines/triangles. Use circle_theorem for circle theorems. Use cartesian_grid for coordinate geometry.
-   - Biology: Use svg_template for cells/leaf. Use tikz for structural diagrams without a template. Use science_graph for data/rate, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys.
-   - Chemistry: Use svg_template for electrolysis/distillation. Use tikz for complex apparatus not in templates. Use energy_level_diagram for energetics, science_graph for rate/heating curves.
+   - Mathematics: Use geometry for angles/parallel lines/triangles. Use circle_theorem for circle theorems. Use cartesian_grid for coordinate geometry. Do NOT use tikz for maths.
+   - Biology: Use svg_template for cells/leaf. Use science_graph for data/rate, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys. Use tikz only for apparatus with no matching svg_template.
+   - Chemistry: Use svg_template for electrolysis/distillation. Use energy_level_diagram for energetics, science_graph for rate/heating curves. Use tikz only for apparatus not covered by svg_template.
 
    CRITICAL DIAGRAM RULES — mandatory:
    • If hasDiagram=true, the "diagram" field MUST be a complete non-null object. NEVER output hasDiagram=true with diagram=null.

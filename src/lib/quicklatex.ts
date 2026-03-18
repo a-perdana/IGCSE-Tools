@@ -23,11 +23,29 @@ function wrapTikz(code: string): string {
 }
 
 /**
+ * Fixes common AI TikZ generation mistakes before sending to QuickLaTeX.
+ */
+function sanitizeTikz(code: string): string {
+  return code
+    // AI sometimes produces literal \n instead of actual newlines
+    .replace(/\\n/g, '\n')
+    // Extra escaped backslashes: \\\\draw → \\draw (AI double-escapes in JSON context)
+    .replace(/\\\\(draw|node|fill|coordinate|path|foreach|pgf|text|begin|end|tikz|usepackage|usetikzlibrary|def|let|scope)\b/g, '\\$1')
+    // Stray +- or -+ sequences that aren't valid TikZ
+    .replace(/\+\s*-\s*\(/g, '(')
+    .replace(/-\s*\+\s*\(/g, '(')
+    // Trailing + before semicolons
+    .replace(/\+\s*;/g, ';')
+    // Ensure \begin{tikzpicture} lines end properly
+    .trim()
+}
+
+/**
  * Renders TikZ code and returns a PNG URL hosted on quicklatex.com.
  * Throws if rendering fails.
  */
 export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
-  const formula = wrapTikz(code)
+  const formula = wrapTikz(sanitizeTikz(code))
   const cached = cache.get(formula)
   if (cached) return cached
 
