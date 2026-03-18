@@ -218,8 +218,10 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
     const endDeg = a0_deg + sweep
 
     const r = 0.42   // arc radius in cm
+    // Use explicit calc syntax $(vertex)+(angle:r)$ — more broadly supported
+    // than ([shift=(angle:r)]vertex) in older pgf versions on QuickLaTeX
     lines.push(
-      `  \\draw ([shift=(${a0_deg.toFixed(2)}:${r}cm)]${angle.at}) arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:${r}cm);`
+      `  \\draw ($(${angle.at})+(${a0_deg.toFixed(2)}:${r}cm)$) arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:${r}cm);`
     )
 
     // Label on the bisector of the interior angle
