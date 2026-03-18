@@ -227,6 +227,18 @@ function inferNumericAnswer(answer: string, options: string[]): number | undefin
   return fromOption ? Number(fromOption[0]) : undefined
 }
 
+function inferAnswerOption(answer: string, options: string[]): string | undefined {
+  const letter = answer.trim().match(/^[A-D]/i)?.[0]?.toUpperCase()
+  if (letter) {
+    const idx = ['A', 'B', 'C', 'D'].indexOf(letter)
+    if (idx >= 0 && options[idx]) return options[idx]
+  }
+  const a = answer.trim().toLowerCase()
+  if (!a) return undefined
+  const exact = options.find(opt => opt.trim().toLowerCase() === a)
+  return exact
+}
+
 function regularPolygonGeometry(sides: number): DiagramSpec {
   const n = Math.max(3, Math.min(10, Math.round(sides)))
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, n).split('')
@@ -312,6 +324,30 @@ function tryAutoGeometryFromText(text: string, answer = '', options: string[] = 
       return regularPolygonGeometry(inferredOrder)
     }
     return regularPolygonGeometry(4)
+  }
+
+  // Pattern: "Name the mathematical name of the quadrilateral shown..."
+  if (/\bquadrilateral\b/i.test(clean) && /\bname\b/i.test(clean)) {
+    const chosen = (inferAnswerOption(answer, options) ?? '').toLowerCase()
+    let verts: Array<{ x: number; y: number; label?: string }>
+    if (chosen.includes('rhombus')) {
+      verts = [{ x: 200, y: 70, label: 'A' }, { x: 320, y: 150, label: 'B' }, { x: 200, y: 230, label: 'C' }, { x: 80, y: 150, label: 'D' }]
+    } else if (chosen.includes('kite')) {
+      verts = [{ x: 200, y: 60, label: 'A' }, { x: 300, y: 155, label: 'B' }, { x: 200, y: 245, label: 'C' }, { x: 140, y: 155, label: 'D' }]
+    } else if (chosen.includes('parallelogram')) {
+      verts = [{ x: 110, y: 220, label: 'A' }, { x: 290, y: 220, label: 'B' }, { x: 340, y: 120, label: 'C' }, { x: 160, y: 120, label: 'D' }]
+    } else if (chosen.includes('trapezium') || chosen.includes('trapezoid')) {
+      verts = [{ x: 90, y: 220, label: 'A' }, { x: 310, y: 220, label: 'B' }, { x: 250, y: 120, label: 'C' }, { x: 150, y: 120, label: 'D' }]
+    } else {
+      // Default to a clear non-degenerate quadrilateral.
+      verts = [{ x: 90, y: 220, label: 'A' }, { x: 310, y: 220, label: 'B' }, { x: 270, y: 120, label: 'C' }, { x: 140, y: 120, label: 'D' }]
+    }
+    return {
+      diagramType: 'geometric_shape',
+      viewWidth: 400,
+      viewHeight: 300,
+      shapes: [{ kind: 'polygon', vertices: verts }],
+    } as DiagramSpec
   }
 
   // Pattern: "A circle has diameter AB. Point C is on the circumference."
@@ -493,6 +529,48 @@ function tryAutoGeometryFromText(text: string, answer = '', options: string[] = 
       ],
       perpendicular: [[`${O}${A}`, `${B}${C}`]],
       ...(centralAngleLabel ? { angles: [{ at: O, between: [A, radialOther], label: centralAngleLabel }] } : {}),
+    } as DiagramSpec
+  }
+
+  // Pattern: "AB is parallel to CD. Line EF intersects AB at X and CD at Y."
+  const intersectingParallel = clean.match(/\b(?:line\s+)?([A-Z]{2})\s+is parallel to\s+(?:line\s+)?([A-Z]{2})[\s\S]*?(?:line\s+)?([A-Z]{2})\s+intersects\s+(?:line\s+)?\1\s+at\s+([A-Z])\s+and\s+(?:line\s+)?\2\s+at\s+([A-Z])/i)
+  if (intersectingParallel) {
+    const [a, b] = intersectingParallel[1].toUpperCase().split('')
+    const [c, d] = intersectingParallel[2].toUpperCase().split('')
+    const [t, u] = intersectingParallel[3].toUpperCase().split('')
+    const vOnFirst = intersectingParallel[4].toUpperCase()
+    const wOnSecond = intersectingParallel[5].toUpperCase()
+
+    const points: Record<string, [number, number]> = {
+      [a]: [1.0, 3.0],
+      [b]: [9.0, 3.0],
+      [c]: [1.0, 7.0],
+      [d]: [9.0, 7.0],
+      [vOnFirst]: [7.0, 3.0],
+      [wOnSecond]: [5.4, 7.0],
+      [t]: [4.4, 9.0],
+      [u]: [8.0, 1.0],
+    }
+
+    const namedParallelAngle = clean.match(/\b(?:angle|∠)\s*([A-Z]{3})\s*(?:=|is)?\s*(\d+(?:\.\d+)?)\s*°?/i)
+    const angles = namedParallelAngle && points[namedParallelAngle[1][1]] && points[namedParallelAngle[1][0]] && points[namedParallelAngle[1][2]]
+      ? [{
+        at: namedParallelAngle[1][1].toUpperCase(),
+        between: [namedParallelAngle[1][0].toUpperCase(), namedParallelAngle[1][2].toUpperCase()] as [string, string],
+        label: `${clamp(Number(namedParallelAngle[2]), 1, 359)}°`,
+      }]
+      : undefined
+
+    return {
+      diagramType: 'geometry',
+      points,
+      segments: [
+        { from: a, to: b },
+        { from: c, to: d },
+        { from: t, to: u },
+      ],
+      parallel: [[`${a}${b}`, `${c}${d}`]],
+      ...(angles ? { angles } : {}),
     } as DiagramSpec
   }
 

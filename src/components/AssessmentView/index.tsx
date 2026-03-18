@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2 } from 'lucide-react'
+import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2, RefreshCw } from 'lucide-react'
 import type { Assessment, Question, QuestionItem } from '../../lib/types'
 import { parseSVGSafe, normalizeSvgMarkdown } from '../../lib/svg'
 import { DiagramRenderer } from '../DiagramRenderer'
@@ -31,7 +31,7 @@ interface Props {
   onMoveQuestion?: (questionId: string, direction: 'up' | 'down') => void
   bankQuestions?: Question[]
   onAddQuestions?: (questions: QuestionItem[]) => void
-  onUpdateQuestion?: (questionId: string, updates: { text?: string; answer?: string; markScheme?: string }) => void
+  onUpdateQuestion?: (questionId: string, updates: Partial<QuestionItem>) => void
 }
 
 function QuestionMarkdown({ content }: { content: string }) {
@@ -145,6 +145,7 @@ export function AssessmentView({
   activeTab, onTabChange,
   onRemoveQuestion, onMoveQuestion, bankQuestions, onAddQuestions, onUpdateQuestion,
 }: Props) {
+  const QUESTIONS_PER_PAGE = 8
   const contentRef = useRef<HTMLDivElement>(null)
   const [studentAnswers, setStudentAnswers] = useState<string[]>([])
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -155,6 +156,8 @@ export function AssessmentView({
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
+  const [repairingIds, setRepairingIds] = useState<Set<string>>(new Set())
+  const [questionPage, setQuestionPage] = useState(1)
 
   if (!assessment) {
     if (isGenerating && generationLog) {
@@ -231,6 +234,40 @@ export function AssessmentView({
     .join('\n\n')
 
   const renderedQuestions = assessment.questions.map(repairQuestionItem)
+  const totalQuestionPages = Math.max(1, Math.ceil(renderedQuestions.length / QUESTIONS_PER_PAGE))
+  const safeQuestionPage = Math.min(questionPage, totalQuestionPages)
+  const questionStart = (safeQuestionPage - 1) * QUESTIONS_PER_PAGE
+  const pagedQuestions = renderedQuestions.slice(questionStart, questionStart + QUESTIONS_PER_PAGE)
+  const missingDiagramQuestions = renderedQuestions.filter(q => q.diagramMissing)
+
+  useEffect(() => {
+    setQuestionPage(1)
+  }, [assessment.id, activeTab])
+
+  useEffect(() => {
+    if (questionPage > totalQuestionPages) setQuestionPage(totalQuestionPages)
+  }, [questionPage, totalQuestionPages])
+
+  const handleRegenerateDiagram = (q: QuestionItem) => {
+    if (!onUpdateQuestion) return
+    setRepairingIds(prev => new Set(prev).add(q.id))
+    const repaired = repairQuestionItem(q)
+    onUpdateQuestion(q.id, {
+      hasDiagram: repaired.hasDiagram,
+      diagramMissing: repaired.diagramMissing,
+      diagram: repaired.diagram,
+    })
+    setRepairingIds(prev => {
+      const next = new Set(prev)
+      next.delete(q.id)
+      return next
+    })
+  }
+
+  const handleRegenerateAllMissing = () => {
+    if (!onUpdateQuestion) return
+    missingDiagramQuestions.forEach(q => handleRegenerateDiagram(q))
+  }
 
   const currentText = activeTab === 'questions' ? questionsText
     : activeTab === 'answerKey' ? answerKeyText
@@ -261,6 +298,16 @@ export function AssessmentView({
               title="Add questions from bank"
             >
               <Plus className="w-3.5 h-3.5" /> Add
+            </button>
+          )}
+          {onUpdateQuestion && !studentMode && activeTab === 'questions' && missingDiagramQuestions.length > 0 && (
+            <button
+              onClick={handleRegenerateAllMissing}
+              className="px-2.5 py-1.5 text-xs bg-amber-100 text-amber-800 rounded-lg font-medium flex items-center gap-1 hover:bg-amber-200"
+              title="Regenerate missing diagrams without changing question text"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Regenerate All Missing ({missingDiagramQuestions.length})
             </button>
           )}
           <button onClick={handleSave} disabled={isSaving} className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-60">
@@ -319,7 +366,9 @@ export function AssessmentView({
           />
         ) : (
           <div>
-            {activeTab === 'questions' && renderedQuestions.map((q, i) => (
+            {activeTab === 'questions' && pagedQuestions.map((q, localIdx) => {
+              const i = questionStart + localIdx
+              return (
               <div key={q.id}>
                 {editingQId === q.id ? (
                   <div className="border border-emerald-300 rounded-lg p-3 bg-emerald-50/30 mb-6">
@@ -422,8 +471,21 @@ export function AssessmentView({
                     </div>
                     {q.diagramMissing && (
                       <div className="mb-2 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                        <span className="shrink-0 mt-0.5">⚠</span>
-                        <span>Diagram was not generated for this question — it may be unanswerable. Try regenerating.</span>
+                        <span className="shrink-0 mt-0.5">!</span>
+                        <div className="flex-1 min-w-0">
+                          <span>Diagram was not generated for this question - it may be unanswerable.</span>
+                          {onUpdateQuestion && !studentMode && (
+                            <button
+                              onClick={() => handleRegenerateDiagram(q)}
+                              disabled={repairingIds.has(q.id)}
+                              className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200 text-amber-900 hover:bg-amber-300 disabled:opacity-60"
+                              title="Regenerate diagram without changing question text"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${repairingIds.has(q.id) ? 'animate-spin' : ''}`} />
+                              Regenerate Diagram
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                     <DiagramRenderer spec={q.diagram} />
@@ -444,7 +506,31 @@ export function AssessmentView({
                   </div>
                 )}
               </div>
-            ))}
+            )})}
+
+            {activeTab === 'questions' && totalQuestionPages > 1 && (
+              <div className="flex items-center justify-between mt-2 mb-4 px-1">
+                <span className="text-xs text-stone-500">
+                  Page {safeQuestionPage} / {totalQuestionPages}
+                </span>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setQuestionPage(p => Math.max(1, p - 1))}
+                    disabled={safeQuestionPage === 1}
+                    className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setQuestionPage(p => Math.min(totalQuestionPages, p + 1))}
+                    disabled={safeQuestionPage === totalQuestionPages}
+                    className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
 
             {!studentMode && activeTab === 'answerKey' && (
               <QuestionMarkdown content={answerKeyText} />
@@ -501,3 +587,4 @@ export function AssessmentView({
     </div>
   )
 }
+

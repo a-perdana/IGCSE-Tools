@@ -199,6 +199,7 @@ export function Library({
   currentUserId, currentUserName,
   onTogglePublicAssessment, onTogglePublicQuestion,
 }: Props) {
+  const QUESTIONS_PER_PAGE = 20
   const [bankView, setBankView] = useState<'assessments' | 'questions'>('assessments')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -211,6 +212,7 @@ export function Library({
   const [confirmDelete, setConfirmDelete] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [subjectFilter, setSubjectFilter] = useState<string>('')
+  const [questionPage, setQuestionPage] = useState(1)
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>()
@@ -226,6 +228,10 @@ export function Library({
   const filteredQuestions = subjectFilter
     ? questions.filter(q => q.subject === subjectFilter)
     : questions
+  const totalQuestionPages = Math.max(1, Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE))
+  const safeQuestionPage = Math.min(questionPage, totalQuestionPages)
+  const questionStart = (safeQuestionPage - 1) * QUESTIONS_PER_PAGE
+  const pagedQuestions = filteredQuestions.slice(questionStart, questionStart + QUESTIONS_PER_PAGE)
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return
@@ -344,20 +350,20 @@ export function Library({
         {/* Tab switcher + subject filter */}
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
           <button
-            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()) }}
+            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()); setQuestionPage(1) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'assessments' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
             Assessments ({filteredAssessments.length})
           </button>
           <button
-            onClick={() => { setBankView('questions'); setSelectedIds(new Set()) }}
+            onClick={() => { setBankView('questions'); setSelectedIds(new Set()); setQuestionPage(1) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'questions' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
             Questions ({filteredQuestions.length})
           </button>
           <select
             value={subjectFilter}
-            onChange={e => setSubjectFilter(e.target.value)}
+            onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1) }}
             className="ml-auto text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600"
           >
             <option value="">All subjects</option>
@@ -485,7 +491,7 @@ export function Library({
 
           {bankView === 'questions' && (
             <div className="grid grid-cols-1 gap-2">
-              {filteredQuestions.map(q => {
+              {pagedQuestions.map(q => {
                 const isSelected = selectedIds.has(q.id)
                 const isGlobal = q.userId !== currentUserId && q.isPublic
                 return (
@@ -579,6 +585,29 @@ export function Library({
               {filteredQuestions.length === 0 && !loading && (
                 <div className="text-stone-400 text-sm text-center py-8">
                   {subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
+                </div>
+              )}
+              {filteredQuestions.length > 0 && totalQuestionPages > 1 && (
+                <div className="flex items-center justify-between mt-2 px-1">
+                  <span className="text-xs text-stone-500">
+                    Page {safeQuestionPage} / {totalQuestionPages}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setQuestionPage(p => Math.max(1, p - 1))}
+                      disabled={safeQuestionPage === 1}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => setQuestionPage(p => Math.min(totalQuestionPages, p + 1))}
+                      disabled={safeQuestionPage === totalQuestionPages}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
