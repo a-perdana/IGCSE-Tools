@@ -649,9 +649,16 @@ export async function generateTest(
   const model = config.model || 'gemini-2.5-flash'
   const subjectRules = SUBJECT_SPECIFIC_RULES[config.subject] ?? ''
 
-  // ── Phase 1: Plan question slots and generate diagram specs ──────────────
+  // Normalise question type from UI display string to clean internal value
+  const rawType = config.type.toLowerCase()
+  const cleanType: 'mcq' | 'short_answer' | 'structured' | 'mixed' =
+    rawType.includes('mcq') || rawType.includes('multiple') ? 'mcq' :
+    rawType.includes('short') ? 'short_answer' :
+    rawType.includes('structured') ? 'structured' : 'mixed'
 
-  onLog?.('Phase 1: planning question slots and diagram specs…')
+  // ── Phase 1: Plan question slots (lightweight — no diagram data yet) ──────
+
+  onLog?.('Phase 1: planning question slots…')
 
   const phase1Prompt = `You are a Cambridge IGCSE ${config.subject} Chief Examiner planning an assessment.
 
@@ -659,23 +666,22 @@ CONFIGURATION:
 - Topic: ${config.topic}
 - ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 - Number of Questions: ${config.count}
-- Question Type: ${config.type}
+- Question Type: ${cleanType === 'mixed' ? 'Mixed (any of: mcq, short_answer, structured)' : cleanType}
 - Calculator: ${config.calculator ? 'Allowed' : 'Not Allowed'}
 ${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ''}
 
-TASK: For each of the ${config.count} question slots, decide:
-1. A distinct sub-topic to assess (NO two questions may test the same sub-topic or skill)
-2. The question type ("mcq", "short_answer", or "structured") — honour the configured type above
-3. Whether a diagram is needed (hasDiagram)
-4. If hasDiagram=true: a precise diagramHint describing EXACTLY what the diagram should show,
-   including specific numbers, shapes, labels, and values that will later appear in both the diagram
-   and the question text. Be concrete — e.g. "right triangle with legs 5 cm and 12 cm, right angle at B"
-   not "a triangle". The diagram renderer uses this to produce the visual ground truth.
+TASK: For each of the ${config.count} question slots, output:
+- index: 0-based slot number
+- topic: specific sub-topic to assess (must be DIFFERENT for every slot)
+- questionType: one of "mcq", "short_answer", "structured" — match the configured type
+- hasDiagram: true only if a visual diagram genuinely helps answer this question
+- diagramHint: if hasDiagram=true, describe EXACTLY what the diagram shows with specific numbers
+  e.g. "right triangle, legs 5 cm and 12 cm, right angle at B, hypotenuse unlabelled"
+  If hasDiagram=false, set diagramHint to empty string "".
 
-SUB-TOPIC DIVERSITY — strictly enforce:
-- Each question MUST test a DIFFERENT sub-topic or skill.
-- "Different numbers, same method" is NOT diversity — it is forbidden.
-- Spread across the widest possible range within the topic.
+SUB-TOPIC DIVERSITY (strictly enforce):
+- Each slot MUST test a DIFFERENT sub-topic or skill within ${config.topic}.
+- Spread across the widest possible range.
 
 Return EXACTLY ${config.count} slots.`
 
@@ -710,13 +716,14 @@ Return EXACTLY ${config.count} slots.`
       contents: { parts: [...refParts, { text: phase1Prompt }] },
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         temperature: 0.4,
         responseSchema: phase1Schema,
       },
     })
     const usage = getGeminiUsage(response)
     if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+    onLog?.(`[Phase 1] raw response length: ${response.text?.length ?? 0}`)
     const parsed = safeJsonParse(response.text || '{}') as { slots: any[] }
     if (!parsed.slots || parsed.slots.length < config.count) {
       throw { type: 'invalid_response', retryable: true, message: `Phase 1 returned ${parsed.slots?.length ?? 0} slots, expected ${config.count}. Retrying…` }
@@ -725,10 +732,11 @@ Return EXACTLY ${config.count} slots.`
   }, 3, onRetry)
 
   // Normalise slots
+  const validTypes = ['mcq', 'short_answer', 'structured']
   const slots: QuestionSlot[] = rawSlots.slice(0, config.count).map((s, i) => ({
     index: i,
     topic: s.topic ?? config.topic,
-    questionType: (['mcq', 'short_answer', 'structured'].includes(s.questionType) ? s.questionType : config.type) as QuestionSlot['questionType'],
+    questionType: (validTypes.includes(s.questionType) ? s.questionType : (cleanType === 'mixed' ? 'short_answer' : cleanType)) as QuestionSlot['questionType'],
     hasDiagram: Boolean(s.hasDiagram),
     diagramHint: s.diagramHint ?? '',
     diagram: null,
