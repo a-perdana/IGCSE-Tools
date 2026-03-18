@@ -488,7 +488,7 @@ ${DIAGRAM_TYPE_DOCS}`
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           responseMimeType: 'application/json',
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           temperature: 0.3,
           // Wrap in a non-nullable object so the top-level schema is always an object.
           // DIAGRAM_SCHEMA itself has nullable:true which Gemini rejects as a top-level schema.
@@ -593,7 +593,7 @@ ${DIAGRAM_TYPE_DOCS}`
         const response = await ai.models.generateContent({
           model,
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.2, responseSchema: DIAGRAM_SCHEMA },
+          config: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.2, responseSchema: DIAGRAM_SCHEMA },
         })
         const usage = getGeminiUsage(response)
         if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
@@ -716,14 +716,19 @@ Return EXACTLY ${config.count} slots.`
       contents: { parts: [...refParts, { text: phase1Prompt }] },
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
         temperature: 0.4,
         responseSchema: phase1Schema,
       },
     })
     const usage = getGeminiUsage(response)
     if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
-    onLog?.(`[Phase 1] raw response length: ${response.text?.length ?? 0}`)
+    const finishReason = (response as any)?.candidates?.[0]?.finishReason
+    const thoughtTokens = (response as any)?.usageMetadata?.thoughtsTokenCount ?? 0
+    onLog?.(`[Phase 1] length=${response.text?.length ?? 0} finishReason=${finishReason} thoughtTokens=${thoughtTokens}`)
+    if (finishReason === 'MAX_TOKENS') {
+      throw { type: 'invalid_response', retryable: false, message: `Generation failed: model hit token limit during planning (thinking used ${thoughtTokens} tokens). Try a shorter topic or fewer questions.` }
+    }
     const parsed = safeJsonParse(response.text || '{}') as { slots: any[] }
     if (!parsed.slots || parsed.slots.length < config.count) {
       throw { type: 'invalid_response', retryable: true, message: `Phase 1 returned ${parsed.slots?.length ?? 0} slots, expected ${config.count}. Retrying…` }
@@ -865,6 +870,12 @@ Do NOT invent different numbers than what the diagram shows.`
     })
     const usage = getGeminiUsage(response)
     if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+    const finishReason2 = (response as any)?.candidates?.[0]?.finishReason
+    const thoughtTokens2 = (response as any)?.usageMetadata?.thoughtsTokenCount ?? 0
+    onLog?.(`[Phase 2] length=${response.text?.length ?? 0} finishReason=${finishReason2} thoughtTokens=${thoughtTokens2}`)
+    if (finishReason2 === 'MAX_TOKENS') {
+      throw { type: 'invalid_response', retryable: false, message: `Generation failed: model hit token limit while writing questions (thinking used ${thoughtTokens2} tokens). Try fewer questions or a less complex topic.` }
+    }
     const parsed = safeJsonParse(response.text || '{}') as { questions: Omit<QuestionItem, 'id'>[] }
     if (!parsed.questions || parsed.questions.length < config.count) {
       throw { type: 'invalid_response', retryable: true, message: `Phase 2 returned ${parsed.questions?.length ?? 0} questions, expected ${config.count}. Retrying…` }
