@@ -194,36 +194,44 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
 
   // ── Angle arcs + labels (fully numeric — no named nodes, no calc) ─────────
   // Arc: \draw (arcStartX, arcStartY) arc (startDeg:endDeg:radiusCm)
-  // The arc start point is computed as vertex + r * (cos a0, sin a0).
-  // r_geom = 0.42 / S so that tpt() scales it to exactly 0.42cm.
-  const arcR_geom = 0.42 / S
+  // Older pgf on QuickLaTeX fails to parse negative angles in arc (a:b:r).
+  // Fix: always draw CCW (counterclockwise), always keep angles in [0, 360+sweep].
+  const arcR_geom = 0.42 / S  // geometry units → scales to exactly 0.42cm via tpt()
   for (const angle of angles) {
     const at = pts[angle.at]
     const [b0, b1] = angle.between
     const p0 = pts[b0], p1 = pts[b1]
     if (!at || !p0 || !p1) continue
 
-    // Angles in radians/degrees from vertex to each neighbour
     const a0_rad = Math.atan2(p0[1] - at[1], p0[0] - at[0])
     const a1_rad = Math.atan2(p1[1] - at[1], p1[0] - at[0])
-    const a0_deg = a0_rad * 180 / Math.PI
 
-    // Normalise sweep to (-180, 180] — always draw the non-reflex arc
+    // Normalise sweep to (-180, 180] — the non-reflex interior angle
     let sweep_rad = a1_rad - a0_rad
-    while (sweep_rad > Math.PI) sweep_rad -= 2 * Math.PI
+    while (sweep_rad > Math.PI)  sweep_rad -= 2 * Math.PI
     while (sweep_rad <= -Math.PI) sweep_rad += 2 * Math.PI
-    const endDeg = a0_deg + sweep_rad * 180 / Math.PI
 
-    // Arc start point in geometry units
-    const arcStartX = at[0] + arcR_geom * Math.cos(a0_rad)
-    const arcStartY = at[1] + arcR_geom * Math.sin(a0_rad)
+    // Always draw CCW: if sweep is CW (negative), flip start/end
+    let startRad = a0_rad
+    const sweepAbs = Math.abs(sweep_rad)
+    if (sweep_rad < 0) startRad = a0_rad + sweep_rad  // = a1_rad
+
+    // Shift startDeg into [0, 360) to avoid negative angles in arc command
+    let startDeg = startRad * 180 / Math.PI
+    if (startDeg < 0)   startDeg += 360
+    if (startDeg >= 360) startDeg -= 360
+    const endDeg = startDeg + sweepAbs * 180 / Math.PI  // always > startDeg, always positive
+
+    // Arc start point in geometry units (vertex + r * direction of startRad)
+    const arcStartX = at[0] + arcR_geom * Math.cos(startRad)
+    const arcStartY = at[1] + arcR_geom * Math.sin(startRad)
     lines.push(
-      `  \\draw ${tpt(arcStartX, arcStartY)} arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:0.42cm);`
+      `  \\draw ${tpt(arcStartX, arcStartY)} arc (${startDeg.toFixed(2)}:${endDeg.toFixed(2)}:0.42cm);`
     )
 
-    // Label on the bisector of the interior angle
+    // Label on the bisector of the interior angle (midpoint of sweep from a0_rad)
     const bisector = a0_rad + sweep_rad / 2
-    const labelR = 0.68 / S   // radius in geometry units
+    const labelR = 0.68 / S   // geometry units
     const lx = at[0] + Math.cos(bisector) * labelR
     const ly = at[1] + Math.sin(bisector) * labelR
     lines.push(`  \\node[font=\\scriptsize] at ${tpt(lx, ly)} {$${fmtAngleLabel(angle.label)}$};`)
