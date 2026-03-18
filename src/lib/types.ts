@@ -32,6 +32,9 @@ export interface Assessment {
   userId: string;
   folderId?: string;
   createdAt: Timestamp;
+  code?: string;
+  isPublic?: boolean;
+  preparedBy?: string;
 }
 
 export interface Question extends QuestionItem {
@@ -42,6 +45,8 @@ export interface Question extends QuestionItem {
   userId: string;
   folderId?: string;
   createdAt: Timestamp;
+  isPublic?: boolean;
+  preparedBy?: string;
 }
 
 export interface Folder {
@@ -50,6 +55,8 @@ export interface Folder {
   userId: string;
   createdAt: Timestamp;
 }
+
+export type ResourceType = 'past_paper' | 'syllabus' | 'other';
 
 export interface Resource {
   id: string;
@@ -60,7 +67,13 @@ export interface Resource {
   mimeType: string;
   userId: string;
   createdAt: Timestamp;
+  resourceType?: ResourceType;
+  isShared?: boolean;
+  geminiFileUri?: string;
+  geminiFileUploadedAt?: Timestamp;
 }
+
+export type AIProvider = 'gemini' | 'openai' | 'anthropic';
 
 export interface GenerationConfig {
   subject: string;
@@ -71,11 +84,25 @@ export interface GenerationConfig {
   calculator: boolean;
   model: string;
   syllabusContext?: string;
+  provider?: AIProvider;
 }
 
 export interface AnalyzeFileResult {
   analysis: string;
   questions: QuestionItem[];
+}
+
+export interface AIError {
+  type:
+    | "rate_limit"
+    | "quota_exceeded"
+    | "invalid_key"
+    | "model_overloaded"
+    | "invalid_response"
+    | "network"
+    | "unknown";
+  retryable: boolean;
+  message: string;
 }
 
 export interface GeminiError {
@@ -94,4 +121,32 @@ export interface Notification {
   message: string;
   type: "success" | "error" | "info";
   dismissAt: number;
+}
+
+export interface SyllabusCache {
+  resourceId: string;
+  subject: string;
+  topics: Record<string, string>;
+  processedAt: Timestamp;
+  userId: string | null;
+}
+
+export interface PastPaperCache {
+  resourceId: string;
+  subject: string;
+  examples?: string;
+  summary?: string;
+  version?: number;
+  processedAt: Timestamp;
+  userId: string | null;
+  items?: Array<{
+    questionText: string;
+    commandWord: string;
+    marks: number;
+    markScheme: string;
+    questionType?: string;
+    difficultyBand?: string;
+    topic?: string;
+    assessmentObjective?: string;
+  }>;
 }

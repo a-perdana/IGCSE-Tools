@@ -20,10 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource } from './types'
-// These types are used by older Firestore data / hooks that have not been fully migrated yet.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ResourceType = any; type SyllabusCache = any; type PastPaperCache = any;
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache } from './types'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
