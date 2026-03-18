@@ -513,10 +513,10 @@ ${DIAGRAM_TYPE_DOCS}`
       const usage = getGeminiUsage(response)
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
       const raw = response.text
-      if (!raw) { onLog?.(`[spec ${spec.index}] empty response`); return null }
-      let parsed: unknown
-      try { parsed = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed: ${raw?.slice(0, 120)}`); return null }
-      const diagram = normalizeDiagram(parsed)
+      // Use safeJsonParse to recover from minor syntax errors or truncations
+      const parsed = safeJsonParse(raw || '{}')
+      if (!parsed || Object.keys(parsed).length === 0) { onLog?.(`[spec ${spec.index}] JSON parse failed or empty`); return null }
+      const diagram = normalizeDiagram(parsed as any)
       if (diagram) {
         onLog?.(`[spec ${spec.index}] type=${diagram.diagramType} → OK`)
         return { index: spec.index, diagram }
@@ -803,10 +803,10 @@ WRITING RULES:
 2. DIAGRAMS: If a slot has hasDiagram=true and provides a diagram JSON above:
    - Set hasDiagram=true in your output.
    - Your question text MUST reference the exact numbers/labels shown in that diagram.
-     E.g. If the diagram shows a triangle points A(0,0), B(4,0), write about a base of length 4.
-     E.g. If the diagram shows a speed-time graph going to (10, 20), ask about speed at t=10.
+     (e.g. if the diagram has points A(0,0) and B(4,0), the question must state distance is 4)
+   - Use the diagram values as the PRIMARY source of truth.
    - Do NOT invent different values — the diagram JSON is the ground truth; it will be automatically attached.
-   - Do NOT include a "diagram" field in your output (it is injected automatically).
+   - Do NOT output a "diagram" field (it is injected automatically).
    If hasDiagram=false, set hasDiagram=false.
 
 3. STRUCTURED QUESTIONS (type="structured", 4+ marks):
@@ -841,7 +841,7 @@ ASSESSMENT OBJECTIVES:
 
 DIAGRAM RULE:
 When a question slot lists hasDiagram=true with a diagram JSON, your question text MUST
-reference the exact values shown in that diagram (coordinates, side lengths, labels, etc.).
+reference the exact values shown in that diagram JSON (coordinates, side lengths, labels, etc.).
 It is critical that the question text matches the diagram visual.
 Do NOT output a "diagram" field in your JSON.
 Do NOT invent different numbers than what the diagram shows.`
