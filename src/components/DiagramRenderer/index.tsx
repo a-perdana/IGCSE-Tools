@@ -6,6 +6,7 @@ import type {
 } from '../../lib/types'
 import { SVG_TEMPLATES } from '../../lib/svgTemplates'
 import { renderTikz } from '../../lib/quicklatex'
+import { geometryToTikz } from '../../lib/geometryToTikz'
 
 // ── CartesianGrid ────────────────────────────────────────────────────────────
 
@@ -392,179 +393,13 @@ function BarChart({ spec }: { spec: BarChartSpec }) {
   )
 }
 
-// ── GeometryDiagram ──────────────────────────────────────────────────────────
+// ── GeometryDiagram — rendered via QuickLaTeX/TikZ ───────────────────────────
+// AI generates geometry JSON → geometryToTikz() converts deterministically →
+// QuickLaTeX renders PNG. No AI TikZ syntax involved.
 
 function GeometryDiagram({ spec }: { spec: GeometryDiagramSpec }) {
-  const W = 380, H = 300
-  const PAD = 44  // padding so labels don't clip
-
-  // Find bounding box of all points to auto-scale
-  const coords = Object.values(spec.points)
-  if (coords.length === 0) return null
-  const xs = coords.map(p => p[0]), ys = coords.map(p => p[1])
-  const minX = Math.min(...xs), maxX = Math.max(...xs)
-  const minY = Math.min(...ys), maxY = Math.max(...ys)
-  const rangeX = (maxX - minX) || 1, rangeY = (maxY - minY) || 1
-
-  // Scale with padding so points are never at edge
-  const tx = (x: number) => PAD + ((x - minX) / rangeX) * (W - PAD * 2)
-  // SVG y is flipped — higher coordinate values go UP
-  const ty = (y: number) => H - PAD - ((y - minY) / rangeY) * (H - PAD * 2)
-  const pt = (name: string) => {
-    const c = spec.points[name]
-    return c ? { x: tx(c[0]), y: ty(c[1]) } : null
-  }
-
-  // Collect which segment pairs have parallel tick marks
-  const parallelSegs = spec.parallel ?? []
-  const parallelTickCount: Record<string, number> = {}
-  parallelSegs.forEach((pair, i) => {
-    parallelTickCount[pair[0]] = i + 1
-    parallelTickCount[pair[1]] = i + 1
-  })
-
-  const segKey = (a: string, b: string) => [a, b].sort().join('')
-
-  // Draw parallel tick marks on a segment midpoint
-  function ParallelTicks({ a, b, count }: { a: { x: number; y: number }; b: { x: number; y: number }; count: number }) {
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
-    const dx = b.x - a.x, dy = b.y - a.y
-    const len = Math.sqrt(dx * dx + dy * dy) || 1
-    const nx = (-dy / len) * 7, ny = (dx / len) * 7  // normal
-    const ux = (dx / len) * 5, uy = (dy / len) * 5   // along segment
-    const offsets = count === 1 ? [0] : count === 2 ? [-4, 4] : [-6, 0, 6]
-    return (
-      <g>
-        {offsets.map((o, i) => (
-          <line key={i}
-            x1={mx + ux * o / 5 - nx} y1={my + uy * o / 5 - ny}
-            x2={mx + ux * o / 5 + nx} y2={my + uy * o / 5 + ny}
-            stroke="#555" strokeWidth="1.5" />
-        ))}
-      </g>
-    )
-  }
-
-  // Right-angle square marker at vertex V between points A and B
-  function RightAngleMarker({ v, a, b }: { v: { x: number; y: number }; a: { x: number; y: number }; b: { x: number; y: number } }) {
-    const dax = a.x - v.x, day = a.y - v.y
-    const lenA = Math.sqrt(dax * dax + day * day) || 1
-    const dbx = b.x - v.x, dby = b.y - v.y
-    const lenB = Math.sqrt(dbx * dbx + dby * dby) || 1
-    const sz = 12
-    const uax = (dax / lenA) * sz, uay = (day / lenA) * sz
-    const ubx = (dbx / lenB) * sz, uby = (dby / lenB) * sz
-    return (
-      <path d={`M ${v.x + uax} ${v.y + uay} L ${v.x + uax + ubx} ${v.y + uay + uby} L ${v.x + ubx} ${v.y + uby}`}
-        stroke="#333" strokeWidth="1.3" fill="none" />
-    )
-  }
-
-  // Angle arc label
-  function AngleArc({ at, between, label }: { at: string; between: [string, string]; label: string }) {
-    const v = pt(at), a = pt(between[0]), b = pt(between[1])
-    if (!v || !a || !b) return null
-    const dax = a.x - v.x, day = a.y - v.y
-    const dbx = b.x - v.x, dby = b.y - v.y
-    const lenA = Math.sqrt(dax * dax + day * day) || 1
-    const lenB = Math.sqrt(dbx * dbx + dby * dby) || 1
-    const r = 18
-    const ax = v.x + (dax / lenA) * r, ay = v.y + (day / lenA) * r
-    const bx = v.x + (dbx / lenB) * r, by = v.y + (dby / lenB) * r
-    // midpoint of arc for label position
-    const mx = v.x + ((dax / lenA + dbx / lenB) / 2) * (r + 10)
-    const my = v.y + ((day / lenA + dby / lenB) / 2) * (r + 10)
-    return (
-      <g>
-        <path d={`M ${ax} ${ay} A ${r} ${r} 0 0 1 ${bx} ${by}`}
-          stroke="#2563eb" strokeWidth="1.2" fill="none" />
-        <text x={mx} y={my} textAnchor="middle" dominantBaseline="middle"
-          fontSize="11" fill="#2563eb" fontFamily="serif">{label}</text>
-      </g>
-    )
-  }
-
-  const perpPairs = spec.perpendicular ?? []
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: 'block' }}>
-      {/* Segments */}
-      {(spec.segments ?? []).map((seg, i) => {
-        const a = pt(seg.from), b = pt(seg.to)
-        if (!a || !b) return null
-        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
-        const dx = b.x - a.x, dy = b.y - a.y
-        const len = Math.sqrt(dx * dx + dy * dy) || 1
-        const nx = (-dy / len) * 14, ny = (dx / len) * 14
-        const key = segKey(seg.from, seg.to)
-        const ticks = parallelTickCount[`${seg.from}${seg.to}`] ?? parallelTickCount[`${seg.to}${seg.from}`]
-        return (
-          <g key={i}>
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-              stroke="#1a1a1a" strokeWidth="2"
-              strokeDasharray={seg.dashed ? '6,3' : undefined} />
-            {seg.label && (
-              <text x={mx + nx} y={my + ny} textAnchor="middle" dominantBaseline="middle"
-                fontSize="13" fill="#1a1a1a" fontFamily="serif">{seg.label}</text>
-            )}
-            {ticks && <ParallelTicks a={a} b={b} count={ticks} />}
-          </g>
-        )
-      })}
-
-      {/* Perpendicular right-angle markers */}
-      {perpPairs.map((pair, i) => {
-        // pair like ["AB","BC"] — find the shared vertex
-        const [seg1, seg2] = pair
-        // Parse segment names: first char = from, second = to
-        const [a1, b1] = [seg1[0], seg1[1]]
-        const [a2, b2] = [seg2[0], seg2[1]]
-        const shared = [a1, b1].find(p => p === a2 || p === b2)
-        if (!shared) return null
-        const other1 = a1 === shared ? b1 : a1
-        const other2 = a2 === shared ? b2 : a2
-        const v = pt(shared), a = pt(other1), b = pt(other2)
-        if (!v || !a || !b) return null
-        return <RightAngleMarker key={i} v={v} a={a} b={b} />
-      })}
-
-      {/* Angle arcs */}
-      {(spec.angles ?? []).map((ang, i) => (
-        <AngleArc key={i} at={ang.at} between={ang.between} label={ang.label} />
-      ))}
-
-      {/* Point labels */}
-      {Object.entries(spec.points).map(([name, coord]) => {
-        const sx = tx(coord[0]), sy = ty(coord[1])
-        // Nudge label away from centroid of all points
-        const cx = coords.reduce((s, c) => s + tx(c[0]), 0) / coords.length
-        const cy2 = coords.reduce((s, c) => s + ty(c[1]), 0) / coords.length
-        const dx = sx - cx, dy = sy - cy2
-        const len = Math.sqrt(dx * dx + dy * dy) || 1
-        const ox = (dx / len) * 16, oy = (dy / len) * 16
-        return (
-          <text key={name} x={sx + ox} y={sy + oy} textAnchor="middle" dominantBaseline="middle"
-            fontSize="14" fill="#1a1a1a" fontWeight="bold" fontFamily="serif">{name}</text>
-        )
-      })}
-
-      {/* Extra labels */}
-      {(spec.labels ?? []).map((lbl, i) => {
-        const base = pt(lbl.at)
-        if (!base) return null
-        const ox = lbl.offset?.[0] ?? 0, oy = lbl.offset?.[1] ?? 0
-        return (
-          <text key={i} x={base.x + ox} y={base.y + oy} textAnchor="middle" dominantBaseline="middle"
-            fontSize="13" fill="#1a1a1a" fontFamily="serif">{lbl.text}</text>
-        )
-      })}
-
-      {/* Point dots */}
-      {Object.entries(spec.points).map(([name, coord]) => (
-        <circle key={`dot-${name}`} cx={tx(coord[0])} cy={ty(coord[1])} r={3} fill="#1a1a1a" />
-      ))}
-    </svg>
-  )
+  const tikzCode = geometryToTikz(spec)
+  return <TikzDiagram spec={{ diagramType: 'tikz', code: tikzCode }} />
 }
 
 // ── CircleTheoremDiagram ─────────────────────────────────────────────────────
