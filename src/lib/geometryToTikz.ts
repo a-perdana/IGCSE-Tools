@@ -6,7 +6,9 @@
  * we generate precise TikZ. No AI TikZ mistakes possible.
  *
  * Required TikZ libraries (already in QuickLaTeX preamble):
- *   \usetikzlibrary{angles,quotes,calc,arrows.meta,patterns}
+ *   \usetikzlibrary{calc,arrows.meta,patterns,decorations.pathmorphing,positioning}
+ * NOTE: angles/quotes library deliberately NOT used — QuickLaTeX's pgf version
+ * does not support \pic{angle=...}. Arcs are drawn manually via calc.
  */
 
 import type { GeometryDiagramSpec } from './types'
@@ -133,7 +135,7 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
   const lines: string[] = []
   lines.push('\\begin{tikzpicture}[font=\\small,>=stealth]')
 
-  // ── Named coordinates (required for \pic angle syntax) ──────────────────
+  // ── Named coordinates (required for calc-based arc drawing) ─────────────
   for (const [name, [x, y]] of Object.entries(pts)) {
     lines.push(`  \\coordinate (${name}) at ${tpt(x, y)};`)
   }
@@ -197,25 +199,32 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
   }
 
   // ── Angle arcs + labels ───────────────────────────────────────────────────
+  // Uses manual arc drawing (calc library) — avoids \pic{angle} which requires
+  // the TikZ angles library that QuickLaTeX's pgf version does not support.
   for (const angle of angles) {
     const at = pts[angle.at]
     const [b0, b1] = angle.between
     const p0 = pts[b0], p1 = pts[b1]
     if (!at || !p0 || !p1) continue
 
-    // \pic draws angle at `angle.at` from direction b0 to b1 counterclockwise
-    lines.push(`  \\pic[draw, angle radius=0.42cm, angle eccentricity=1.5] {angle = ${b0}--${angle.at}--${b1}};`)
+    // Angles in degrees from vertex to each neighbour
+    const a0_deg = Math.atan2(p0[1] - at[1], p0[0] - at[0]) * 180 / Math.PI
+    const a1_deg = Math.atan2(p1[1] - at[1], p1[0] - at[0]) * 180 / Math.PI
 
-    // Place label on the bisector of the interior angle
-    const a0 = Math.atan2(p0[1] - at[1], p0[0] - at[0])
-    const a1 = Math.atan2(p1[1] - at[1], p1[0] - at[0])
+    // Normalise sweep to (-180, 180] so we always draw the non-reflex arc
+    let sweep = a1_deg - a0_deg
+    while (sweep > 180) sweep -= 360
+    while (sweep <= -180) sweep += 360
+    const endDeg = a0_deg + sweep
 
-    // Compute bisector direction; ensure it's on the correct (interior) side
-    let da = a1 - a0
-    while (da > Math.PI) da -= 2 * Math.PI
-    while (da < -Math.PI) da += 2 * Math.PI
-    const bisector = a0 + da / 2
+    const r = 0.42   // arc radius in cm
+    lines.push(
+      `  \\draw ([shift=(${a0_deg.toFixed(2)}:${r}cm)]${angle.at}) arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:${r}cm);`
+    )
 
+    // Label on the bisector of the interior angle
+    const a0 = a0_deg * Math.PI / 180
+    const bisector = a0 + (sweep / 2) * Math.PI / 180
     const labelR = 0.68 / S         // radius in geometry units
     const lx = at[0] + Math.cos(bisector) * labelR
     const ly = at[1] + Math.sin(bisector) * labelR

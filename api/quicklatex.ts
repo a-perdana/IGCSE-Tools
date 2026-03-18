@@ -9,7 +9,7 @@ const PREAMBLE = [
   '\\usepackage{tikz}',
   '\\usepackage{pgfplots}',
   '\\pgfplotsset{compat=1.18}',
-  '\\usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}',
+  '\\usetikzlibrary{arrows.meta,calc,patterns,decorations.pathmorphing,positioning}',
 ].join('\n')
 
 export default async function handler(req: Request): Promise<Response> {
