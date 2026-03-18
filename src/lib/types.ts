@@ -1,15 +1,26 @@
 import { Timestamp } from "firebase/firestore";
 
+export interface TikzSpec {
+  diagramType: 'tikz'
+  code: string
+}
+
 export interface QuestionItem {
   id: string;
-  text: string; // markdown — soru metni
-  answer: string; // markdown — cevap
-  markScheme: string; // markdown — puan şeması
+  text: string;
+  answer: string;
+  markScheme: string;
   marks: number;
-  commandWord: string; // "Calculate", "Explain", vs.
+  commandWord: string;
   type: "mcq" | "short_answer" | "structured";
   hasDiagram: boolean;
-  tikzCode?: string;
+  diagram?: TikzSpec;
+  diagramMissing?: boolean;
+  code?: string;
+  syllabusObjective?: string;
+  assessmentObjective?: "AO1" | "AO2" | "AO3";
+  difficultyStars?: 1 | 2 | 3;
+  options?: string[];
 }
 
 export interface Assessment {

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, GeminiError } from './types'
+import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, GeminiError, TikzSpec } from './types'
 import type { Reference } from './ai'
 import type { UsageCallback } from './ai'
 import { sanitizeQuestion, generateQuestionCode as sharedGenerateQuestionCode } from './sanitize'
@@ -373,18 +373,18 @@ export async function regenerateDiagramsForQuestions(
   apiKey?: string,
   onUsage?: UsageCallback,
   onLog?: (msg: string) => void,
-): Promise<Array<{ id: string; tikzCode: string }>> {
+): Promise<Array<{ id: string; diagram: TikzSpec }>> {
   const ai = getAI(apiKey)
   const results = await Promise.all(
     questions.map(async q => {
       const tikzCode = await generateTikzCode(q, subject, model, ai, onLog)
       if (tikzCode) {
-        return { id: q.id, tikzCode }
+        return { id: q.id, diagram: { diagramType: 'tikz' as const, code: tikzCode } }
       }
       return null
     })
   )
-  return results.filter((v): v is { id: string; tikzCode: string } => Boolean(v))
+  return results.filter((v): v is { id: string; diagram: TikzSpec } => Boolean(v))
 }
 
 // ── Three-phase question generation ────────────────────────────────────────────
@@ -636,7 +636,8 @@ ASSESSMENT OBJECTIVES:
     onLog?.(`Phase 3: generating LaTeX/TikZ code for ${diagramQuestions.length} diagrams…`)
     await Promise.all(questions.map(async (q) => {
       if (q.hasDiagram) {
-        q.tikzCode = await generateTikzCode(q, config.subject, model, ai, onLog) ?? undefined
+        const tikzCode = await generateTikzCode(q, config.subject, model, ai, onLog)
+        if (tikzCode) q.diagram = { diagramType: 'tikz', code: tikzCode }
       }
     }))
   }
@@ -770,7 +771,7 @@ TASK:
     const existing = questions[i]
     return {
       ...sanitized,
-      tikzCode: existing?.tikzCode,
+      diagram: existing?.diagram,
       hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
       id: existing?.id ?? crypto.randomUUID(),
       code: existing?.code ?? sharedGenerateQuestionCode(subject, {
@@ -857,7 +858,7 @@ Return the ENTIRE assessment with ALL questions (corrected or unchanged).`
     const existing = assessment.questions[i]
     return {
       ...sanitized,
-      tikzCode: existing?.tikzCode,
+      diagram: existing?.diagram,
       hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
       id: existing?.id ?? crypto.randomUUID(),
       code: existing?.code ?? sharedGenerateQuestionCode(assessment.subject, {

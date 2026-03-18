@@ -20,7 +20,10 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, DiagramSpec } from './types'
+import type { Assessment, Question, Folder, Resource } from './types'
+// These types are used by older Firestore data / hooks that have not been fully migrated yet.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ResourceType = any; type SyllabusCache = any; type PastPaperCache = any;
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
@@ -31,51 +34,10 @@ function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
   return result
 }
 
-/** Firestore does not support nested arrays. Convert geometry diagram's
- *  parallel/perpendicular fields from Array<[string,string]> to Array<{s1,s2}>.
- *  normalizeDiagram already handles the reverse conversion on read. */
-function serializeDiagram(diagram: unknown): unknown {
-  if (!diagram || typeof diagram !== 'object') return diagram
-  const d = diagram as Record<string, unknown>
-  const out: Record<string, unknown> = stripUndefined({ ...d })
-
-  // geometry: parallel/perpendicular [string,string][] → [{s1,s2}]
-  if (d.diagramType === 'geometry') {
-    for (const key of ['parallel', 'perpendicular']) {
-      if (Array.isArray(out[key])) {
-        out[key] = (out[key] as unknown[]).map(pair =>
-          Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
-        )
-      }
-    }
-  }
-
-  // genetic_diagram: punnettGrid string[][] → punnettGridRows [{row:[...]}]
-  if (d.diagramType === 'genetic_diagram' && Array.isArray(out.punnettGrid)) {
-    out.punnettGridRows = (out.punnettGrid as string[][]).map(row => ({ row }))
-    delete out.punnettGrid
-  }
-
-  // circle_theorem: chords/radii [string,string][] → [{s1,s2}]
-  if (d.diagramType === 'circle_theorem') {
-    for (const key of ['chords', 'radii']) {
-      if (Array.isArray(out[key])) {
-        out[key] = (out[key] as unknown[]).map(pair =>
-          Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
-        )
-      }
-    }
-  }
-
-  return out
-}
 
 function serializeQuestionDiagram(q: unknown): unknown {
   if (!q || typeof q !== 'object') return q
-  const qObj = q as Record<string, unknown>
-  const base = stripUndefined({ ...qObj })
-  if (base.diagram) base.diagram = serializeDiagram(base.diagram)
-  return base
+  return stripUndefined({ ...(q as Record<string, unknown>) })
 }
 
 const app = initializeApp(firebaseConfig);

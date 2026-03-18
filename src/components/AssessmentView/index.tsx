@@ -153,7 +153,7 @@ export function AssessmentView({
   const [editContent, setEditContent] = useState('')
   const [showPicker, setShowPicker] = useState(false)
   const [editingQId, setEditingQId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState<{ text: string; answer: string; markScheme: string }>({ text: '', answer: '', markScheme: '' })
+  const [editDraft, setEditDraft] = useState<{ text: string; answer: string; markScheme: string; tikzCode: string }>({ text: '', answer: '', markScheme: '', tikzCode: '' })
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
@@ -410,7 +410,16 @@ export function AssessmentView({
                       <span className="text-xs font-semibold text-emerald-800">Editing Q{i + 1}</span>
                       <div className="flex gap-1">
                         <button
-                          onClick={() => { onUpdateQuestion?.(q.id, editDraft); setEditingQId(null) }}
+                          onClick={() => {
+                          const updates: Partial<QuestionItem> = { text: editDraft.text, answer: editDraft.answer, markScheme: editDraft.markScheme }
+                          if (editDraft.tikzCode.trim()) {
+                            updates.diagram = { diagramType: 'tikz', code: editDraft.tikzCode }
+                          } else if (q.hasDiagram) {
+                            updates.diagram = undefined
+                          }
+                          onUpdateQuestion?.(q.id, updates)
+                          setEditingQId(null)
+                        }}
                           className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
                         >
                           Apply
@@ -436,6 +445,23 @@ export function AssessmentView({
                         <label className="text-xs font-medium text-stone-600 mb-1 block">Mark Scheme</label>
                         <RichEditor value={editDraft.markScheme} onChange={v => setEditDraft(d => ({ ...d, markScheme: v }))} minRows={6} />
                       </div>
+                      {q.hasDiagram && (
+                        <div>
+                          <label className="text-xs font-medium text-stone-600 mb-1 block flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
+                            TikZ Diagram Code
+                            <span className="text-stone-400 font-normal">(LaTeX/TikZ — leave empty to remove diagram)</span>
+                          </label>
+                          <textarea
+                            value={editDraft.tikzCode}
+                            onChange={e => setEditDraft(d => ({ ...d, tikzCode: e.target.value }))}
+                            className="w-full font-mono text-xs p-2.5 border border-stone-300 rounded-lg bg-stone-50 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-y"
+                            rows={10}
+                            placeholder={'\\documentclass[tikz,border=2mm]{standalone}\n\\usepackage{tikz}\n\\begin{document}\n\\begin{tikzpicture}\n  % your diagram here\n\\end{tikzpicture}\n\\end{document}'}
+                            spellCheck={false}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -466,7 +492,7 @@ export function AssessmentView({
                       )}
                       {onUpdateQuestion && !studentMode && (
                         <button
-                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme }) }}
+                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.code ?? '' }) }}
                           className="ml-1 opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 transition-opacity"
                           title="Edit question"
                         >
