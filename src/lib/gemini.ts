@@ -491,6 +491,7 @@ TASK: Produce a complete, precise diagram JSON for a ${spec.questionType} questi
 DIAGRAM HINT: ${spec.diagramHint}
 
 RULES:
+- RELEVANCE: The diagram must be directly relevant to the topic. Do not generate a generic shape if the topic requires a specific graph or apparatus.
 - Pick EXACTLY ONE diagramType and fill in ALL required fields for that type.
 - ALL numeric values must be plain integers or decimals — never null, never strings.
 - Invent specific, realistic numbers (e.g. side lengths, temperatures, coordinates) — these become the ground truth that the question text will be written around.
@@ -683,7 +684,7 @@ TASK: For each of the ${config.count} question slots, output:
 - index: 0-based slot number
 - topic: specific sub-topic to assess (must be DIFFERENT for every slot)
 - questionType: one of "mcq", "short_answer", "structured" — match the configured type
-- hasDiagram: true only if a visual diagram genuinely helps answer this question
+- hasDiagram: true only if a visual diagram is VITAL for this sub-topic (e.g. geometry, graphs, anatomy). Avoid diagrams for pure algebra/definitions.
 - diagramHint: if hasDiagram=true, describe EXACTLY what the diagram shows with specific numbers
   e.g. "right triangle, legs 5 cm and 12 cm, right angle at B, hypotenuse unlabelled"
   If hasDiagram=false, set diagramHint to empty string "".
@@ -840,11 +841,11 @@ ASSESSMENT OBJECTIVES:
 - AO3: plan experiments, identify variables, evaluate — 2–4 mark questions
 
 DIAGRAM RULE:
-When a question slot lists hasDiagram=true with a diagram JSON, your question text MUST
-reference the exact values shown in that diagram JSON (coordinates, side lengths, labels, etc.).
-It is critical that the question text matches the diagram visual.
-Do NOT output a "diagram" field in your JSON.
-Do NOT invent different numbers than what the diagram shows.`
+1. IF a diagram JSON is provided in the "QUESTION SLOTS" section below, you MUST write the question to match that diagram EXACTLY.
+2. The diagram JSON is the GROUND TRUTH. Do not invent values that contradict it.
+3. If the diagram shows a triangle with sides 3 and 4, the question MUST be about a triangle with sides 3 and 4.
+4. If the diagram seems inconsistent with the topic, prioritize the diagram's content for the question text to ensure matching visuals.
+5. Do NOT output a "diagram" field in your JSON.`
 
   // Phase 2 schema deliberately excludes the diagram field.
   // Diagrams are injected from Phase 1 specs — asking Gemini to reproduce the full
