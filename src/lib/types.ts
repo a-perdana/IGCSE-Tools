@@ -9,6 +9,7 @@ export interface QuestionItem {
   commandWord: string; // "Calculate", "Explain", vs.
   type: "mcq" | "short_answer" | "structured";
   hasDiagram: boolean;
+  tikzCode?: string;
 }
 
 export interface Assessment {
