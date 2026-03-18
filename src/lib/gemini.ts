@@ -490,21 +490,29 @@ ${DIAGRAM_TYPE_DOCS}`
           responseMimeType: 'application/json',
           maxOutputTokens: 2048,
           temperature: 0.3,
-          responseSchema: DIAGRAM_SCHEMA,
+          // Wrap in a non-nullable object so the top-level schema is always an object.
+          // DIAGRAM_SCHEMA itself has nullable:true which Gemini rejects as a top-level schema.
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: { diagram: DIAGRAM_SCHEMA },
+            required: ['diagram'],
+          },
         },
       })
       const usage = getGeminiUsage(response)
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
       const raw = response.text
       if (!raw) { onLog?.(`[spec ${spec.index}] empty response`); return null }
-      let parsed: unknown
-      try { parsed = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed`); return null }
-      const diagram = normalizeDiagram(parsed)
+      let parsedWrapper: unknown
+      try { parsedWrapper = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed`); return null }
+      // Extract from wrapper; also handle flat responses (model emits diagram fields directly)
+      const candidate = (parsedWrapper as any)?.diagram ?? parsedWrapper
+      const diagram = normalizeDiagram(candidate)
       if (diagram) {
         onLog?.(`[spec ${spec.index}] type=${diagram.diagramType} → OK`)
         return { index: spec.index, diagram }
       }
-      onLog?.(`[spec ${spec.index}] type=${(parsed as any)?.diagramType ?? '?'} → rejected by normalizeDiagram`)
+      onLog?.(`[spec ${spec.index}] type=${(candidate as any)?.diagramType ?? '?'} → rejected by normalizeDiagram`)
       return null
     } catch (err) {
       onLog?.(`[spec ${spec.index}] error: ${String(err).slice(0, 100)}`)
@@ -638,7 +646,7 @@ export async function generateTest(
   onLog?: (msg: string) => void,
 ): Promise<QuestionItem[]> {
   const ai = getAI(config.apiKey)
-  const model = config.model || 'gemini-2.5-flash-preview-04-17'
+  const model = config.model || 'gemini-2.5-flash'
   const subjectRules = SUBJECT_SPECIFIC_RULES[config.subject] ?? ''
 
   // ── Phase 1: Plan question slots and generate diagram specs ──────────────
@@ -771,12 +779,12 @@ WRITING RULES:
 1. Write EXACTLY ${config.count} questions, one per slot, in slot order.
 
 2. DIAGRAMS: If a slot has hasDiagram=true and provides a diagram JSON above:
-   - You MUST echo the diagram JSON verbatim into the "diagram" field of that question.
+   - Set hasDiagram=true in your output.
    - Your question text MUST reference the exact numbers/labels shown in that diagram.
-     E.g. if the diagram has a triangle with sides 5 cm and 12 cm, write "In the diagram, triangle ABC has AB = 5 cm and BC = 12 cm…"
-   - Do NOT invent different values or a different shape — the diagram JSON is the ground truth.
-   - Set hasDiagram=true and copy the diagram object exactly.
-   If hasDiagram=false, set hasDiagram=false and diagram=null.
+     E.g. if the diagram shows a triangle with AB=5 cm and BC=12 cm, write "In the diagram, AB = 5 cm and BC = 12 cm…"
+   - Do NOT invent different values — the diagram JSON is the ground truth; it will be automatically attached.
+   - Do NOT include a "diagram" field in your output (it is injected automatically).
+   If hasDiagram=false, set hasDiagram=false.
 
 3. STRUCTURED QUESTIONS (type="structured", 4+ marks):
    - 2–4 sentence scenario/stem paragraph, then **(a)**, **(b)**, **(c)** sub-parts each with mark allocation **[n]**.
@@ -808,13 +816,15 @@ ASSESSMENT OBJECTIVES:
 - AO2: apply, calculate, interpret, deduce — 2–4 mark questions
 - AO3: plan experiments, identify variables, evaluate — 2–4 mark questions
 
-DIAGRAM RULE (NON-NEGOTIABLE):
-When a question slot provides a diagram JSON as ground truth, you MUST:
-(a) copy that exact diagram JSON into the "diagram" field unchanged
-(b) write question text that references the exact values shown in that diagram
-Inventing different numbers or a different shape is FORBIDDEN.
-All diagram label strings must be plain text — no LaTeX inside labels.`
+DIAGRAM RULE:
+When a question slot lists hasDiagram=true with a diagram JSON, your question text MUST
+reference the exact values shown in that diagram (coordinates, side lengths, labels, etc.).
+Do NOT output a "diagram" field — diagrams are injected automatically from the specs above.
+Do NOT invent different numbers than what the diagram shows.`
 
+  // Phase 2 schema deliberately excludes the diagram field.
+  // Diagrams are injected from Phase 1 specs — asking Gemini to reproduce the full
+  // diagram schema alongside long question text causes structured-output failures.
   const questionSchema = {
     type: Type.OBJECT,
     properties: {
@@ -829,7 +839,6 @@ All diagram label strings must be plain text — no LaTeX inside labels.`
       assessmentObjective:{ type: Type.STRING, nullable: true },
       difficultyStars:    { type: Type.NUMBER, nullable: true },
       options:            { type: Type.ARRAY, items: { type: Type.STRING } },
-      diagram:            DIAGRAM_SCHEMA,
     },
     required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'options'],
   }
