@@ -377,7 +377,7 @@ export async function regenerateDiagramsForQuestions(
   const ai = getAI(apiKey)
   const results = await Promise.all(
     questions.map(async q => {
-      const tikzCode = await generateTikzCode(q, subject, model, ai, onLog)
+      const tikzCode = await generateTikzCode(q, subject, model, ai, onLog, q.diagram?.code)
       if (tikzCode) {
         return { id: q.id, diagram: { diagramType: 'tikz' as const, code: tikzCode } }
       }
@@ -655,21 +655,35 @@ async function generateTikzCode(
   subject: string,
   model: string,
   ai: ReturnType<typeof getAI>,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  previousCode?: string,
 ): Promise<string | null> {
-  const prompt = `Generate a complete, compilable LaTeX/TikZ code for a diagram representing this ${subject} question.
+  const improvementBlock = previousCode ? `
+PREVIOUS VERSION (improve upon this — make it more accurate and detailed):
+${previousCode}
 
+IMPROVEMENTS REQUIRED:
+- Add precise measurements, labels and angle values from the question
+- Use exact coordinates that match the described geometry
+- Add dimension arrows, tick marks, or angle arcs where relevant
+- Improve visual clarity: thicker lines, proper node labels, correct proportions
+- Keep it compilable — still end with \\end{tikzpicture} and \\end{document}
+` : ''
+
+  const prompt = `Generate a precise, exam-quality LaTeX/TikZ diagram for this ${subject} question.
+${improvementBlock}
 QUESTION: ${question.text}
 ANSWER: ${question.answer}
 
 REQUIREMENTS:
-1. Output ONLY the raw LaTeX code starting with \\documentclass[tikz,border=2mm]{standalone} and ending with \\end{document}.
-2. Use the 'tikz' package. Include any necessary tikz libraries (e.g., \\usetikzlibrary{angles,quotes,calc,intersections}).
-3. Ensure the diagram clearly visualizes the geometry or situation described in the question.
-4. Do not include markdown formatting (like \`\`\`latex). Just the code.
-5. Keep the diagram SIMPLE — use at most 20 drawing commands. Do not add comments or decorative details.
-6. You MUST end the output with \\end{tikzpicture} and \\end{document}. Never truncate.
-7. If no diagram is sensible, return nothing (empty string).`
+1. Output ONLY raw LaTeX starting with \\documentclass[tikz,border=4mm]{standalone} and ending with \\end{document}.
+2. Include \\usetikzlibrary{angles,quotes,calc,decorations.markings,arrows.meta} and any other needed libraries.
+3. Use exact numeric coordinates — derive them from the question data (angles, lengths, ratios).
+4. Label all key points, angles, and lengths mentioned in the question using \\node.
+5. Use proper line thickness: important lines 1.5pt, construction lines 0.5pt dashed.
+6. Mark right angles with a small square, parallel lines with tick marks, equal lengths with double tick marks.
+7. Do NOT use comments. Do NOT truncate. You MUST end with \\end{tikzpicture} and \\end{document}.
+8. If no diagram is sensible, return nothing (empty string).`
 
   try {
     const response = await ai.models.generateContent({
