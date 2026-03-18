@@ -743,13 +743,15 @@ function tryAutoGeometryFromText(text: string, answer = '', options: string[] = 
     const [c, d] = l2.split('')
     const [e, f] = (t && t.length === 2 ? t : 'EF').split('')
 
+    // Place the transversal intersection points ON the parallel lines (not outside them).
+    // e is where the transversal meets l1, f is where it meets l2.
     const points: Record<string, [number, number]> = {
       [a]: [1, 7.5],
       [b]: [9, 7.5],
       [c]: [1, 3],
       [d]: [9, 3],
-      [e]: [6.8, 9],
-      [f]: [3.6, 1.5],
+      [e]: [6.5, 7.5],   // ON line l1 (AB)
+      [f]: [4.2, 3.0],   // ON line l2 (CD)
     }
 
     const namedParallelAngle = clean.match(/\b(?:angle|∠)\s*([A-Z]{3})\s*(?:=|is)?\s*(\d+(?:\.\d+)?)\s*°?/i)
@@ -888,7 +890,15 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
 
   const normalizedText = normalizeSvgMarkdown(text)
   const referencesDiagram = /\b(in the diagram|the diagram shows|refer to the diagram|as shown in the diagram|from the diagram|on the diagram|shown on the (grid|diagram|figure|graph)|the (grid|figure|graph) shows|shown in the (figure|graph|grid)|as shown (below|above)|on the (grid|graph) (below|above|shown)|shown on a (grid|graph)|coordinates? (?:of|shown)|point [A-Z] shown|in the (triangle|circle|polygon|quadrilateral|rectangle|trapezium|parallelogram)|the (triangle|circle|polygon|quadrilateral) [A-Z]{2,}|angle [A-Z]{2,3}\s*=|triangle [A-Z]{3}|bearing of|three-figure bearings?|is parallel to|transversal|straight line|tangent|diameter [A-Z]{2}|centre of the circle|center of the circle|rotational symmetry|line symmetry|shape shown)\b/i.test(normalizedText)
-  const rawDiagram = normalizeDiagram(q.diagram)
+  let rawDiagram = normalizeDiagram(q.diagram)
+
+  // Reject geometry diagrams that are missing the `parallel` field when the question
+  // mentions "is parallel to" — the AI often generates only the angle vertex points (A, E, F)
+  // and omits the second parallel line entirely. Force the text-based fallback instead.
+  if (rawDiagram?.diagramType === 'geometry' && /\bis parallel to\b/i.test(normalizedText)) {
+    const geo = rawDiagram as { diagramType: string; parallel?: unknown[] }
+    if (!geo.parallel || geo.parallel.length === 0) rawDiagram = undefined
+  }
 
   // Auto-generate a cartesian_grid when the model didn't provide one.
   // Text-based extraction takes priority: it uses the actual named points (P, Q, A, B)
@@ -910,7 +920,10 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, 'id'> {
 
   // Detect questions that say "in the diagram" but have no SVG or structured diagram field.
   const hasSvg = /```svg/i.test(normalizedText)
-  const diagramMissing = (referencesDiagram || Boolean(q.hasDiagram)) && !hasSvg && !diagram
+  // Pure calculation questions about measurement bounds/accuracy don't genuinely need diagrams.
+  // The AI sometimes incorrectly sets hasDiagram=true for these — suppress the warning.
+  const isMeasurementBoundsQuestion = /\b(?:range of (?:the )?actual|correct to (?:the )?nearest (?:millimetre|centimetre|mm|cm)|upper bound|lower bound|error interval|bounds of accuracy)\b/i.test(normalizedText)
+  const diagramMissing = !isMeasurementBoundsQuestion && (referencesDiagram || Boolean(q.hasDiagram)) && !hasSvg && !diagram
 
   return {
     text: normalizedText,
