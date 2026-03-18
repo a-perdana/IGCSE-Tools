@@ -2,13 +2,11 @@
  * Converts a GeometryDiagramSpec (AI-generated JSON) to valid TikZ code
  * for rendering via QuickLaTeX.
  *
- * This keeps AI out of TikZ syntax entirely — AI generates structured JSON,
- * we generate precise TikZ. No AI TikZ mistakes possible.
+ * Strategy: NO named coordinates (\coordinate), NO calc library, NO angles library.
+ * Everything is computed numerically in TypeScript and emitted as raw (x,y) pairs.
+ * This ensures compatibility with QuickLaTeX's older pgf version.
  *
- * Required TikZ libraries (already in QuickLaTeX preamble):
- *   \usetikzlibrary{calc,arrows.meta,patterns,decorations.pathmorphing,positioning}
- * NOTE: angles/quotes library deliberately NOT used — QuickLaTeX's pgf version
- * does not support \pic{angle=...}. Arcs are drawn manually via calc.
+ * Only core TikZ is required — no \usetikzlibrary needed.
  */
 
 import type { GeometryDiagramSpec } from './types'
@@ -124,6 +122,7 @@ function fmtAngleLabel(label: string): string {
 
 /**
  * Converts a GeometryDiagramSpec to a complete TikZ tikzpicture string.
+ * Uses only raw numeric (x,y) coordinates — no named nodes, no extra libraries.
  * Ready to send to QuickLaTeX without any further escaping.
  */
 export function geometryToTikz(spec: GeometryDiagramSpec): string {
@@ -133,18 +132,13 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
   const labels = spec.labels ?? []
 
   const lines: string[] = []
-  lines.push('\\begin{tikzpicture}[font=\\small,>=stealth]')
+  lines.push('\\begin{tikzpicture}[font=\\small]')
 
-  // ── Named coordinates (required for calc-based arc drawing) ─────────────
-  for (const [name, [x, y]] of Object.entries(pts)) {
-    lines.push(`  \\coordinate (${name}) at ${tpt(x, y)};`)
-  }
-
-  // ── Segments ─────────────────────────────────────────────────────────────
+  // ── Segments (numeric coords only — no named node references) ────────────
   for (const seg of segs) {
     if (!pts[seg.from] || !pts[seg.to]) continue
     const style = seg.dashed ? '[dashed]' : ''
-    lines.push(`  \\draw${style} (${seg.from}) -- (${seg.to});`)
+    lines.push(`  \\draw${style} ${tpt(...pts[seg.from])} -- ${tpt(...pts[seg.to])};`)
 
     // Segment length/label at midpoint, offset perpendicular to segment
     if (seg.label) {
@@ -198,46 +192,48 @@ export function geometryToTikz(spec: GeometryDiagramSpec): string {
     drawRightAngleMarker(lines, pts[common], pts[o1], pts[o2])
   }
 
-  // ── Angle arcs + labels ───────────────────────────────────────────────────
-  // Uses manual arc drawing (calc library) — avoids \pic{angle} which requires
-  // the TikZ angles library that QuickLaTeX's pgf version does not support.
+  // ── Angle arcs + labels (fully numeric — no named nodes, no calc) ─────────
+  // Arc: \draw (arcStartX, arcStartY) arc (startDeg:endDeg:radiusCm)
+  // The arc start point is computed as vertex + r * (cos a0, sin a0).
+  // r_geom = 0.42 / S so that tpt() scales it to exactly 0.42cm.
+  const arcR_geom = 0.42 / S
   for (const angle of angles) {
     const at = pts[angle.at]
     const [b0, b1] = angle.between
     const p0 = pts[b0], p1 = pts[b1]
     if (!at || !p0 || !p1) continue
 
-    // Angles in degrees from vertex to each neighbour
-    const a0_deg = Math.atan2(p0[1] - at[1], p0[0] - at[0]) * 180 / Math.PI
-    const a1_deg = Math.atan2(p1[1] - at[1], p1[0] - at[0]) * 180 / Math.PI
+    // Angles in radians/degrees from vertex to each neighbour
+    const a0_rad = Math.atan2(p0[1] - at[1], p0[0] - at[0])
+    const a1_rad = Math.atan2(p1[1] - at[1], p1[0] - at[0])
+    const a0_deg = a0_rad * 180 / Math.PI
 
-    // Normalise sweep to (-180, 180] so we always draw the non-reflex arc
-    let sweep = a1_deg - a0_deg
-    while (sweep > 180) sweep -= 360
-    while (sweep <= -180) sweep += 360
-    const endDeg = a0_deg + sweep
+    // Normalise sweep to (-180, 180] — always draw the non-reflex arc
+    let sweep_rad = a1_rad - a0_rad
+    while (sweep_rad > Math.PI) sweep_rad -= 2 * Math.PI
+    while (sweep_rad <= -Math.PI) sweep_rad += 2 * Math.PI
+    const endDeg = a0_deg + sweep_rad * 180 / Math.PI
 
-    const r = 0.42   // arc radius in cm
-    // Use explicit calc syntax $(vertex)+(angle:r)$ — more broadly supported
-    // than ([shift=(angle:r)]vertex) in older pgf versions on QuickLaTeX
+    // Arc start point in geometry units
+    const arcStartX = at[0] + arcR_geom * Math.cos(a0_rad)
+    const arcStartY = at[1] + arcR_geom * Math.sin(a0_rad)
     lines.push(
-      `  \\draw ($(${angle.at})+(${a0_deg.toFixed(2)}:${r}cm)$) arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:${r}cm);`
+      `  \\draw ${tpt(arcStartX, arcStartY)} arc (${a0_deg.toFixed(2)}:${endDeg.toFixed(2)}:0.42cm);`
     )
 
     // Label on the bisector of the interior angle
-    const a0 = a0_deg * Math.PI / 180
-    const bisector = a0 + (sweep / 2) * Math.PI / 180
-    const labelR = 0.68 / S         // radius in geometry units
+    const bisector = a0_rad + sweep_rad / 2
+    const labelR = 0.68 / S   // radius in geometry units
     const lx = at[0] + Math.cos(bisector) * labelR
     const ly = at[1] + Math.sin(bisector) * labelR
     lines.push(`  \\node[font=\\scriptsize] at ${tpt(lx, ly)} {$${fmtAngleLabel(angle.label)}$};`)
   }
 
-  // ── Point dots + labels ───────────────────────────────────────────────────
+  // ── Point dots + labels (numeric coords) ─────────────────────────────────
   for (const [name, [x, y]] of Object.entries(pts)) {
-    lines.push(`  \\fill (${name}) circle (1.5pt);`)
+    lines.push(`  \\fill ${tpt(x, y)} circle (1.5pt);`)
     const anchor = labelAnchor(name, x, y, pts, segs)
-    lines.push(`  \\node[${anchor},font=\\small] at (${name}) {$${name}$};`)
+    lines.push(`  \\node[${anchor},font=\\small] at ${tpt(x, y)} {$${name}$};`)
   }
 
   // ── Extra text labels ─────────────────────────────────────────────────────

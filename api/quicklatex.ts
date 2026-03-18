@@ -7,9 +7,7 @@ export const config = { runtime: 'edge' }
 
 const PREAMBLE = [
   '\\usepackage{tikz}',
-  '\\usepackage{pgfplots}',
-  '\\pgfplotsset{compat=1.18}',
-  '\\usetikzlibrary{arrows.meta,calc,patterns,decorations.pathmorphing,positioning}',
+  '\\usetikzlibrary{arrows.meta,patterns,decorations.pathmorphing}',
 ].join('\n')
 
 export default async function handler(req: Request): Promise<Response> {
