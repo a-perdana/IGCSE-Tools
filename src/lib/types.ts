@@ -155,23 +155,16 @@ export interface SvgTemplateSpec {
   labels?: Array<{ anchorId: string; text: string }>
 }
 
-/** Layer 3a — TikZ code rendered server-side via QuickLaTeX to PNG. */
+/** Layer 3 — TikZ code rendered via QuickLaTeX proxy to PNG.
+ *  Used for geometry diagrams, complex apparatus, and any diagram
+ *  that cannot be accurately represented by the computed SVG types. */
 export interface TikzSpec {
   diagramType: 'tikz'
   /** Full \begin{tikzpicture}...\end{tikzpicture} block or just the body. */
   code: string
 }
 
-/** Layer 3b — GeoGebra geometry applet driven by AI-generated commands. */
-export interface GeoGebraSpec {
-  diagramType: 'geogebra'
-  /** GeoGebra commands, e.g. ["A=(0,0)", "B=(4,0)", "c=Segment(A,B)"] */
-  commands: string[]
-  width?: number
-  height?: number
-}
-
-export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec | GeometryDiagramSpec | CircleTheoremSpec | ScienceGraphSpec | GeneticDiagramSpec | EnergyLevelDiagramSpec | FoodWebSpec | EnergyPyramidSpec | FlowchartSpec | SvgTemplateSpec | TikzSpec | GeoGebraSpec
+export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec | GeometryDiagramSpec | CircleTheoremSpec | ScienceGraphSpec | GeneticDiagramSpec | EnergyLevelDiagramSpec | FoodWebSpec | EnergyPyramidSpec | FlowchartSpec | SvgTemplateSpec | TikzSpec
 
 // ────────────────────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type {
   DiagramSpec, CartesianGridSpec, GeometricShapeSpec, NumberLineSpec, BarChartSpec, GeometryDiagramSpec,
   CircleTheoremSpec, ScienceGraphSpec, GeneticDiagramSpec, EnergyLevelDiagramSpec,
-  FoodWebSpec, EnergyPyramidSpec, FlowchartSpec, SvgTemplateSpec, TikzSpec, GeoGebraSpec,
+  FoodWebSpec, EnergyPyramidSpec, FlowchartSpec, SvgTemplateSpec, TikzSpec,
 } from '../../lib/types'
 import { SVG_TEMPLATES } from '../../lib/svgTemplates'
 import { renderTikz } from '../../lib/quicklatex'
@@ -1304,104 +1304,6 @@ function TikzDiagram({ spec }: { spec: TikzSpec }) {
   )
 }
 
-// ── GeoGebra ──────────────────────────────────────────────────────────────────
-
-let ggbScriptPromise: Promise<void> | null = null
-
-const win = window as unknown as Record<string, unknown>
-
-function loadGeoGebraScript(): Promise<void> {
-  if (ggbScriptPromise) return ggbScriptPromise
-  ggbScriptPromise = new Promise((resolve, reject) => {
-    if (win.GGBApplet) { resolve(); return }
-    const script = document.createElement('script')
-    script.src = 'https://www.geogebra.org/apps/deployggb.js'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Failed to load GeoGebra script'))
-    document.head.appendChild(script)
-  })
-  return ggbScriptPromise
-}
-
-let ggbCounter = 0
-
-function GeoGebraDiagram({ spec }: { spec: GeoGebraSpec }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [error, setError] = useState<string>()
-  const [loading, setLoading] = useState(true)
-  const idRef = useRef(`ggb-${++ggbCounter}`)
-
-  useEffect(() => {
-    let destroyed = false
-    setLoading(true)
-    setError(undefined)
-
-    loadGeoGebraScript()
-      .then(() => {
-        if (destroyed || !containerRef.current) return
-        const GGBApplet = win.GGBApplet as new (params: Record<string, unknown>, b: boolean) => { inject: (el: HTMLElement) => void; getAppletObject?: () => Record<string, (cmd: string) => void> }
-
-        const params: Record<string, unknown> = {
-          id: idRef.current,
-          appName: 'geometry',
-          width: spec.width ?? 480,
-          height: spec.height ?? 360,
-          showMenuBar: false,
-          showAlgebraInput: false,
-          showToolBar: false,
-          showZoomButtons: true,
-          enableLabelDrags: false,
-          enableShiftDragZoom: true,
-          enableRightClick: false,
-          showResetIcon: true,
-          scaleContainerClass: 'ggb-container',
-          preventFocus: true,
-          appletOnLoad() {
-            if (destroyed) return
-            const applet = win[idRef.current] as Record<string, (cmd: string) => void> | undefined
-            if (!applet) return
-            // Hide axes and grid for clean exam look
-            applet.evalCommand?.('ShowAxes(false)')
-            applet.evalCommand?.('ShowGrid(false)')
-            for (const cmd of spec.commands) {
-              applet.evalCommand?.(cmd)
-            }
-            // Fit all objects into view
-            applet.evalCommand?.('ZoomIn(-1,-1,11,11)')
-            setLoading(false)
-          },
-        }
-
-        const applet = new GGBApplet(params, true)
-        applet.inject(containerRef.current!)
-      })
-      .catch(err => {
-        if (!destroyed) { setError(String(err)); setLoading(false) }
-      })
-
-    return () => { destroyed = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  return (
-    <div style={{ position: 'relative' }}>
-      {loading && (
-        <div className="flex items-center gap-2 py-4 px-2 text-sm text-violet-400 absolute inset-0 bg-white/80 z-10">
-          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-          </svg>
-          Loading GeoGebra…
-        </div>
-      )}
-      {error && (
-        <div className="text-xs text-red-400 py-2 px-1 font-mono">{error}</div>
-      )}
-      <div ref={containerRef} className="ggb-container" />
-    </div>
-  )
-}
-
 // ── Main export ──────────────────────────────────────────────────────────────
 
 export function DiagramRenderer({ spec }: { spec: DiagramSpec | undefined | null }) {
@@ -1414,15 +1316,6 @@ export function DiagramRenderer({ spec }: { spec: DiagramSpec | undefined | null
         Diagram
       </p>
       <div className="px-1"><TikzDiagram spec={spec as TikzSpec} /></div>
-    </div>
-  )
-  if (spec.diagramType === 'geogebra') return (
-    <div className="my-3 border-t-2 border-b-2 border-violet-100 py-3 bg-violet-50/30 rounded-sm">
-      <p className="text-xs font-semibold text-violet-400 mb-2 flex items-center gap-1.5 px-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-violet-300 inline-block" />
-        Diagram
-      </p>
-      <div className="px-1"><GeoGebraDiagram spec={spec as GeoGebraSpec} /></div>
     </div>
   )
   return (

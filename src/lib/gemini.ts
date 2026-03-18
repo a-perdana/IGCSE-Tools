@@ -445,10 +445,8 @@ const DIAGRAM_SCHEMA = {
     // svg_template (Layer 2)
     templateId:   { type: Type.STRING, nullable: true },
     svgLabels:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    // tikz (Layer 3a)
+    // tikz (Layer 3)
     tikzCode:     { type: Type.STRING, nullable: true },
-    // geogebra (Layer 3b)
-    ggbCommands:  { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
     parallel:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     perpendicular:{ type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
     labels:       { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
@@ -517,36 +515,25 @@ BIOLOGY & CHEMISTRY — structural diagrams (use svg_template when question asks
   Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
   IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
 
-LAYER 3 — high-precision rendering (use when existing types cannot represent the diagram accurately):
+LAYER 3 — TikZ (QuickLaTeX). Use for geometry AND complex apparatus when existing types fall short.
 
-• "geogebra" — GeoGebra geometry applet. Use for ANY geometry question: triangles, angles, parallel lines, circle theorems, constructions. Generates precise interactive diagrams.
-  Fields: ggbCommands:[string] — list of GeoGebra commands.
-  Command syntax:
-    Points:    A = (x, y)
-    Segment:   a = Segment(A, B)  or  a = Segment(A, B, false)  [false = no label]
-    Line:      l = Line(A, B)
-    Ray:       r = Ray(A, B)
-    Angle:     alpha = Angle(A, B, C)   [angle at B, from A to C, counterclockwise]
-    AngleFixed: alpha = Angle(A, B, C, 72°)  [creates 72° angle]
-    Circle:    c = Circle(A, 3)  [centre A, radius 3]  or  c = Circle(A, B)  [centre A through B]
-    Polygon:   poly = Polygon(A, B, C)
-    Text:      t = Text("label", (x, y))
-    SetLabel:  SetLabel(obj, "label")
-    SetColor:  SetColor(obj, "blue")
-    SetVisible: SetVisible(obj, false)
-  IMPORTANT: Use coordinate system 0–10 for points. Add Text commands to label angles.
-  Example parallel lines (AB‖CD, transversal through E on AB and F on CD, angle 72°):
-    ggbCommands:["A=(1,7)","B=(9,7)","C=(1,3)","D=(9,3)","E=(6.5,7)","F=(4,3)","l1=Segment(A,B)","l2=Segment(C,D)","t=Segment(E,F)","alpha=Angle(A,E,F)","t1=Text(\"72°\",(5.5,7.3))","t2=Text(\"x\",(4.8,3.5))"]
-  Example right triangle (ABC, right angle at B):
-    ggbCommands:["A=(1,1)","B=(1,7)","C=(9,1)","a=Segment(A,B)","b=Segment(B,C)","c=Segment(A,C)","ang=Angle(C,B,A)","t1=Text(\"8 cm\",(0.2,4))","t2=Text(\"6 cm\",(5,0.3))","t3=Text(\"A\",(0.5,0.5))","t4=Text(\"B\",(0.5,7.2))","t5=Text(\"C\",(9.2,0.5))"]
-
-• "tikz" — TikZ code rendered via QuickLaTeX. Use for: complex biology/chemistry apparatus NOT in svg_template, molecular diagrams, circuit diagrams, lab equipment, any structural diagram requiring precise drawing.
+• "tikz" — TikZ code rendered to PNG via QuickLaTeX. Use for:
+  - Any geometry: parallel lines, angles, triangles, constructions (PREFER over "geometry" type)
+  - Complex apparatus not in svg_template: chromatography, filtration, titration, circuit diagrams
+  - Any diagram that needs precise drawing
   Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture} block.
-  Available packages: tikz, pgfplots, usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
-  Use [scale=0.8] or [scale=1.0] to control size. Keep diagrams clean and minimal.
-  Example distillation apparatus:
-    tikzCode:"\\\\begin{tikzpicture}[scale=0.9]\\n  \\\\draw (0,0) -- (2,0) -- (2,1.5) -- (0,1.5) -- cycle;\\n  \\\\node at (1,0.75) {Mixture};\\n  \\\\draw (2,1.2) -- (4,1.2) -- (4,-0.5);\\n  \\\\draw[->] (4,-0.5) -- (5,-0.5) node[right]{Distillate};\\n  \\\\node[above] at (3,1.2) {Condenser};\\n\\\\end{tikzpicture}"
-  IMPORTANT: Use double backslashes (\\\\) for LaTeX commands in JSON strings. Keep coordinates reasonable (0–8 range).
+  Packages available: tikz, pgfplots (compat=1.18), usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
+  CRITICAL: In JSON strings ALL backslashes must be doubled (\\\\). E.g. \\\\draw, \\\\node, \\\\begin.
+  Use coordinates in cm (typical range 0–8). Keep diagrams clean and labelled.
+
+  Example — parallel lines + transversal (AB‖CD, angle AEF=72°):
+    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw (0,2) -- (6,2) node[right]{B} node[pos=0,left]{A};\\n\\\\draw (0,0) -- (6,0) node[right]{D} node[pos=0,left]{C};\\n\\\\draw (1.5,3) -- (3.5,-1) node[below]{F};\\n\\\\coordinate (E) at (2.4,2);\\n\\\\node[above right] at (E) {E};\\n\\\\fill (E) circle (1.5pt);\\n\\\\node[above left] at (2.4,2) {$72^\\\\circ$};\\n\\\\node[below right] at (2.8,0) {$x$};\\n\\\\draw[->|,>=stealth,thin] (2,2.5) arc[start angle=130,end angle=180,radius=0.5];\\n\\\\end{tikzpicture}"
+
+  Example — right triangle ABC (right angle at B, AB=8 cm, BC=6 cm):
+    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw (0,0) node[left]{A} -- (0,4) node[left]{B} -- (3,0) node[right]{C} -- cycle;\\n\\\\draw (0,0.3) -- (0.3,0.3) -- (0.3,0);\\n\\\\node[left] at (0,2) {8 cm};\\n\\\\node[below] at (1.5,0) {6 cm};\\n\\\\end{tikzpicture}"
+
+  Example — complex apparatus (Bunsen burner + flask):
+    tikzCode:"\\\\begin{tikzpicture}[scale=0.9]\\n\\\\draw (1,0) -- (1,1.5) -- (0.5,1.5);\\n\\\\draw (0.5,1.5) arc[start angle=180,end angle=0,radius=0.5];\\n\\\\draw (1.5,1.5) -- (1,1.5);\\n\\\\node[below] at (1,0) {Gas supply};\\n\\\\end{tikzpicture}"
 
 All label strings: plain text only, no LaTeX or dollar signs.`
 
@@ -616,10 +603,8 @@ All label strings: plain text only, no LaTeX or dollar signs.`
             hiddenNodes: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
             templateId: { type: Type.STRING, nullable: true },
             svgLabels:  { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            // Layer 3a — TikZ (QuickLaTeX)
+            // Layer 3 — TikZ (QuickLaTeX)
             tikzCode:   { type: Type.STRING, nullable: true },
-            // Layer 3b — GeoGebra
-            ggbCommands: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
           },
           required: ['diagramType'],
         },
@@ -768,21 +753,19 @@ GENERATION RULES:
      Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
      IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
 
-   LAYER 3 — high-precision rendering (use when the above types cannot represent the diagram accurately):
-   • "geogebra" — GeoGebra geometry applet. PREFER over "geometry" type for all angle/parallel-lines/triangle problems.
-     Fields: ggbCommands:[string]. Use coordinate space 0–10.
-     Commands: A=(x,y) | a=Segment(A,B) | l=Line(A,B) | alpha=Angle(A,B,C) | c=Circle(O,r) | poly=Polygon(A,B,C) | t=Text("label",(x,y)) | SetLabel(obj,"lbl") | SetColor(obj,"color")
-     Example parallel lines + transversal with 72° angle:
-     {"diagramType":"geogebra","ggbCommands":["A=(1,7)","B=(9,7)","C=(1,3)","D=(9,3)","E=(6.5,7)","F=(4,3)","l1=Segment(A,B)","l2=Segment(C,D)","t=Segment(E,F)","t1=Text(\"72°\",(5.5,7.4))","t2=Text(\"x\",(4.8,3.5))","t3=Text(\"A\",(0.6,7.3))","t4=Text(\"B\",(9,7.3))","t5=Text(\"C\",(0.6,2.7))","t6=Text(\"D\",(9,2.7))"]}
-
-   • "tikz" — TikZ rendered to PNG via QuickLaTeX. Use for complex apparatus/structures NOT in svg_template.
+   LAYER 3 — "tikz" (QuickLaTeX). Use when existing types cannot accurately represent the diagram.
+   • "tikz" — TikZ code rendered to PNG. PREFER over "geometry" type for angles/parallel-lines/triangles.
      Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture}.
-     Available: tikz, pgfplots, pgfplotsset{compat=1.18}, usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
-     CRITICAL: In JSON strings escape all backslashes as \\\\ (four chars). E.g. \\\\draw not \\draw.
+     CRITICAL: In JSON strings escape ALL backslashes as \\\\ (four chars). E.g. \\\\draw not \\draw.
+     Available: tikz, pgfplots (compat=1.18), usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}
+     Example parallel lines (AB‖CD, transversal EF, angle AEF=72°):
+     {"diagramType":"tikz","tikzCode":"\\\\begin{tikzpicture}\\n\\\\draw (0,2) -- (6,2) node[right]{B} node[pos=0,left]{A};\\n\\\\draw (0,0) -- (6,0) node[right]{D} node[pos=0,left]{C};\\n\\\\draw (1.5,3) -- (3.5,-1);\\n\\\\node[above left] at (2.4,2) {$72^\\\\circ$};\\n\\\\node[below right] at (2.8,0) {$x$};\\n\\\\end{tikzpicture}"}
+     Example right triangle (right angle at B, AB=8 cm, BC=6 cm):
+     {"diagramType":"tikz","tikzCode":"\\\\begin{tikzpicture}\\n\\\\draw (0,0) node[left]{A} -- (0,4) node[left]{B} -- (3,0) node[right]{C} -- cycle;\\n\\\\draw (0,0.3) -- (0.3,0.3) -- (0.3,0);\\n\\\\node[left] at (0,2) {8 cm};\\n\\\\node[below] at (1.5,0) {6 cm};\\n\\\\end{tikzpicture}"}
 
    SUBJECT-SPECIFIC DIAGRAM SELECTION RULES:
-   - Mathematics: PREFER geogebra over geometry for angles/parallel lines/triangles. Use circle_theorem for circle theorems. Use cartesian_grid for coordinate geometry.
-   - Biology: Use svg_template for cells/leaf. Use geogebra if no matching svg_template. Use science_graph for data/rate, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys.
+   - Mathematics: PREFER tikz over geometry for angles/parallel lines/triangles. Use circle_theorem for circle theorems. Use cartesian_grid for coordinate geometry.
+   - Biology: Use svg_template for cells/leaf. Use tikz for structural diagrams without a template. Use science_graph for data/rate, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys.
    - Chemistry: Use svg_template for electrolysis/distillation. Use tikz for complex apparatus not in templates. Use energy_level_diagram for energetics, science_graph for rate/heating curves.
 
    CRITICAL DIAGRAM RULES — mandatory:
