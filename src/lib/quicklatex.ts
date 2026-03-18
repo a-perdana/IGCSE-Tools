@@ -58,21 +58,24 @@ export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
   if (!res.ok) throw new Error(`QuickLaTeX proxy error: HTTP ${res.status}`)
 
   const text = await res.text()
-  const lines = text.trim().split('\n')
+  // Trim each line and remove blanks (handles \r\n and leading/trailing blank lines)
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
 
-  // QuickLaTeX response format:
-  //   line 0: "0" (success) or error code
-  //   line 1: image URL
-  //   line 2: "width height"
-  if (lines[0] !== '0') {
-    const msg = lines.slice(1).join(' ').trim() || 'Unknown QuickLaTeX error'
-    throw new Error(`QuickLaTeX: ${msg}`)
-  }
-
-  const url = lines[1]?.trim()
+  // QuickLaTeX response lines (order may vary across versions):
+  //   one line is "0" (success) or a non-zero error code
+  //   one line is the image URL (starts with "http")
+  //   one line is "width height" (two integers separated by space)
+  const url = lines.find(l => l.startsWith('http'))
   if (!url) throw new Error('QuickLaTeX returned no image URL')
 
-  const [w, h] = (lines[2] ?? '400 300').split(' ').map(Number)
+  // If the URL points to QuickLaTeX's own error image, the render failed
+  if (url.includes('/error.png')) {
+    const msg = lines.filter(l => !l.startsWith('http') && !/^\d/.test(l)).join(' ').trim()
+    throw new Error(`QuickLaTeX: ${msg || 'render error'}`)
+  }
+
+  const dimLine = lines.find(l => /^\d+ \d+$/.test(l)) ?? '400 300'
+  const [w, h] = dimLine.split(' ').map(Number)
   const result: QuickLaTeXResult = { url, width: isNaN(w) ? 400 : w, height: isNaN(h) ? 300 : h }
   cache.set(formula, result)
   return result
