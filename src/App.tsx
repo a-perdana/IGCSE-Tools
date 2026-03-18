@@ -579,7 +579,7 @@ export default function App() {
 
         {/* Main content */}
         {view === 'library' ? (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <LibraryView
             assessments={library.assessments}
             questions={library.questions}
@@ -606,7 +606,7 @@ export default function App() {
           />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <AssessmentView
             assessment={displayAssessment}
             analysisText={generation.analysisText}
@@ -632,8 +632,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Footer — fixed at bottom, always visible */}
-        <footer className="shrink-0 border-t border-stone-200 bg-stone-50/80 px-4 py-2 flex items-center justify-between text-xs text-stone-400">
+        {/* Footer — pinned to bottom of the right panel */}
+        <footer className="shrink-0 min-h-0 border-t border-stone-200 bg-stone-50 px-4 py-2 flex items-center justify-between text-xs text-stone-400 z-10">
           <div className="flex items-center gap-2">
             <BookOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
             <span className="font-medium text-stone-500">IGCSE Tools</span>
