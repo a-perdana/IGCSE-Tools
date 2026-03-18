@@ -881,13 +881,20 @@ function normalizeOptionMath(opt: string): string {
   s = s.replace(/^\$\$(.+?)\$\$$/s, '$1').trim()
   // Strip surrounding $ ... $
   s = s.replace(/^\$(.+?)\$$/s, '$1').trim()
-  // If the content contains LaTeX commands (\circ, \frac, \times, etc.) wrap in $...$
+  // Convert any embedded display math $$ ... $$ spans to inline $ ... $
+  s = s.replace(/\$\$([^$]+?)\$\$/g, (_, inner) => `$${inner.trim()}$`)
+  // If the content contains LaTeX commands (\circ, \frac, \text, etc.) or math syntax
   if (/\\[a-zA-Z]/.test(s) || /\^|_/.test(s)) {
-    // Already has inline math wrapper somewhere — just ensure it's tidy
-    // Replace any $$ with $ to prevent display math breaking the line
     s = s.replace(/\$\$/g, '$')
-    // If not already wrapped in math, wrap entirely
-    if (!s.startsWith('$')) s = `$${s}$`
+    // Only wrap the ENTIRE string in $...$ if it is a pure math expression, NOT a
+    // natural-language sentence. Wrapping a sentence in $...$ strips all spaces in
+    // math mode (KaTeX), making it unreadable. Heuristic: after removing inline math
+    // spans and \command{...} groups, if 3+ letter words remain with spaces it's a sentence.
+    const stripped = s
+      .replace(/\$[^$]+\$/g, '')
+      .replace(/\\[a-zA-Z]+(?:\{[^}]*\})?/g, '')
+    const isSentence = /[a-zA-Z]{3,}\s+[a-zA-Z]{3,}/.test(stripped)
+    if (!isSentence && !s.startsWith('$')) s = `$${s}$`
   }
   return s
 }
