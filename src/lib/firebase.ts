@@ -20,7 +20,32 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, DiagramSpec } from './types'
+
+/** Firestore does not support nested arrays. Convert geometry diagram's
+ *  parallel/perpendicular fields from Array<[string,string]> to Array<{s1,s2}>.
+ *  normalizeDiagram already handles the reverse conversion on read. */
+function serializeDiagram(diagram: unknown): unknown {
+  if (!diagram || typeof diagram !== 'object') return diagram
+  const d = diagram as Record<string, unknown>
+  if (d.diagramType !== 'geometry') return diagram
+  const out: Record<string, unknown> = { ...d }
+  for (const key of ['parallel', 'perpendicular']) {
+    if (Array.isArray(out[key])) {
+      out[key] = (out[key] as unknown[]).map(pair =>
+        Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
+      )
+    }
+  }
+  return out
+}
+
+function serializeQuestionDiagram(q: unknown): unknown {
+  if (!q || typeof q !== 'object') return q
+  const qObj = q as Record<string, unknown>
+  if (!qObj.diagram) return q
+  return { ...qObj, diagram: serializeDiagram(qObj.diagram) }
+}
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -96,6 +121,7 @@ export const saveAssessment = async (
     ...data,
     userId: auth.currentUser.uid,
     createdAt: serverTimestamp(),
+    questions: data.questions?.map(serializeQuestionDiagram),
   }
   Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
   try {
@@ -118,13 +144,18 @@ export const saveAssessmentWithQuestions = async (
   const batch = writeBatch(db)
 
   const assessmentRef = doc(collection(db, 'assessments'))
-  const assessmentPayload: any = { ...assessmentData, userId: uid, createdAt: serverTimestamp() }
+  const assessmentPayload: any = {
+    ...assessmentData,
+    userId: uid,
+    createdAt: serverTimestamp(),
+    questions: assessmentData.questions?.map(serializeQuestionDiagram),
+  }
   Object.keys(assessmentPayload).forEach(k => assessmentPayload[k] === undefined && delete assessmentPayload[k])
   batch.set(assessmentRef, assessmentPayload)
 
   for (const q of questions) {
     const questionRef = doc(collection(db, 'questions'))
-    const questionPayload: any = { ...q, userId: uid, assessmentId: assessmentRef.id, createdAt: serverTimestamp() }
+    const questionPayload: any = { ...(serializeQuestionDiagram(q) as object), userId: uid, assessmentId: assessmentRef.id, createdAt: serverTimestamp() }
     Object.keys(questionPayload).forEach(k => questionPayload[k] === undefined && delete questionPayload[k])
     batch.set(questionRef, questionPayload)
   }
