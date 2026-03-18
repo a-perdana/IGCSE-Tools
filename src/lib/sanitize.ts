@@ -112,16 +112,15 @@ export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
     }
 
     // After repair attempt: if parallel still references segments with no endpoints in points dict,
-    // reject the diagram so the text-based fallback can generate a complete one instead.
+    // filter out the orphan pairs rather than rejecting the whole diagram.
     if (Array.isArray(d.parallel) && (d.parallel as [string, string][]).length > 0) {
       const allSegNames = (d.segments as Record<string, unknown>[]).map(s => `${s.from}${s.to}`)
       const allSegNamesRev = (d.segments as Record<string, unknown>[]).map(s => `${s.to}${s.from}`)
-      const hasOrphanParallel = (d.parallel as [string, string][]).some(
+      d.parallel = (d.parallel as [string, string][]).filter(
         ([s1, s2]) =>
-          !allSegNames.includes(s1) && !allSegNamesRev.includes(s1) ||
-          !allSegNames.includes(s2) && !allSegNamesRev.includes(s2)
+          (allSegNames.includes(s1) || allSegNamesRev.includes(s1)) &&
+          (allSegNames.includes(s2) || allSegNamesRev.includes(s2))
       )
-      if (hasOrphanParallel) return undefined
     }
 
     // Reject trivially simple geometry: ≤2 points with no angle labels is just a line segment —

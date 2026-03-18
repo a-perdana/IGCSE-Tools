@@ -366,9 +366,7 @@ function buildReferenceParts(references: Reference[], difficulty?: string): any[
 
 /** Gemini responseSchema fragment for the structured diagram field.
  *  Flat bag of nullable fields — all 14 diagram types share one schema object.
- *  Array items stay as generic objects; sanitize.ts validates at runtime.
- *  In Phase 1 (diagram spec generation) this is the ONLY output schema so Gemini
- *  can focus entirely on getting the diagram data right. */
+ *  Array items stay as generic objects; sanitize.ts validates at runtime. */
 const DIAGRAM_SCHEMA = {
   type: Type.OBJECT,
   nullable: true,
@@ -454,6 +452,14 @@ const DIAGRAM_SCHEMA = {
   },
 }
 
+/** Non-nullable top-level schema for diagram spec generation calls.
+ *  DIAGRAM_SCHEMA has nullable:true (needed when embedded in question schema),
+ *  but Gemini rejects nullable top-level schemas — so we use this for spec calls. */
+const DIAGRAM_SPEC_SCHEMA = {
+  ...DIAGRAM_SCHEMA,
+  nullable: false,
+}
+
 /** Phase 1: generate diagram specs for questions that need one.
  *  Each spec is a complete DiagramSpec JSON — the ground truth that Phase 2 writes questions around.
  *  One API call per question, all run in parallel. Temperature 0.3 for determinism. */
@@ -490,29 +496,21 @@ ${DIAGRAM_TYPE_DOCS}`
           responseMimeType: 'application/json',
           maxOutputTokens: 8192,
           temperature: 0.3,
-          // Wrap in a non-nullable object so the top-level schema is always an object.
-          // DIAGRAM_SCHEMA itself has nullable:true which Gemini rejects as a top-level schema.
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: { diagram: DIAGRAM_SCHEMA },
-            required: ['diagram'],
-          },
+          responseSchema: DIAGRAM_SPEC_SCHEMA,
         },
       })
       const usage = getGeminiUsage(response)
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
       const raw = response.text
       if (!raw) { onLog?.(`[spec ${spec.index}] empty response`); return null }
-      let parsedWrapper: unknown
-      try { parsedWrapper = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed`); return null }
-      // Extract from wrapper; also handle flat responses (model emits diagram fields directly)
-      const candidate = (parsedWrapper as any)?.diagram ?? parsedWrapper
-      const diagram = normalizeDiagram(candidate)
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed: ${raw?.slice(0, 120)}`); return null }
+      const diagram = normalizeDiagram(parsed)
       if (diagram) {
         onLog?.(`[spec ${spec.index}] type=${diagram.diagramType} → OK`)
         return { index: spec.index, diagram }
       }
-      onLog?.(`[spec ${spec.index}] type=${(candidate as any)?.diagramType ?? '?'} → rejected by normalizeDiagram`)
+      onLog?.(`[spec ${spec.index}] type=${(parsed as any)?.diagramType ?? '?'} → rejected by normalizeDiagram`)
       return null
     } catch (err) {
       onLog?.(`[spec ${spec.index}] error: ${String(err).slice(0, 100)}`)
