@@ -659,38 +659,36 @@ async function generateTikzCode(
   previousCode?: string,
 ): Promise<string | null> {
   const improvementBlock = previousCode ? `
-PREVIOUS VERSION (improve upon this — make it more accurate and detailed):
+PREVIOUS VERSION (improve accuracy — keep it concise, max 25 lines inside tikzpicture):
 ${previousCode}
 
-IMPROVEMENTS REQUIRED:
-- Add precise measurements, labels and angle values from the question
-- Use exact coordinates that match the described geometry
-- Add dimension arrows, tick marks, or angle arcs where relevant
-- Improve visual clarity: thicker lines, proper node labels, correct proportions
-- Keep it compilable — still end with \\end{tikzpicture} and \\end{document}
+IMPROVE BY:
+- Fix any incorrect coordinates or proportions
+- Add missing labels, angle marks, or tick marks
+- Keep total line count inside tikzpicture ≤ 25 — do not add unnecessary commands
+- Still end with \\end{tikzpicture} and \\end{document}
 ` : ''
 
-  const prompt = `Generate a precise, exam-quality LaTeX/TikZ diagram for this ${subject} question.
+  const prompt = `Generate a concise, exam-quality LaTeX/TikZ diagram for this ${subject} question.
 ${improvementBlock}
 QUESTION: ${question.text}
 ANSWER: ${question.answer}
 
-REQUIREMENTS:
-1. Output ONLY raw LaTeX starting with \\documentclass[tikz,border=4mm]{standalone} and ending with \\end{document}.
-2. Include \\usetikzlibrary{angles,quotes,calc,decorations.markings,arrows.meta} and any other needed libraries.
-3. Use ONLY plain numeric coordinates — NO trig functions like cos()/sin() inside coordinates. Pre-compute all values (e.g. cos(30°)=0.866, sin(30°)=0.5) and write literal numbers like (3.464, 2).
-4. Do NOT use \\usepackage — only \\usetikzlibrary is allowed.
-5. Label all key points, angles, and lengths mentioned in the question using \\node.
-6. Use proper line thickness: important lines 1.5pt, construction lines 0.5pt dashed.
-7. Mark right angles with a small square, parallel lines with tick marks, equal lengths with double tick marks.
-8. Do NOT truncate. Every \\draw command must end with a semicolon. You MUST end with \\end{tikzpicture} and \\end{document}.
-9. If no diagram is sensible, return nothing (empty string).`
+STRICT REQUIREMENTS — follow exactly:
+1. Output ONLY raw LaTeX: start with \\documentclass[tikz,border=4mm]{standalone}, end with \\end{document}.
+2. Only \\usetikzlibrary{...} is allowed — do NOT use \\usepackage.
+3. MAXIMUM 25 lines inside \\begin{tikzpicture}...\\end{tikzpicture}. Keep it short and complete.
+4. Use ONLY plain numeric coordinates — NO trig functions (cos/sin). Pre-compute: cos30°=0.866, sin30°=0.5, cos45°=0.707, cos60°=0.5, sin60°=0.866.
+5. Label key points and values using \\node. Mark right angles with a small square.
+6. CRITICAL: every \\draw command MUST end with a semicolon on the same line. Never leave a command unfinished.
+7. You MUST output the complete file ending with \\end{tikzpicture} and \\end{document} — never truncate.
+8. If no diagram is needed, output nothing (empty string).`
 
   try {
     const response = await ai.models.generateContent({
       model,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { temperature: 0.2, maxOutputTokens: 4096 },
+      config: { temperature: 0.2, maxOutputTokens: 8192 },
     })
     const text = response.text?.trim()
     const clean = text?.replace(/^```(latex|tex)?/i, '').replace(/```$/, '').trim()
