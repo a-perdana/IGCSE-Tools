@@ -27,7 +27,17 @@ function wrapTikz(code: string): string {
   // Truncated output: \begin{tikzpicture} present but \end{tikzpicture} missing — close it.
   const beginIdx = trimmed.indexOf('\\begin{tikzpicture}')
   if (beginIdx !== -1) {
-    const body = trimmed.slice(beginIdx)
+    let body = trimmed.slice(beginIdx)
+    // Drop any trailing incomplete line (no semicolon = command was cut off mid-way)
+    const lines = body.split('\n')
+    // Find last line that ends with ; or { or } (complete statement)
+    let lastComplete = lines.length - 1
+    while (lastComplete > 0) {
+      const l = lines[lastComplete].trim()
+      if (l.endsWith(';') || l.endsWith('{') || l.endsWith('}') || l === '') break
+      lastComplete--
+    }
+    body = lines.slice(0, lastComplete + 1).join('\n')
     return body + '\n\\end{tikzpicture}'
   }
 
@@ -44,12 +54,13 @@ function sanitizeTikz(code: string): string {
     .replace(/\\n/g, '\n')
     // Extra escaped backslashes: \\\\draw → \\draw (AI double-escapes in JSON context)
     .replace(/\\\\(draw|node|fill|coordinate|path|foreach|pgf|text|begin|end|tikz|usepackage|usetikzlibrary|def|let|scope)\b/g, '\\$1')
+    // Remove \usepackage lines (QuickLaTeX doesn't support them and they break the scanner)
+    .replace(/\\usepackage(\[[^\]]*\])?\{[^}]+\}\s*\n?/g, '')
     // Stray +- or -+ sequences that aren't valid TikZ
     .replace(/\+\s*-\s*\(/g, '(')
     .replace(/-\s*\+\s*\(/g, '(')
     // Trailing + before semicolons
     .replace(/\+\s*;/g, ';')
-    // Ensure \begin{tikzpicture} lines end properly
     .trim()
 }
 

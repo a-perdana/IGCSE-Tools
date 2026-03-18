@@ -678,12 +678,13 @@ ANSWER: ${question.answer}
 REQUIREMENTS:
 1. Output ONLY raw LaTeX starting with \\documentclass[tikz,border=4mm]{standalone} and ending with \\end{document}.
 2. Include \\usetikzlibrary{angles,quotes,calc,decorations.markings,arrows.meta} and any other needed libraries.
-3. Use exact numeric coordinates — derive them from the question data (angles, lengths, ratios).
-4. Label all key points, angles, and lengths mentioned in the question using \\node.
-5. Use proper line thickness: important lines 1.5pt, construction lines 0.5pt dashed.
-6. Mark right angles with a small square, parallel lines with tick marks, equal lengths with double tick marks.
-7. Do NOT use comments. Do NOT truncate. You MUST end with \\end{tikzpicture} and \\end{document}.
-8. If no diagram is sensible, return nothing (empty string).`
+3. Use ONLY plain numeric coordinates — NO trig functions like cos()/sin() inside coordinates. Pre-compute all values (e.g. cos(30°)=0.866, sin(30°)=0.5) and write literal numbers like (3.464, 2).
+4. Do NOT use \\usepackage — only \\usetikzlibrary is allowed.
+5. Label all key points, angles, and lengths mentioned in the question using \\node.
+6. Use proper line thickness: important lines 1.5pt, construction lines 0.5pt dashed.
+7. Mark right angles with a small square, parallel lines with tick marks, equal lengths with double tick marks.
+8. Do NOT truncate. Every \\draw command must end with a semicolon. You MUST end with \\end{tikzpicture} and \\end{document}.
+9. If no diagram is sensible, return nothing (empty string).`
 
   try {
     const response = await ai.models.generateContent({
