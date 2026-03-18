@@ -59,7 +59,94 @@ export interface GeometryDiagramSpec {
   labels?: Array<{ text: string; at: string; offset?: [number, number] }>
 }
 
-export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec | GeometryDiagramSpec
+/** Circle theorem diagram — circle with named points, chords, radii, tangents, angle arcs. */
+export interface CircleTheoremSpec {
+  diagramType: 'circle_theorem'
+  centre?: { id: string }
+  pointsOnCircumference: Array<{ id: string; angleDegrees: number }>
+  chords?: Array<[string, string]>
+  radii?: Array<[string, string]>
+  tangentPoints?: string[]
+  angles?: Array<{ vertex: string; rays: [string, string]; label: string }>
+}
+
+/** Multi-dataset line/scatter graph for Biology and Chemistry data questions. */
+export interface ScienceGraphSpec {
+  diagramType: 'science_graph'
+  chartType: 'line_graph' | 'bar_chart_multi' | 'scatter_plot'
+  title?: string
+  xLabel?: string
+  yLabel?: string
+  xRange: [number, number]
+  yRange: [number, number]
+  datasets: Array<{
+    id: string
+    label?: string
+    dataPoints: Array<{ x: number; y: number }>
+    curve?: 'smooth' | 'linear_segments'
+    style?: 'solid' | 'dashed'
+  }>
+  annotations?: {
+    optimumPoint?: { x: number; y: number; label: string }
+    plateaus?: Array<{ y: number; label: string; xStart: number; xEnd: number }>
+  }
+}
+
+/** Genetics diagram — Punnett square or pedigree chart. */
+export interface GeneticDiagramSpec {
+  diagramType: 'genetic_diagram'
+  subtype: 'punnett_square' | 'pedigree'
+  // Punnett square fields
+  parent1?: { label: string; genotype: string }
+  parent2?: { label: string; genotype: string }
+  gametes1?: string[]   // row headers
+  gametes2?: string[]   // column headers
+  punnettGrid?: string[][]  // [row][col] genotype strings
+  hiddenCells?: Array<{ row: number; col: number; pointer: string }>
+  showRatio?: boolean
+  // Pedigree fields
+  individuals?: Array<{ id: string; generation: number; sex: 'male' | 'female'; phenotype: 'affected' | 'unaffected'; genotype?: string; showGenotype?: boolean }>
+  relationships?: Array<{ type: 'mating' | 'offspring'; between?: [string, string]; parents?: string[]; children?: string[] }>
+}
+
+/** Chemistry energy level diagram — exothermic/endothermic reaction profile. */
+export interface EnergyLevelDiagramSpec {
+  diagramType: 'energy_level_diagram'
+  reactionType: 'exothermic' | 'endothermic'
+  reactants: { label: string; energyLevel: number }
+  products: { label: string; energyLevel: number }
+  activationEnergy?: { peak: number; label?: string }
+  energyChange?: { label?: string }
+  showCatalystPath?: boolean
+  catalystPeak?: number
+}
+
+/** Biology/Chemistry food web diagram — organisms at trophic levels connected by arrows. */
+export interface FoodWebSpec {
+  diagramType: 'food_web'
+  organisms: Array<{ id: string; label: string; trophicLevel: 'producer' | 'primary_consumer' | 'secondary_consumer' | 'tertiary_consumer'; x?: number; y?: number }>
+  arrows: Array<{ from: string; to: string }>
+}
+
+/** Biology pyramid of numbers/biomass/energy. levels[0] = producer (bottom/widest). */
+export interface EnergyPyramidSpec {
+  diagramType: 'energy_pyramid'
+  subtype: 'numbers' | 'biomass' | 'energy'
+  title?: string
+  levels: Array<{ trophicLevel: string; organism: string; value?: number; unit?: string }>
+  hiddenOrganisms?: Array<{ levelIndex: number; pointer: string }>
+}
+
+/** Flowchart for dichotomous keys, separation techniques, decision trees. */
+export interface FlowchartSpec {
+  diagramType: 'flowchart'
+  title?: string
+  nodes: Array<{ id: string; text: string; shape: 'diamond' | 'rectangle' | 'rounded_rectangle'; x?: number; y?: number }>
+  connections: Array<{ from: string; to: string; label?: string }>
+  hiddenNodes?: string[]
+}
+
+export type DiagramSpec = CartesianGridSpec | GeometricShapeSpec | NumberLineSpec | BarChartSpec | GeometryDiagramSpec | CircleTheoremSpec | ScienceGraphSpec | GeneticDiagramSpec | EnergyLevelDiagramSpec | FoodWebSpec | EnergyPyramidSpec | FlowchartSpec
 
 // ────────────────────────────────────────────────────────────────────────────
 

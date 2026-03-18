@@ -1,7 +1,11 @@
 import type { QuestionItem, DiagramSpec } from './types'
 import { normalizeSvgMarkdown } from './svg'
 
-const KNOWN_DIAGRAM_TYPES = new Set(['cartesian_grid', 'geometric_shape', 'number_line', 'bar_chart', 'geometry'])
+const KNOWN_DIAGRAM_TYPES = new Set([
+  'cartesian_grid', 'geometric_shape', 'number_line', 'bar_chart', 'geometry',
+  'circle_theorem', 'science_graph', 'genetic_diagram', 'energy_level_diagram',
+  'food_web', 'energy_pyramid', 'flowchart',
+])
 
 export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -154,6 +158,63 @@ export function normalizeDiagram(raw: unknown): DiagramSpec | undefined {
     })
     if (!hasRenderable) return undefined
   }
+
+  // ── New Layer 1 types ────────────────────────────────────────────────────
+  if (dt === 'circle_theorem') {
+    if (!Array.isArray(d.pointsOnCircumference) || (d.pointsOnCircumference as unknown[]).length < 2) return undefined
+    // Normalize chords/radii: [{s1,s2}] → [string,string]
+    for (const key of ['chords', 'radii'] as const) {
+      if (Array.isArray(d[key])) {
+        d[key] = (d[key] as unknown[]).map(item =>
+          Array.isArray(item) ? item : [String((item as Record<string,unknown>).s1 ?? ''), String((item as Record<string,unknown>).s2 ?? '')]
+        ).filter((p: unknown[]) => p[0] && p[1])
+      }
+    }
+  }
+
+  if (dt === 'science_graph') {
+    if (!Array.isArray(d.datasets) || (d.datasets as unknown[]).length === 0) return undefined
+    if (!Array.isArray(d.xRange) || !Array.isArray(d.yRange)) return undefined
+  }
+
+  if (dt === 'genetic_diagram') {
+    // Restore punnettGrid from Firestore serialized form [{row:[...]}, ...]
+    if (Array.isArray(d.punnettGridRows)) {
+      d.punnettGrid = (d.punnettGridRows as Record<string,unknown>[]).map(r =>
+        Array.isArray(r.row) ? r.row : []
+      )
+      delete d.punnettGridRows
+    }
+    if (!d.subtype) return undefined
+  }
+
+  if (dt === 'energy_level_diagram') {
+    if (!d.reactants || !d.products) return undefined
+    // Coerce energy levels
+    const r = d.reactants as Record<string,unknown>
+    const p = d.products as Record<string,unknown>
+    if (r.energyLevel != null) r.energyLevel = coerceNum(r.energyLevel)
+    if (p.energyLevel != null) p.energyLevel = coerceNum(p.energyLevel)
+    if (d.activationEnergy) {
+      const ae = d.activationEnergy as Record<string,unknown>
+      if (ae.peak != null) ae.peak = coerceNum(ae.peak)
+    }
+  }
+
+  if (dt === 'food_web') {
+    if (!Array.isArray(d.organisms) || (d.organisms as unknown[]).length === 0) return undefined
+    if (!Array.isArray(d.arrows)) d.arrows = []
+  }
+
+  if (dt === 'energy_pyramid') {
+    if (!Array.isArray(d.levels) || (d.levels as unknown[]).length === 0) return undefined
+  }
+
+  if (dt === 'flowchart') {
+    if (!Array.isArray(d.nodes) || (d.nodes as unknown[]).length === 0) return undefined
+    if (!Array.isArray(d.connections)) d.connections = []
+  }
+
   return raw as DiagramSpec
 }
 

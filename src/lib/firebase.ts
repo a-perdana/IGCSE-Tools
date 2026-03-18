@@ -28,15 +28,36 @@ import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCach
 function serializeDiagram(diagram: unknown): unknown {
   if (!diagram || typeof diagram !== 'object') return diagram
   const d = diagram as Record<string, unknown>
-  if (d.diagramType !== 'geometry') return diagram
   const out: Record<string, unknown> = { ...d }
-  for (const key of ['parallel', 'perpendicular']) {
-    if (Array.isArray(out[key])) {
-      out[key] = (out[key] as unknown[]).map(pair =>
-        Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
-      )
+
+  // geometry: parallel/perpendicular [string,string][] → [{s1,s2}]
+  if (d.diagramType === 'geometry') {
+    for (const key of ['parallel', 'perpendicular']) {
+      if (Array.isArray(out[key])) {
+        out[key] = (out[key] as unknown[]).map(pair =>
+          Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
+        )
+      }
     }
   }
+
+  // genetic_diagram: punnettGrid string[][] → punnettGridRows [{row:[...]}]
+  if (d.diagramType === 'genetic_diagram' && Array.isArray(out.punnettGrid)) {
+    out.punnettGridRows = (out.punnettGrid as string[][]).map(row => ({ row }))
+    delete out.punnettGrid
+  }
+
+  // circle_theorem: chords/radii [string,string][] → [{s1,s2}]
+  if (d.diagramType === 'circle_theorem') {
+    for (const key of ['chords', 'radii']) {
+      if (Array.isArray(out[key])) {
+        out[key] = (out[key] as unknown[]).map(pair =>
+          Array.isArray(pair) ? { s1: pair[0], s2: pair[1] } : pair
+        )
+      }
+    }
+  }
+
   return out
 }
 

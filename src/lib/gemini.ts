@@ -386,20 +386,62 @@ const DIAGRAM_SCHEMA = {
     min: { type: Type.NUMBER, nullable: true },
     max: { type: Type.NUMBER, nullable: true },
     step: { type: Type.NUMBER, nullable: true },
-    // bar_chart (title/xLabel/yLabel also used for other types)
-    title: { type: Type.STRING, nullable: true },
-    xLabel: { type: Type.STRING, nullable: true },
-    yLabel: { type: Type.STRING, nullable: true },
-    // geometry type — named points dict (object, not array)
-    // Note: using Type.OBJECT here covers both the cartesian points array and geometry points dict
-    // All array fields: untyped items to avoid schema complexity
-    points:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    segments: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    polygons: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    shapes:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    nlPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    ranges:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-    bars:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    // shared string fields
+    title:       { type: Type.STRING, nullable: true },
+    xLabel:      { type: Type.STRING, nullable: true },
+    yLabel:      { type: Type.STRING, nullable: true },
+    subtype:     { type: Type.STRING, nullable: true },
+    reactionType:{ type: Type.STRING, nullable: true },
+    chartType:   { type: Type.STRING, nullable: true },
+    // energy_level_diagram scalar
+    showCatalystPath: { type: Type.BOOLEAN, nullable: true },
+    catalystPeak:     { type: Type.NUMBER, nullable: true },
+    showRatio:        { type: Type.BOOLEAN, nullable: true },
+    // All array fields kept as untyped items to avoid Gemini schema complexity.
+    // sanitize.ts validates and normalises at runtime.
+    points:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    segments:            { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    polygons:            { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    shapes:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    nlPoints:            { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    ranges:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    bars:                { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    // circle_theorem
+    pointsOnCircumference: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    chords:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    radii:               { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    tangentPoints:       { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+    angles:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    centre:              { type: Type.OBJECT, nullable: true },
+    // science_graph
+    xRange:              { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
+    yRange:              { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
+    datasets:            { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    annotations:         { type: Type.OBJECT, nullable: true },
+    // genetic_diagram
+    parent1:             { type: Type.OBJECT, nullable: true },
+    parent2:             { type: Type.OBJECT, nullable: true },
+    gametes1:            { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+    gametes2:            { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+    punnettGridRows:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    hiddenCells:         { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    individuals:         { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    relationships:       { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    // energy_level_diagram
+    reactants:           { type: Type.OBJECT, nullable: true },
+    products:            { type: Type.OBJECT, nullable: true },
+    activationEnergy:    { type: Type.OBJECT, nullable: true },
+    energyChange:        { type: Type.OBJECT, nullable: true },
+    // food_web
+    organisms:           { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    arrows:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    // energy_pyramid
+    levels:              { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    hiddenOrganisms:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    // flowchart
+    nodes:               { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    connections:         { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+    hiddenNodes:         { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
   },
 }
 
@@ -423,20 +465,33 @@ If the question says "the shape shown" or "the diagram shows" without specifying
 
 Pick the correct diagramType and fill in all required fields. ALL coordinate values MUST be plain integers or decimals — never null, never strings.
 
-• "geometry" — PREFERRED for ALL geometry/triangle/angle/parallel-lines questions. Named points in 0-10 space. Renderer auto-scales.
-    points: [{name:"A",x:1,y:1},{name:"B",x:5,y:8},...] — array of named points, all coords 0-10
-    segments: [{from:"A",to:"B",label:"8 cm"}]
-    angles: [{at:"B",between:["A","C"],label:"70°"}]
-    parallel: [{"seg1":"AB","seg2":"CD"}] — tick marks on parallel segments
-    perpendicular: [{"seg1":"AB","seg2":"BC"}] — right-angle marker
-    Example right triangle AB=8cm BC=6cm right angle at B:
-    {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"8 cm"},{"from":"B","to":"C","label":"6 cm"},{"from":"A","to":"C"}],"perpendicular":[{"seg1":"AB","seg2":"BC"}]}
-    Example parallel lines AB ∥ CD with transversal EF, angle BEF=65°:
-    {"diagramType":"geometry","points":[{"name":"A","x":0,"y":7},{"name":"B","x":10,"y":7},{"name":"C","x":0,"y":3},{"name":"D","x":10,"y":3},{"name":"E","x":6,"y":7},{"name":"F","x":4,"y":3}],"segments":[{"from":"A","to":"B"},{"from":"C","to":"D"},{"from":"E","to":"F"}],"angles":[{"at":"E","between":["B","F"],"label":"65°"}],"parallel":[{"seg1":"AB","seg2":"CD"}]}
-• "cartesian_grid" — for coordinate geometry, graphs, plotting points. xMin,xMax,yMin,yMax (integers),gridStep(1 or 2); points:[{label,x,y}]; segments:[{x1,y1,x2,y2}]
-• "geometric_shape" — AVOID; use "geometry" instead for most shapes. For complex multi-shape diagrams only. Canvas 400×300 px.
-• "number_line" — min,max,step; nlPoints:[{value,open,label}]; ranges:[{from,to}]
-• "bar_chart" — bars:[{label,value}]; title,xLabel,yLabel optional
+MATHEMATICS types:
+• "geometry" — PREFERRED for geometry/triangle/angle/parallel-lines. points:[{name,x,y}] 0-10. segments:[{from,to,label?}]. angles:[{at,between:[p1,p2],label}]. parallel:[{seg1,seg2}]. perpendicular:[{seg1,seg2}].
+  Example right triangle: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"8 cm"},{"from":"B","to":"C","label":"6 cm"},{"from":"A","to":"C"}],"perpendicular":[{"seg1":"AB","seg2":"BC"}]}
+• "circle_theorem" — circle with named points, chords, radii, angles. centre:{id:"O"}. pointsOnCircumference:[{id,angleDegrees}] (0°=right,90°=top). chords:[{s1,s2}]. radii:[{s1,s2}]. angles:[{vertex,rays:[p1,p2],label}].
+  Example: {"diagramType":"circle_theorem","centre":{"id":"O"},"pointsOnCircumference":[{"id":"A","angleDegrees":20},{"id":"B","angleDegrees":144},{"id":"C","angleDegrees":260}],"radii":[{"s1":"O","s2":"A"},{"s1":"O","s2":"B"}],"chords":[{"s1":"A","s2":"C"},{"s1":"B","s2":"C"}],"angles":[{"vertex":"O","rays":["A","B"],"label":"124°"},{"vertex":"C","rays":["A","B"],"label":"x"}]}
+• "cartesian_grid" — xMin,xMax,yMin,yMax,gridStep. points:[{label,x,y}]. segments:[{x1,y1,x2,y2}].
+• "number_line" — min,max,step. nlPoints:[{value,open,label}]. ranges:[{from,to}].
+• "bar_chart" — bars:[{label,value}]. title,xLabel,yLabel optional.
+• "geometric_shape" — AVOID; use geometry instead.
+
+BIOLOGY types:
+• "science_graph" — line graph for data questions. chartType:"line_graph". xRange:[min,max], yRange:[min,max]. xLabel,yLabel,title. datasets:[{id,label,dataPoints:[{x,y},...],curve:"smooth",style:"solid"|"dashed"}]. annotations:{optimumPoint:{x,y,label}}.
+  Example: {"diagramType":"science_graph","chartType":"line_graph","title":"Enzyme activity","xLabel":"Temperature (°C)","yLabel":"Rate (au)","xRange":[0,70],"yRange":[0,100],"datasets":[{"id":"e","label":"Enzyme A","dataPoints":[{"x":0,"y":5},{"x":20,"y":35},{"x":37,"y":95},{"x":50,"y":30},{"x":70,"y":0}],"curve":"smooth","style":"solid"}],"annotations":{"optimumPoint":{"x":37,"y":95,"label":"Optimum"}}}
+• "genetic_diagram" — Punnett square. subtype:"punnett_square". parent1/parent2:{label,genotype}. gametes1/gametes2:["R","r"]. punnettGridRows:[{"row":["RR","Rr"]},{"row":["Rr","rr"]}]. hiddenCells:[{row,col,pointer}].
+  Example: {"diagramType":"genetic_diagram","subtype":"punnett_square","parent1":{"label":"Father","genotype":"Rr"},"parent2":{"label":"Mother","genotype":"Rr"},"gametes1":["R","r"],"gametes2":["R","r"],"punnettGridRows":[{"row":["RR","Rr"]},{"row":["Rr","rr"]}],"hiddenCells":[]}
+• "food_web" — organisms:[{id,label,trophicLevel,x,y}] (y=0 producers, y=8+ apex). arrows:[{from,to}] FROM prey TO predator.
+  Example: {"diagramType":"food_web","organisms":[{"id":"g","label":"Grass","trophicLevel":"producer","x":3,"y":0},{"id":"r","label":"Rabbit","trophicLevel":"primary_consumer","x":1,"y":4},{"id":"f","label":"Fox","trophicLevel":"secondary_consumer","x":1,"y":8}],"arrows":[{"from":"g","to":"r"},{"from":"r","to":"f"}]}
+• "energy_pyramid" — levels[0]=producer (bottom). levels:[{trophicLevel,organism,value?,unit?}]. subtype:"biomass"|"energy"|"numbers".
+  Example: {"diagramType":"energy_pyramid","subtype":"biomass","levels":[{"trophicLevel":"Producer","organism":"Grass","value":5000,"unit":"kg/m²"},{"trophicLevel":"Primary consumer","organism":"Rabbit","value":500,"unit":"kg/m²"}],"hiddenOrganisms":[]}
+• "flowchart" — nodes:[{id,text,shape:"diamond"|"rectangle"|"rounded_rectangle"}]. connections:[{from,to,label?}]. hiddenNodes:[].
+  Example: {"diagramType":"flowchart","nodes":[{"id":"q1","text":"Has legs?","shape":"diamond"},{"id":"ins","text":"Insect","shape":"rounded_rectangle"}],"connections":[{"from":"q1","to":"ins","label":"Yes (6 legs)"}],"hiddenNodes":[]}
+
+CHEMISTRY types:
+• "energy_level_diagram" — reactionType:"exothermic"|"endothermic". reactants:{label,energyLevel}, products:{label,energyLevel}. activationEnergy:{peak,label} (peak > both levels). energyChange:{label:"ΔH = ..."}. showCatalystPath:false.
+  Example: {"diagramType":"energy_level_diagram","reactionType":"exothermic","reactants":{"label":"Reactants","energyLevel":80},"products":{"label":"Products","energyLevel":20},"activationEnergy":{"peak":120,"label":"Ea"},"energyChange":{"label":"ΔH = –500 kJ/mol"},"showCatalystPath":false}
+• "science_graph" — also for Chemistry rate/heating/pH curves. Same format as Biology.
+
 All label strings: plain text only, no LaTeX or dollar signs.`
 
   try {
@@ -470,6 +525,39 @@ All label strings: plain text only, no LaTeX or dollar signs.`
             parallel: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
             perpendicular: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
             labels:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            // new Layer 1 types
+            subtype:     { type: Type.STRING, nullable: true },
+            reactionType:{ type: Type.STRING, nullable: true },
+            chartType:   { type: Type.STRING, nullable: true },
+            showCatalystPath: { type: Type.BOOLEAN, nullable: true },
+            catalystPeak:     { type: Type.NUMBER, nullable: true },
+            showRatio:        { type: Type.BOOLEAN, nullable: true },
+            pointsOnCircumference: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            chords:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            radii:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            tangentPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+            centre:    { type: Type.OBJECT, nullable: true },
+            xRange:    { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
+            yRange:    { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
+            datasets:  { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            annotations: { type: Type.OBJECT, nullable: true },
+            parent1:   { type: Type.OBJECT, nullable: true },
+            parent2:   { type: Type.OBJECT, nullable: true },
+            gametes1:  { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+            gametes2:  { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
+            punnettGridRows: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            hiddenCells: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            reactants: { type: Type.OBJECT, nullable: true },
+            products:  { type: Type.OBJECT, nullable: true },
+            activationEnergy: { type: Type.OBJECT, nullable: true },
+            energyChange: { type: Type.OBJECT, nullable: true },
+            organisms: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            arrows:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            levels:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            hiddenOrganisms: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            nodes:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            connections: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
+            hiddenNodes: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
           },
           required: ['diagramType'],
         },
@@ -546,35 +634,70 @@ GENERATION RULES:
 6. Diagrams: If a question requires a visual element, populate the "diagram" JSON field — do NOT embed SVG in the question text. Set hasDiagram=true.
    The "diagram" field must have a "diagramType" plus its required data:
 
-   • "geometry" — PREFERRED for ALL geometry questions (triangles, circles, polygons, angles).
-     Named points in a 0-10 coordinate space. Renderer auto-scales. ALWAYS use this for geometry/shape questions.
-     points: array of {name,x,y} objects — e.g. [{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}]
-     segments: [{from:"A",to:"B",label:"8 cm"}]
-     angles: [{at:"B",between:["A","C"],label:"70°"}]
-     perpendicular: [{"seg1":"AB","seg2":"BC"}] — draws right-angle marker
-     Example triangle ABC with angles BAC=50°, ABC=70° (BCA=60°):
-     {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":5,"y":8},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"A","to":"C"}],"angles":[{"at":"A","between":["B","C"],"label":"50°"},{"at":"B","between":["A","C"],"label":"70°"},{"at":"C","between":["A","B"],"label":"60°"}]}
+   MATHEMATICS diagram types:
+   • "geometry" — PREFERRED for ALL geometry questions (triangles, polygons, parallel lines, bearings, angles).
+     points: [{name,x,y}] in 0-10 space. segments:[{from,to,label?}]. angles:[{at,between:[p1,p2],label}]. perpendicular:[{seg1,seg2}]. parallel:[{seg1,seg2}].
+     Example triangle: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":5,"y":8},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"A","to":"C"}],"angles":[{"at":"A","between":["B","C"],"label":"50°"}]}
 
-   • "cartesian_grid" — Cartesian coordinate grid.
-     Required: xMin, xMax, yMin, yMax, gridStep (usually 1 or 2).
-     Optional: points [{label,x,y,color}], segments [{x1,y1,x2,y2,dashed}], polygons [{vertices:[{x,y,label}],fill}].
+   • "circle_theorem" — For circle theorem questions (angle at centre, cyclic quadrilateral, tangent-radius, alternate segment, angles in same segment).
+     centre:{id:"O"}. pointsOnCircumference:[{id:"A",angleDegrees:0}] (0°=right, 90°=top). chords:[{s1:"A",s2:"B"}]. radii:[{s1:"O",s2:"A"}]. tangentPoints:["A"]. angles:[{vertex:"O",rays:["A","B"],label:"124°"}].
+     CRITICAL: angleDegrees must place points visually correctly — spread them around the circle. Verify the angle label matches the geometric truth.
+     Example (angle at centre = 2× circumference): {"diagramType":"circle_theorem","centre":{"id":"O"},"pointsOnCircumference":[{"id":"A","angleDegrees":20},{"id":"B","angleDegrees":144},{"id":"C","angleDegrees":260}],"radii":[{"s1":"O","s2":"A"},{"s1":"O","s2":"B"}],"chords":[{"s1":"A","s2":"C"},{"s1":"B","s2":"C"}],"angles":[{"vertex":"O","rays":["A","B"],"label":"124°"},{"vertex":"C","rays":["A","B"],"label":"x"}]}
+
+   • "cartesian_grid" — Cartesian coordinate grid. Required: xMin,xMax,yMin,yMax,gridStep(1 or 2). Optional: points[{label,x,y,color}], segments[{x1,y1,x2,y2,dashed}], polygons[{vertices:[{x,y,label}],fill}].
      Example: {"diagramType":"cartesian_grid","xMin":-2,"xMax":6,"yMin":-3,"yMax":5,"gridStep":1,"points":[{"label":"P","x":3,"y":2}]}
 
-   • "geometric_shape" — AVOID unless absolutely necessary. Use "geometry" instead.
+   • "number_line" — min,max,step. nlPoints:[{value,label,open}]. ranges:[{from,to,fromOpen,toOpen}]
 
-   • "number_line" — Number line with marked points or inequality ranges.
-     Required: min, max, step.
-     Optional: nlPoints:[{value,label,open}] (open=true → hollow circle = excluded endpoint), ranges:[{from,to,fromOpen,toOpen}]
+   • "bar_chart" — bars:[{label,value}]. title,xLabel,yLabel optional.
 
-   • "bar_chart" — Bar chart for statistics questions.
-     Required: bars:[{label,value}].
-     Optional: title, xLabel, yLabel, yMax.
+   • "geometric_shape" — AVOID. Use "geometry" instead.
 
-   CRITICAL DIAGRAM RULE — this is mandatory, not optional:
-   • If hasDiagram=true, the "diagram" field MUST be a complete non-null object with valid data. NEVER output hasDiagram=true with diagram=null.
-   • If you cannot provide valid diagram data, set hasDiagram=false and rewrite the question so it does NOT mention any visual element ("the diagram", "the grid", "shown below", etc.).
-   • NEVER write "State the coordinates of point P shown on the grid" or any similar question that asks a student to read from a visual without providing that visual in the diagram field.
-   • For Cartesian coordinate questions (C3.x): choose actual coordinates for point(s), plot them in the diagram, and use nearby wrong coordinates as MCQ distractors. The diagram must always accompany such questions.
+   BIOLOGY diagram types:
+   • "science_graph" — Multi-dataset line graph for Biology data questions (enzyme activity, photosynthesis rate, population growth, transpiration).
+     chartType:"line_graph". title,xLabel,yLabel. xRange:[min,max], yRange:[min,max]. datasets:[{id,label,dataPoints:[{x,y},...],curve:"smooth"|"linear_segments",style:"solid"|"dashed"}]. annotations:{optimumPoint:{x,y,label},plateaus:[{y,label,xStart,xEnd}]}.
+     DATA MUST BE BIOLOGICALLY REALISTIC: enzyme activity peaks then falls (denaturation). Photosynthesis plateaus (limiting factor). Rate curves flatten at end. Do NOT invent impossible data.
+     Example (enzyme temperature): {"diagramType":"science_graph","chartType":"line_graph","title":"Effect of temperature on enzyme activity","xLabel":"Temperature (°C)","yLabel":"Rate of reaction (au)","xRange":[0,70],"yRange":[0,100],"datasets":[{"id":"enz","label":"Enzyme","dataPoints":[{"x":0,"y":5},{"x":10,"y":15},{"x":20,"y":35},{"x":30,"y":65},{"x":37,"y":95},{"x":40,"y":80},{"x":50,"y":30},{"x":60,"y":5},{"x":70,"y":0}],"curve":"smooth","style":"solid"}],"annotations":{"optimumPoint":{"x":37,"y":95,"label":"Optimum 37°C"}}}
+
+   • "genetic_diagram" — Punnett squares and pedigree diagrams.
+     subtype:"punnett_square": parent1:{label,genotype}, parent2:{label,genotype}, gametes1:["R","r"] (ROW headers = parent1), gametes2:["R","r"] (COLUMN headers = parent2), punnettGridRows:[{"row":["RR","Rr"]},{"row":["Rr","rr"]}] (IMPORTANT: use punnettGridRows not punnettGrid), hiddenCells:[{row,col,pointer}], showRatio:false.
+     subtype:"pedigree": individuals:[{id,generation,sex:"male"|"female",phenotype:"affected"|"unaffected",genotype?,showGenotype}], relationships:[{type:"mating",between:[id1,id2]},{type:"offspring",parents:[id1,id2],children:[id3,...]}].
+     Example (Punnett, tongue rolling): {"diagramType":"genetic_diagram","subtype":"punnett_square","parent1":{"label":"Father","genotype":"Rr"},"parent2":{"label":"Mother","genotype":"Rr"},"gametes1":["R","r"],"gametes2":["R","r"],"punnettGridRows":[{"row":["RR","Rr"]},{"row":["Rr","rr"]}],"hiddenCells":[],"showRatio":false}
+
+   • "food_web" — Organisms at trophic levels connected by arrows.
+     organisms:[{id,label,trophicLevel:"producer"|"primary_consumer"|"secondary_consumer"|"tertiary_consumer",x,y}] (x,y in 0-10; producers at y=0, apex predators at y=8+).
+     arrows:[{from,to}] — ALWAYS from food TO feeder (prey→predator = energy flow direction). NEVER reverse.
+     Example: {"diagramType":"food_web","organisms":[{"id":"grass","label":"Grass","trophicLevel":"producer","x":3,"y":0},{"id":"rabbit","label":"Rabbit","trophicLevel":"primary_consumer","x":1,"y":4},{"id":"fox","label":"Fox","trophicLevel":"secondary_consumer","x":1,"y":8}],"arrows":[{"from":"grass","to":"rabbit"},{"from":"rabbit","to":"fox"}]}
+
+   • "energy_pyramid" — Pyramid of numbers/biomass/energy.
+     subtype:"numbers"|"biomass"|"energy". title (optional). levels:[{trophicLevel,organism,value,unit}] — levels[0] MUST be producer (bottom/widest), last element is apex consumer (top/narrowest). hiddenOrganisms:[{levelIndex,pointer}].
+     Example: {"diagramType":"energy_pyramid","subtype":"biomass","title":"Pyramid of Biomass","levels":[{"trophicLevel":"Producer","organism":"Grass","value":5000,"unit":"kg/m²"},{"trophicLevel":"Primary consumer","organism":"Rabbit","value":500,"unit":"kg/m²"},{"trophicLevel":"Secondary consumer","organism":"Fox","value":50,"unit":"kg/m²"}],"hiddenOrganisms":[]}
+
+   • "flowchart" — Dichotomous keys, separation technique flowcharts, decision trees.
+     nodes:[{id,text,shape:"diamond"|"rectangle"|"rounded_rectangle",x?,y?}] (x,y optional, in 0-10; if omitted renderer auto-layouts). connections:[{from,to,label?}]. hiddenNodes:[] (node IDs to hide — shown as [?]).
+     Decision nodes → diamond. Result/terminal nodes → rounded_rectangle. Process steps → rectangle.
+     Example (dichotomous key): {"diagramType":"flowchart","nodes":[{"id":"q1","text":"Does it have legs?","shape":"diamond"},{"id":"ins","text":"Insect","shape":"rounded_rectangle"},{"id":"spi","text":"Arachnid","shape":"rounded_rectangle"}],"connections":[{"from":"q1","to":"ins","label":"Yes (6 legs)"},{"from":"q1","to":"spi","label":"No (8 legs)"}],"hiddenNodes":[]}
+
+   CHEMISTRY diagram types:
+   • "science_graph" — Also used for Chemistry: rate of reaction graphs, solubility curves, heating/cooling curves, pH titration curves.
+     Same format as Biology. For heating curves use curve:"linear_segments". For rate of reaction: both datasets end at the same total volume/mass.
+     Example (rate with catalyst): {"diagramType":"science_graph","chartType":"line_graph","title":"Volume of gas vs time","xLabel":"Time (s)","yLabel":"Volume of gas (cm³)","xRange":[0,120],"yRange":[0,60],"datasets":[{"id":"cat","label":"With catalyst","dataPoints":[{"x":0,"y":0},{"x":10,"y":20},{"x":20,"y":38},{"x":30,"y":48},{"x":50,"y":52},{"x":80,"y":52}],"curve":"smooth","style":"solid"},{"id":"nocat","label":"Without catalyst","dataPoints":[{"x":0,"y":0},{"x":20,"y":10},{"x":40,"y":28},{"x":80,"y":48},{"x":100,"y":52}],"curve":"smooth","style":"dashed"}]}
+
+   • "energy_level_diagram" — Exothermic/endothermic reaction energy profiles, activation energy, catalyst effect.
+     reactionType:"exothermic"|"endothermic". reactants:{label,energyLevel}, products:{label,energyLevel} (energy levels are relative numbers — e.g. reactants:80, products:20 for exothermic). activationEnergy:{peak,label} (peak MUST be higher than BOTH reactants and products). energyChange:{label:"ΔH = –890 kJ/mol"}. showCatalystPath:false. catalystPeak (optional lower peak number).
+     CRITICAL: exothermic → products.energyLevel < reactants.energyLevel. Endothermic → products.energyLevel > reactants.energyLevel. activationEnergy.peak > max(reactants,products) always.
+     Example (exothermic): {"diagramType":"energy_level_diagram","reactionType":"exothermic","reactants":{"label":"CH₄ + 2O₂","energyLevel":80},"products":{"label":"CO₂ + 2H₂O","energyLevel":20},"activationEnergy":{"peak":120,"label":"Ea"},"energyChange":{"label":"ΔH = –890 kJ/mol"},"showCatalystPath":false}
+
+   SUBJECT-SPECIFIC DIAGRAM SELECTION RULES:
+   - Mathematics: Use geometry/circle_theorem/cartesian_grid for visual problems. NEVER use science_graph for math.
+   - Biology: Use science_graph for data/rate questions, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys. Use geometry only if the question is about geometric shapes.
+   - Chemistry: Use energy_level_diagram for energetics, science_graph for rate/heating/solubility curves. Use geometry only if explicitly needed (e.g. crystal structure diagrams).
+
+   CRITICAL DIAGRAM RULES — mandatory:
+   • If hasDiagram=true, the "diagram" field MUST be a complete non-null object. NEVER output hasDiagram=true with diagram=null.
+   • If you cannot provide valid diagram data, set hasDiagram=false and rewrite the question to not reference any visual.
+   • NEVER ask "state coordinates of P shown on the grid" without actually plotting P in the diagram field.
+   • For Cartesian coordinate questions: choose actual coordinates, plot them in the diagram, use nearby wrong coords as MCQ distractors.
 
 7. syllabusObjective: the SPECIFIC Cambridge IGCSE learning objective assessed. Format: "REF – objective statement" (e.g. "C4.1 – Define the term acid in terms of proton donation"). ONE sentence max. Do NOT add this as a line in the question text.
 
