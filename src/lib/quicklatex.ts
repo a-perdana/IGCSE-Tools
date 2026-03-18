@@ -14,11 +14,20 @@ interface QuickLaTeXResult {
 const cache = new Map<string, QuickLaTeXResult>()
 
 /**
- * Wraps bare TikZ body in \begin{tikzpicture}...\end{tikzpicture} if needed.
+ * Extracts or wraps TikZ content so QuickLaTeX receives only a
+ * \begin{tikzpicture}...\end{tikzpicture} block (no \documentclass wrapper).
  */
 function wrapTikz(code: string): string {
   const trimmed = code.trim()
+
+  // AI often produces a full standalone document — extract the tikzpicture block.
+  const blockMatch = trimmed.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/)
+  if (blockMatch) return blockMatch[0]
+
+  // Already a bare tikzpicture block
   if (trimmed.startsWith('\\begin{tikzpicture}')) return trimmed
+
+  // Bare TikZ commands — wrap them
   return `\\begin{tikzpicture}\n${trimmed}\n\\end{tikzpicture}`
 }
 
@@ -41,18 +50,36 @@ function sanitizeTikz(code: string): string {
 }
 
 /**
+ * Extracts \usetikzlibrary calls from outside the tikzpicture block so they
+ * can be forwarded in the preamble field. Returns them as a comma-joined string
+ * (e.g. "angles,quotes,calc") or empty string if none.
+ */
+function extractLibraries(code: string): string {
+  const libs: string[] = []
+  const re = /\\usetikzlibrary\{([^}]+)\}/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(code)) !== null) {
+    libs.push(...m[1].split(',').map(s => s.trim()).filter(Boolean))
+  }
+  return [...new Set(libs)].join(',')
+}
+
+/**
  * Renders TikZ code and returns a PNG URL hosted on quicklatex.com.
  * Throws if rendering fails.
  */
 export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
-  const formula = wrapTikz(sanitizeTikz(code))
-  const cached = cache.get(formula)
+  const sanitized = sanitizeTikz(code)
+  const formula = wrapTikz(sanitized)
+  const libraries = extractLibraries(sanitized)
+  const cacheKey = formula + '|' + libraries
+  const cached = cache.get(cacheKey)
   if (cached) return cached
 
   const res = await fetch('/api/quicklatex', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ formula }),
+    body: JSON.stringify({ formula, libraries }),
   })
 
   if (!res.ok) throw new Error(`QuickLaTeX proxy error: HTTP ${res.status}`)
@@ -79,6 +106,6 @@ export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
   const w = dimMatch ? parseInt(dimMatch[1]) : 400
   const h = dimMatch ? parseInt(dimMatch[2]) : 300
   const result: QuickLaTeXResult = { url, width: isNaN(w) ? 400 : w, height: isNaN(h) ? 300 : h }
-  cache.set(formula, result)
+  cache.set(cacheKey, result)
   return result
 }

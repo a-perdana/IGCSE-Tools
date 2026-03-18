@@ -5,9 +5,6 @@
  */
 export const config = { runtime: 'edge' }
 
-// Minimal preamble — no \usetikzlibrary to avoid pgf version compatibility issues
-const PREAMBLE = '\\usepackage{tikz}'
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -23,14 +20,20 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   let formula: string
+  let libraries: string
   try {
-    const body = await req.json() as { formula?: string }
+    const body = await req.json() as { formula?: string; libraries?: string }
     formula = body.formula ?? ''
+    libraries = body.libraries ?? ''
   } catch {
     return new Response('Invalid JSON body', { status: 400 })
   }
 
   if (!formula) return new Response('Missing formula', { status: 400 })
+
+  const preamble = libraries
+    ? `\\usepackage{tikz}\n\\usetikzlibrary{${libraries}}`
+    : '\\usepackage{tikz}'
 
   // URLSearchParams encodes spaces as '+', but QuickLaTeX does not decode '+' as space.
   // Use encodeURIComponent (spaces → '%20') so QuickLaTeX receives correct whitespace.
@@ -42,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
     `mode=0`,
     `out=1`,
     `errors=1`,
-    `preamble=${encodeURIComponent(PREAMBLE)}`,
+    `preamble=${encodeURIComponent(preamble)}`,
   ].join('&')
 
   const qlRes = await fetch('https://quicklatex.com/latex3.f', {
