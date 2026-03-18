@@ -58,15 +58,15 @@ export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
   if (!res.ok) throw new Error(`QuickLaTeX proxy error: HTTP ${res.status}`)
 
   const text = await res.text()
-  // Trim each line and remove blanks (handles \r\n and leading/trailing blank lines)
+  // QuickLaTeX puts URL, status, and dimensions on the same line:
+  //   "https://quicklatex.com/.../ql_xxx.png 0 207 202"
+  // Find the line containing the image URL
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const urlLine = lines.find(l => l.startsWith('http'))
+  if (!urlLine) throw new Error('QuickLaTeX returned no image URL')
 
-  // QuickLaTeX response lines (order may vary across versions):
-  //   one line is "0" (success) or a non-zero error code
-  //   one line is the image URL (starts with "http")
-  //   one line is "width height" (two integers separated by space)
-  const url = lines.find(l => l.startsWith('http'))
-  if (!url) throw new Error('QuickLaTeX returned no image URL')
+  // The URL is only the first token — status and dimensions follow on the same line
+  const url = urlLine.split(/\s+/)[0]
 
   // If the URL points to QuickLaTeX's own error image, the render failed
   if (url.includes('/error.png')) {
@@ -74,8 +74,10 @@ export async function renderTikz(code: string): Promise<QuickLaTeXResult> {
     throw new Error(`QuickLaTeX: ${msg || 'render error'}`)
   }
 
-  const dimLine = lines.find(l => /^\d+ \d+$/.test(l)) ?? '400 300'
-  const [w, h] = dimLine.split(' ').map(Number)
+  // Dimensions: last two numbers on the URL line (e.g. "207 202")
+  const dimMatch = urlLine.match(/(\d+)\s+(\d+)\s*$/)
+  const w = dimMatch ? parseInt(dimMatch[1]) : 400
+  const h = dimMatch ? parseInt(dimMatch[2]) : 300
   const result: QuickLaTeXResult = { url, width: isNaN(w) ? 400 : w, height: isNaN(h) ? 300 : h }
   cache.set(formula, result)
   return result
