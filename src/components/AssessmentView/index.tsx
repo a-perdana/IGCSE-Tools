@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2, RefreshCw } from 'lucide-react'
+import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2, RefreshCw, Eye, Code2 } from 'lucide-react'
 import type { Assessment, Question, QuestionItem } from '../../lib/types'
 import { parseSVGSafe, normalizeSvgMarkdown } from '../../lib/svg'
 import { DiagramRenderer } from '../DiagramRenderer'
@@ -137,6 +137,93 @@ function formatDateTime(ts: import('firebase/firestore').Timestamp): string {
   const d = ts.toDate()
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     + ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+
+// ── TikZ code editor with Preview tab and snippet toolbar ──────────────────
+const TIKZ_SNIPPETS = [
+  { label: '\\draw', insert: '\\draw[thick] (0,0) -- (1,0);' },
+  { label: '\\node', insert: '\\node at (0,0) {$A$};' },
+  { label: '\\coordinate', insert: '\\coordinate (A) at (0,0);' },
+  { label: 'right angle', insert: '\\draw (0.2,0) |- (0,0.2);' },
+  { label: 'arc', insert: '\\draw (1,0) arc[start angle=0,end angle=90,radius=1];' },
+  { label: 'dashed', insert: '\\draw[dashed] (0,0) -- (2,2);' },
+  { label: '\\usetikzlibrary', insert: '\\usetikzlibrary{angles,quotes,calc}' },
+]
+
+function TikzEditor({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [tab, setTab] = useState<'code' | 'preview'>('code')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const insertSnippet = useCallback((snippet: string) => {
+    const el = textareaRef.current
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const next = value.slice(0, start) + snippet + value.slice(end)
+    onChange(next)
+    // restore cursor after snippet
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(start + snippet.length, start + snippet.length)
+    })
+  }, [value, onChange])
+
+  return (
+    <div className="border border-stone-300 rounded-lg overflow-hidden bg-white">
+      {/* Tab bar + toolbar */}
+      <div className="flex items-center gap-0 border-b border-stone-200 bg-stone-50 px-2 py-1 flex-wrap gap-y-1">
+        <button
+          onClick={() => setTab('code')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium mr-1 ${tab === 'code' ? 'bg-white shadow-sm text-stone-800 border border-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+        >
+          <Code2 className="w-3 h-3" /> Code
+        </button>
+        <button
+          onClick={() => setTab('preview')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium mr-3 ${tab === 'preview' ? 'bg-white shadow-sm text-stone-800 border border-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+        >
+          <Eye className="w-3 h-3" /> Preview
+        </button>
+        <div className="h-3.5 w-px bg-stone-300 mr-3 hidden sm:block" />
+        {tab === 'code' && TIKZ_SNIPPETS.map(s => (
+          <button
+            key={s.label}
+            onClick={() => insertSnippet(s.insert)}
+            className="px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 mr-1 font-mono"
+            title={s.insert}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'code' ? (
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="w-full font-mono text-xs p-2.5 bg-stone-50 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-y"
+          rows={18}
+          placeholder={'\\documentclass[tikz,border=2mm]{standalone}\n\\usepackage{tikz}\n\\begin{document}\n\\begin{tikzpicture}\n  % your diagram here\n\\end{tikzpicture}\n\\end{document}'}
+          spellCheck={false}
+        />
+      ) : (
+        <div className="p-3 min-h-[200px] flex items-center justify-center bg-stone-50">
+          {value.trim() ? (
+            <DiagramRenderer spec={{ diagramType: 'tikz', code: value }} />
+          ) : (
+            <span className="text-xs text-stone-400 italic">No code to preview</span>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function AssessmentView({
@@ -447,18 +534,14 @@ export function AssessmentView({
                       </div>
                       {q.hasDiagram && (
                         <div>
-                          <label className="text-xs font-medium text-stone-600 mb-1 block flex items-center gap-1.5">
+                          <label className="text-xs font-medium text-stone-600 mb-1.5 block flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                            TikZ Diagram Code
-                            <span className="text-stone-400 font-normal">(LaTeX/TikZ — leave empty to remove diagram)</span>
+                            TikZ Diagram
+                            <span className="text-stone-400 font-normal">(leave empty to remove diagram)</span>
                           </label>
-                          <textarea
+                          <TikzEditor
                             value={editDraft.tikzCode}
-                            onChange={e => setEditDraft(d => ({ ...d, tikzCode: e.target.value }))}
-                            className="w-full font-mono text-xs p-2.5 border border-stone-300 rounded-lg bg-stone-50 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-y"
-                            rows={10}
-                            placeholder={'\\documentclass[tikz,border=2mm]{standalone}\n\\usepackage{tikz}\n\\begin{document}\n\\begin{tikzpicture}\n  % your diagram here\n\\end{tikzpicture}\n\\end{document}'}
-                            spellCheck={false}
+                            onChange={v => setEditDraft(d => ({ ...d, tikzCode: v }))}
                           />
                         </div>
                       )}

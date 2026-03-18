@@ -523,7 +523,7 @@ export default function App() {
         onApiSettingsOpenChange={setApiSettingsOpen}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {/* Top nav */}
         <header className="border-b border-stone-200 px-4 py-2 flex items-center justify-between">
           <h1 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
