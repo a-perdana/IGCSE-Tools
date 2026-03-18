@@ -365,9 +365,10 @@ function buildReferenceParts(references: Reference[], difficulty?: string): any[
 }
 
 /** Gemini responseSchema fragment for the structured diagram field.
- *  Kept intentionally flat/simple — deeply nested item schemas cause Gemini
- *  structured-output failures. Array items are declared as generic objects
- *  so the model can fill them freely; sanitize.ts validates/normalises at runtime. */
+ *  Flat bag of nullable fields — all 14 diagram types share one schema object.
+ *  Array items stay as generic objects; sanitize.ts validates at runtime.
+ *  In Phase 1 (diagram spec generation) this is the ONLY output schema so Gemini
+ *  can focus entirely on getting the diagram data right. */
 const DIAGRAM_SCHEMA = {
   type: Type.OBJECT,
   nullable: true,
@@ -453,181 +454,111 @@ const DIAGRAM_SCHEMA = {
   },
 }
 
-/** Focused single-call diagram generation for one question.
- *  Uses a minimal schema so Gemini structured output doesn't fail. */
-async function generateDiagramForQuestion(
-  question: QuestionItem,
+/** Phase 1: generate diagram specs for questions that need one.
+ *  Each spec is a complete DiagramSpec JSON — the ground truth that Phase 2 writes questions around.
+ *  One API call per question, all run in parallel. Temperature 0.3 for determinism. */
+async function generateDiagramSpecs(
+  specs: Array<{ index: number; topic: string; questionType: string; diagramHint: string }>,
   subject: string,
   model: string,
   ai: ReturnType<typeof getAI>,
   onUsage?: UsageCallback,
   onLog?: (msg: string) => void,
-): Promise<DiagramSpec | undefined> {
-  const optText = question.options?.length ? `\nMCQ options: ${question.options.join(' | ')}` : ''
-  const ansText = question.answer ? `\nCorrect answer: ${question.answer}` : ''
-  const msText = question.markScheme ? `\nMark scheme: ${question.markScheme}` : ''
-  const prompt = `Generate a diagram JSON for this Cambridge IGCSE ${subject} question.
+): Promise<Array<{ index: number; diagram: DiagramSpec } | null>> {
+  const DIAGRAM_TYPE_DOCS = buildDiagramTypeDocs(subject)
 
-QUESTION: ${question.text}${optText}${ansText}${msText}
+  return Promise.all(specs.map(async (spec) => {
+    const prompt = `You are generating a Cambridge IGCSE ${subject} exam diagram.
 
-IMPORTANT: The diagram must use the EXACT numbers, labels, and values mentioned in the question and mark scheme above. Do not invent different values — if the question says "5 cm and 8 cm", those exact lengths must appear in the diagram.
+TASK: Produce a complete, precise diagram JSON for a ${spec.questionType} question on the topic "${spec.topic}".
+DIAGRAM HINT: ${spec.diagramHint}
 
-If the question says "the shape shown" or "the diagram shows" without specifying the exact shape, INVENT a suitable shape consistent with the question and answer. For example, if answer is "order 3", draw a shape with order-3 rotational symmetry (equilateral triangle). If answer is "order 4", draw a square. If the question mentions a circle with tangent, draw a circle with a tangent line. Always produce a valid diagram — never return null or skip.
+RULES:
+- Pick EXACTLY ONE diagramType and fill in ALL required fields for that type.
+- ALL numeric values must be plain integers or decimals — never null, never strings.
+- Invent specific, realistic numbers (e.g. side lengths, temperatures, coordinates) — these become the ground truth that the question text will be written around.
+- Labels: plain text only, no LaTeX or dollar signs inside label strings.
+- Angle labels: ONLY the value or variable — "72°" or "x", NEVER "angle EAF = 72°".
 
-Pick the correct diagramType and fill in all required fields. ALL coordinate values MUST be plain integers or decimals — never null, never strings.
+${DIAGRAM_TYPE_DOCS}`
 
-MATHEMATICS types:
-• "geometry" — PREFERRED for geometry/triangle/angle/parallel-lines. points:[{name,x,y}] 0-10. segments:[{from,to,label?}]. angles:[{at,between:[p1,p2],label}]. parallel:[{seg1,seg2}]. perpendicular:[{seg1,seg2}].
-  IMPORTANT: Always include at least 3 points and label angles where relevant. A bare 2-point segment is NOT a valid diagram.
-  Example right triangle: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"8 cm"},{"from":"B","to":"C","label":"6 cm"},{"from":"A","to":"C"}],"perpendicular":[{"seg1":"AB","seg2":"BC"}]}
-  Example straight-line angles: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":5},{"name":"B","x":5,"y":5},{"name":"C","x":9,"y":5},{"name":"P","x":3,"y":8}],"segments":[{"from":"A","to":"C"},{"from":"B","to":"P"}],"angles":[{"at":"B","between":["A","P"],"label":"55°"},{"at":"B","between":["P","C"],"label":"x"}]}
-  Example parallel lines + transversal (AB‖CD, transversal EF, angle AEF=72°): {"diagramType":"geometry","points":[{"name":"A","x":1,"y":7},{"name":"B","x":9,"y":7},{"name":"E","x":6.5,"y":7},{"name":"C","x":1,"y":3},{"name":"D","x":9,"y":3},{"name":"F","x":4,"y":3}],"segments":[{"from":"A","to":"B"},{"from":"C","to":"D"},{"from":"E","to":"F"}],"parallel":[{"seg1":"AB","seg2":"CD"}],"angles":[{"at":"E","between":["A","F"],"label":"72°"}]}
-  CRITICAL for parallel lines: ALWAYS include BOTH parallel lines (all 4 endpoints) AND both intersection points (E on AB, F on CD). Never omit the second line.
-  CRITICAL angle labels: label must be ONLY the degree value or variable — e.g. "72°", "x", "2x+10°". NEVER include point names — "72° EAF" is WRONG, "72°" is correct.
-• "circle_theorem" — circle with named points, chords, radii, angles. centre:{id:"O"}. pointsOnCircumference:[{id,angleDegrees}] (0°=right,90°=top). chords:[{s1,s2}]. radii:[{s1,s2}]. angles:[{vertex,rays:[p1,p2],label}].
-  Example: {"diagramType":"circle_theorem","centre":{"id":"O"},"pointsOnCircumference":[{"id":"A","angleDegrees":20},{"id":"B","angleDegrees":144},{"id":"C","angleDegrees":260}],"radii":[{"s1":"O","s2":"A"},{"s1":"O","s2":"B"}],"chords":[{"s1":"A","s2":"C"},{"s1":"B","s2":"C"}],"angles":[{"vertex":"O","rays":["A","B"],"label":"124°"},{"vertex":"C","rays":["A","B"],"label":"x"}]}
-• "cartesian_grid" — xMin,xMax,yMin,yMax,gridStep. points:[{label,x,y}]. segments:[{x1,y1,x2,y2}].
-• "number_line" — min,max,step. nlPoints:[{value,open,label}]. ranges:[{from,to}].
-• "bar_chart" — bars:[{label,value}]. title,xLabel,yLabel optional.
-• "geometric_shape" — AVOID; use geometry instead.
-
-BIOLOGY types:
-• "science_graph" — line graph for data questions. chartType:"line_graph". xRange:[min,max], yRange:[min,max]. xLabel,yLabel,title. datasets:[{id,label,dataPoints:[{x,y},...],curve:"smooth",style:"solid"|"dashed"}]. annotations:{optimumPoint:{x,y,label}}.
-  Example: {"diagramType":"science_graph","chartType":"line_graph","title":"Enzyme activity","xLabel":"Temperature (°C)","yLabel":"Rate (au)","xRange":[0,70],"yRange":[0,100],"datasets":[{"id":"e","label":"Enzyme A","dataPoints":[{"x":0,"y":5},{"x":20,"y":35},{"x":37,"y":95},{"x":50,"y":30},{"x":70,"y":0}],"curve":"smooth","style":"solid"}],"annotations":{"optimumPoint":{"x":37,"y":95,"label":"Optimum"}}}
-• "genetic_diagram" — Punnett square. subtype:"punnett_square". parent1/parent2:{label,genotype}. gametes1/gametes2:["R","r"]. punnettGridRows:[{"row":["RR","Rr"]},{"row":["Rr","rr"]}]. hiddenCells:[{row,col,pointer}].
-  Example: {"diagramType":"genetic_diagram","subtype":"punnett_square","parent1":{"label":"Father","genotype":"Rr"},"parent2":{"label":"Mother","genotype":"Rr"},"gametes1":["R","r"],"gametes2":["R","r"],"punnettGridRows":[{"row":["RR","Rr"]},{"row":["Rr","rr"]}],"hiddenCells":[]}
-• "food_web" — organisms:[{id,label,trophicLevel,x,y}] (y=0 producers, y=8+ apex). arrows:[{from,to}] FROM prey TO predator.
-  Example: {"diagramType":"food_web","organisms":[{"id":"g","label":"Grass","trophicLevel":"producer","x":3,"y":0},{"id":"r","label":"Rabbit","trophicLevel":"primary_consumer","x":1,"y":4},{"id":"f","label":"Fox","trophicLevel":"secondary_consumer","x":1,"y":8}],"arrows":[{"from":"g","to":"r"},{"from":"r","to":"f"}]}
-• "energy_pyramid" — levels[0]=producer (bottom). levels:[{trophicLevel,organism,value?,unit?}]. subtype:"biomass"|"energy"|"numbers".
-  Example: {"diagramType":"energy_pyramid","subtype":"biomass","levels":[{"trophicLevel":"Producer","organism":"Grass","value":5000,"unit":"kg/m²"},{"trophicLevel":"Primary consumer","organism":"Rabbit","value":500,"unit":"kg/m²"}],"hiddenOrganisms":[]}
-• "flowchart" — nodes:[{id,text,shape:"diamond"|"rectangle"|"rounded_rectangle"}]. connections:[{from,to,label?}]. hiddenNodes:[].
-  Example: {"diagramType":"flowchart","nodes":[{"id":"q1","text":"Has legs?","shape":"diamond"},{"id":"ins","text":"Insect","shape":"rounded_rectangle"}],"connections":[{"from":"q1","to":"ins","label":"Yes (6 legs)"}],"hiddenNodes":[]}
-
-CHEMISTRY types:
-• "energy_level_diagram" — reactionType:"exothermic"|"endothermic". reactants:{label,energyLevel}, products:{label,energyLevel}. activationEnergy:{peak,label} (peak > both levels). energyChange:{label:"ΔH = ..."}. showCatalystPath:false.
-  Example: {"diagramType":"energy_level_diagram","reactionType":"exothermic","reactants":{"label":"Reactants","energyLevel":80},"products":{"label":"Products","energyLevel":20},"activationEnergy":{"peak":120,"label":"Ea"},"energyChange":{"label":"ΔH = –500 kJ/mol"},"showCatalystPath":false}
-• "science_graph" — also for Chemistry rate/heating/pH curves. Same format as Biology.
-
-BIOLOGY & CHEMISTRY — structural diagrams (use svg_template when question asks to label a cell, apparatus, or biological structure):
-• "svg_template" — pre-drawn diagram selected by templateId. svgLabels:[{anchorId,text}] where anchorId must match template anchors exactly.
-  Available templates and their valid anchorIds:
-  - "bio/animal_cell" → anchorIds: cell_membrane, nucleus, nuclear_membrane, nucleolus, mitochondrion, golgi_apparatus, rough_er, ribosome, lysosome, vacuole, cytoplasm
-  - "bio/plant_cell" → anchorIds: cell_wall, cell_membrane, nucleus, nucleolus, chloroplast, central_vacuole, tonoplast, mitochondrion, golgi_apparatus, cytoplasm
-  - "bio/leaf_cross_section" → anchorIds: upper_epidermis, cuticle, palisade_mesophyll, chloroplast, spongy_mesophyll, air_space, lower_epidermis, guard_cell, stoma, xylem, phloem, vascular_bundle
-  - "chem/electrolysis" → anchorIds: beaker, electrolyte, cathode, anode, negative_electrode, positive_electrode, power_supply, gas_at_cathode, gas_at_anode
-  - "chem/simple_distillation" → anchorIds: flask, liquid, thermometer, condenser, water_in, water_out, collecting_flask, distillate, heat
-  Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
-  IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
-
-LAYER 3 — "tikz" (QuickLaTeX). Use ONLY for complex apparatus/structures that have no matching svg_template.
-
-• "tikz" — TikZ code rendered to PNG. Use for: chromatography, filtration, titration setup, microscope, circuit diagrams, any lab apparatus not covered by svg_template.
-  DO NOT use tikz for geometry/angles/triangles — use the "geometry" type instead.
-  Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture} block.
-  Packages: tikz, usetikzlibrary{arrows.meta,positioning,patterns}
-  CRITICAL: In JSON strings ALL backslashes must be doubled (\\\\). Semicolons end every TikZ statement.
-  Use only simple primitives: \\\\draw, \\\\node, \\\\fill. Avoid +() relative coords, arc, and complex paths.
-
-  Example — paper chromatography:
-    tikzCode:"\\\\begin{tikzpicture}\\n\\\\draw[thick] (0,0) rectangle (3,5);\\n\\\\draw[dashed] (0,0.5) -- (3,0.5);\\n\\\\node[below] at (1.5,0) {Chromatography paper};\\n\\\\node at (0.8,0.5) {\\\\textbullet};\\n\\\\node[below] at (0.8,0.4) {ink};\\n\\\\fill[blue!20] (0,0) rectangle (3,0.3);\\n\\\\node[right] at (3,0.15) {solvent};\\n\\\\end{tikzpicture}"
-
-All label strings: plain text only, no LaTeX or dollar signs.`
-
-  try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
-        temperature: 0.2,
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            diagramType: { type: Type.STRING },
-            xMin: { type: Type.NUMBER, nullable: true }, xMax: { type: Type.NUMBER, nullable: true },
-            yMin: { type: Type.NUMBER, nullable: true }, yMax: { type: Type.NUMBER, nullable: true },
-            gridStep: { type: Type.NUMBER, nullable: true },
-            viewWidth: { type: Type.NUMBER, nullable: true }, viewHeight: { type: Type.NUMBER, nullable: true },
-            min: { type: Type.NUMBER, nullable: true }, max: { type: Type.NUMBER, nullable: true },
-            step: { type: Type.NUMBER, nullable: true },
-            title: { type: Type.STRING, nullable: true },
-            xLabel: { type: Type.STRING, nullable: true }, yLabel: { type: Type.STRING, nullable: true },
-            points:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            segments: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            polygons: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            shapes:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            nlPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            ranges:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            bars:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            angles:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            parallel: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            perpendicular: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            labels:   { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            // new Layer 1 types
-            subtype:     { type: Type.STRING, nullable: true },
-            reactionType:{ type: Type.STRING, nullable: true },
-            chartType:   { type: Type.STRING, nullable: true },
-            showCatalystPath: { type: Type.BOOLEAN, nullable: true },
-            catalystPeak:     { type: Type.NUMBER, nullable: true },
-            showRatio:        { type: Type.BOOLEAN, nullable: true },
-            pointsOnCircumference: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            chords:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            radii:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            tangentPoints: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
-            centre:    { type: Type.OBJECT, nullable: true },
-            xRange:    { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
-            yRange:    { type: Type.ARRAY, nullable: true, items: { type: Type.NUMBER } },
-            datasets:  { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            annotations: { type: Type.OBJECT, nullable: true },
-            parent1:   { type: Type.OBJECT, nullable: true },
-            parent2:   { type: Type.OBJECT, nullable: true },
-            gametes1:  { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
-            gametes2:  { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
-            punnettGridRows: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            hiddenCells: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            reactants: { type: Type.OBJECT, nullable: true },
-            products:  { type: Type.OBJECT, nullable: true },
-            activationEnergy: { type: Type.OBJECT, nullable: true },
-            energyChange: { type: Type.OBJECT, nullable: true },
-            organisms: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            arrows:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            levels:    { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            hiddenOrganisms: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            nodes:     { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            connections: { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            hiddenNodes: { type: Type.ARRAY, nullable: true, items: { type: Type.STRING } },
-            templateId: { type: Type.STRING, nullable: true },
-            svgLabels:  { type: Type.ARRAY, nullable: true, items: { type: Type.OBJECT } },
-            // Layer 3 — TikZ (QuickLaTeX)
-            tikzCode:   { type: Type.STRING, nullable: true },
-          },
-          required: ['diagramType'],
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 2048,
+          temperature: 0.3,
+          responseSchema: DIAGRAM_SCHEMA,
         },
-      },
-    })
-    const usage = getGeminiUsage(response)
-    if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
-    const raw = response.text
-    if (!raw) { onLog?.(`[diagram] no response text`); return undefined }
-    let parsed: unknown
-    try { parsed = JSON.parse(raw) } catch { onLog?.(`[diagram] JSON parse failed: ${raw?.slice(0,120)}`); return undefined }
-    const result = normalizeDiagram(parsed)
-    const diagramType = (parsed as Record<string,unknown>)?.diagramType ?? '?'
-    if (result) {
-      onLog?.(`[diagram] type=${diagramType} → OK`)
-      return result
+      })
+      const usage = getGeminiUsage(response)
+      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+      const raw = response.text
+      if (!raw) { onLog?.(`[spec ${spec.index}] empty response`); return null }
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { onLog?.(`[spec ${spec.index}] JSON parse failed`); return null }
+      const diagram = normalizeDiagram(parsed)
+      if (diagram) {
+        onLog?.(`[spec ${spec.index}] type=${diagram.diagramType} → OK`)
+        return { index: spec.index, diagram }
+      }
+      onLog?.(`[spec ${spec.index}] type=${(parsed as any)?.diagramType ?? '?'} → rejected by normalizeDiagram`)
+      return null
+    } catch (err) {
+      onLog?.(`[spec ${spec.index}] error: ${String(err).slice(0, 100)}`)
+      return null
     }
-    // AI diagram rejected — try text-based fallback (geometry/cartesian patterns)
-    const fallback = generateDiagramFromText(question.text, question.answer, question.options ?? [])
-    onLog?.(`[diagram] type=${diagramType} → rejected; text-fallback=${fallback ? 'OK' : 'none'}`)
-    return fallback
-  } catch (err) {
-    onLog?.(`[diagram] API error: ${String(err).slice(0,120)}`)
-    return undefined
-  }
+  }))
 }
 
+/** Builds concise diagram type documentation for the given subject. */
+function buildDiagramTypeDocs(subject: string): string {
+  const math = `MATHEMATICS diagram types:
+• "geometry" — triangles, polygons, parallel lines, bearings, angles. points:[{name,x,y}] in 0-10 space. segments:[{from,to,label?}]. angles:[{at,between:[p1,p2],label}]. parallel:[{seg1,seg2}]. perpendicular:[{seg1,seg2}].
+  Min 3 points. Angle labels: "72°" or "x" only — no point names.
+  Right triangle example: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":1,"y":7},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B","label":"6 cm"},{"from":"B","to":"C","label":"10 cm"},{"from":"A","to":"C"}],"perpendicular":[{"seg1":"AB","seg2":"BC"}]}
+  Parallel lines example: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":7},{"name":"B","x":9,"y":7},{"name":"E","x":6,"y":7},{"name":"C","x":1,"y":3},{"name":"D","x":9,"y":3},{"name":"F","x":4,"y":3}],"segments":[{"from":"A","to":"B"},{"from":"C","to":"D"},{"from":"E","to":"F"}],"parallel":[{"seg1":"AB","seg2":"CD"}],"angles":[{"at":"E","between":["A","F"],"label":"65°"}]}
+• "circle_theorem" — circle with named points, chords, radii, angles. centre:{id:"O"}. pointsOnCircumference:[{id,angleDegrees}] (0°=right, 90°=top). chords:[{s1,s2}]. radii:[{s1,s2}]. angles:[{vertex,rays:[p1,p2],label}].
+  Example: {"diagramType":"circle_theorem","centre":{"id":"O"},"pointsOnCircumference":[{"id":"A","angleDegrees":20},{"id":"B","angleDegrees":144},{"id":"C","angleDegrees":260}],"radii":[{"s1":"O","s2":"A"},{"s1":"O","s2":"B"}],"chords":[{"s1":"A","s2":"C"},{"s1":"B","s2":"C"}],"angles":[{"vertex":"O","rays":["A","B"],"label":"124°"},{"vertex":"C","rays":["A","B"],"label":"x"}]}
+• "cartesian_grid" — coordinate grid. xMin,xMax,yMin,yMax,gridStep. points:[{label,x,y}]. segments:[{x1,y1,x2,y2}]. polygons:[{vertices:[{x,y}]}].
+• "number_line" — min,max,step. nlPoints:[{value,open,label}]. ranges:[{from,to}].
+• "bar_chart" — bars:[{label,value}]. title,xLabel,yLabel optional.`
+
+  const bio = `BIOLOGY diagram types:
+• "science_graph" — line graphs (enzyme, photosynthesis, population). chartType:"line_graph". xRange:[min,max], yRange:[min,max]. xLabel,yLabel,title. datasets:[{id,label,dataPoints:[{x,y}],curve:"smooth"|"linear_segments",style:"solid"|"dashed"}]. annotations:{optimumPoint:{x,y,label}}.
+  Data MUST be biologically realistic — enzyme activity rises then falls after denaturation, photosynthesis plateaus at limiting factor.
+  Example: {"diagramType":"science_graph","chartType":"line_graph","title":"Effect of temperature on enzyme activity","xLabel":"Temperature (°C)","yLabel":"Rate of reaction (au)","xRange":[0,70],"yRange":[0,100],"datasets":[{"id":"e","label":"Enzyme","dataPoints":[{"x":0,"y":5},{"x":10,"y":15},{"x":20,"y":35},{"x":30,"y":65},{"x":37,"y":95},{"x":45,"y":50},{"x":55,"y":10},{"x":65,"y":0}],"curve":"smooth","style":"solid"}],"annotations":{"optimumPoint":{"x":37,"y":95,"label":"Optimum 37°C"}}}
+• "genetic_diagram" — Punnett squares. subtype:"punnett_square". parent1/parent2:{label,genotype}. gametes1/gametes2:[alleles]. punnettGridRows:[{"row":["RR","Rr"]},{"row":["Rr","rr"]}]. hiddenCells:[].
+• "food_web" — organisms:[{id,label,trophicLevel,x,y}] y=0 producers, y=8+ apex. arrows:[{from,to}] prey→predator direction.
+• "energy_pyramid" — subtype:"numbers"|"biomass"|"energy". levels:[{trophicLevel,organism,value,unit}] levels[0]=producer (bottom). hiddenOrganisms:[].
+• "flowchart" — nodes:[{id,text,shape:"diamond"|"rectangle"|"rounded_rectangle"}]. connections:[{from,to,label?}]. hiddenNodes:[].
+• "svg_template" — templateId + svgLabels:[{anchorId,text}]. Templates: "bio/animal_cell" (anchorIds: cell_membrane,nucleus,nuclear_membrane,nucleolus,mitochondrion,golgi_apparatus,rough_er,ribosome,lysosome,vacuole,cytoplasm), "bio/plant_cell" (cell_wall,cell_membrane,nucleus,nucleolus,chloroplast,central_vacuole,tonoplast,mitochondrion,golgi_apparatus,cytoplasm), "bio/leaf_cross_section" (upper_epidermis,cuticle,palisade_mesophyll,chloroplast,spongy_mesophyll,air_space,lower_epidermis,guard_cell,stoma,xylem,phloem,vascular_bundle).`
+
+  const chem = `CHEMISTRY diagram types:
+• "science_graph" — rate of reaction, heating curves, pH titration. Same format as Biology. For heating curves use curve:"linear_segments".
+  Rate example: {"diagramType":"science_graph","chartType":"line_graph","title":"Volume of gas collected vs time","xLabel":"Time (s)","yLabel":"Volume of gas (cm³)","xRange":[0,120],"yRange":[0,60],"datasets":[{"id":"fast","label":"Higher temperature","dataPoints":[{"x":0,"y":0},{"x":10,"y":22},{"x":20,"y":40},{"x":35,"y":52},{"x":60,"y":55}],"curve":"smooth","style":"solid"},{"id":"slow","label":"Lower temperature","dataPoints":[{"x":0,"y":0},{"x":20,"y":12},{"x":40,"y":30},{"x":70,"y":50},{"x":100,"y":55}],"curve":"smooth","style":"dashed"}]}
+• "energy_level_diagram" — reactionType:"exothermic"|"endothermic". reactants:{label,energyLevel}. products:{label,energyLevel}. activationEnergy:{peak,label} — peak MUST be > both levels. energyChange:{label:"ΔH = –890 kJ/mol"}. showCatalystPath:false.
+• "svg_template" — templateId + svgLabels. Templates: "chem/electrolysis" (beaker,electrolyte,cathode,anode,negative_electrode,positive_electrode,power_supply,gas_at_cathode,gas_at_anode), "chem/simple_distillation" (flask,liquid,thermometer,condenser,water_in,water_out,collecting_flask,distillate,heat).
+• "tikz" — ONLY for apparatus with no matching svg_template (chromatography, filtration, titration setup). tikzCode: full \\begin{tikzpicture}...\\end{tikzpicture}. Double all backslashes in JSON strings.`
+
+  const phys = `PHYSICS diagram types:
+• "science_graph" — motion graphs (v-t, s-t), force-extension, cooling curves. Same format as Biology science_graph.
+• "geometry" — force diagrams, ray diagrams (use named points for object/image/lens), wave diagrams.
+• "cartesian_grid" — coordinate-based physics problems.`
+
+  const parts: string[] = []
+  if (subject === 'Mathematics') parts.push(math)
+  else if (subject === 'Biology') parts.push(bio)
+  else if (subject === 'Chemistry') parts.push(chem)
+  else if (subject === 'Physics') parts.push(phys)
+  else parts.push(math, bio, chem, phys)
+  return parts.join('\n\n')
+}
+
+/** Used by the UI "Regenerate Diagram" button — regenerates diagrams for already-written questions.
+ *  This is the repair path, not the main generation path. */
 export async function regenerateDiagramsForQuestions(
   questions: QuestionItem[],
   subject: string,
@@ -637,13 +568,67 @@ export async function regenerateDiagramsForQuestions(
   onLog?: (msg: string) => void,
 ): Promise<Array<{ id: string; diagram: DiagramSpec }>> {
   const ai = getAI(apiKey)
+  const DIAGRAM_TYPE_DOCS = buildDiagramTypeDocs(subject)
   const results = await Promise.all(
     questions.map(async q => {
-      const diagram = await generateDiagramForQuestion(q, subject, model, ai, onUsage, onLog)
-      return diagram ? { id: q.id, diagram } : null
+      const optText = q.options?.length ? `\nMCQ options: ${q.options.join(' | ')}` : ''
+      const msText = q.markScheme ? `\nMark scheme: ${q.markScheme}` : ''
+      const prompt = `Generate a replacement diagram JSON for this Cambridge IGCSE ${subject} question.
+
+QUESTION: ${q.text}${optText}
+Answer: ${q.answer}${msText}
+
+Use the EXACT numbers and values from the question above. Do not invent different values.
+
+${DIAGRAM_TYPE_DOCS}`
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.2, responseSchema: DIAGRAM_SCHEMA },
+        })
+        const usage = getGeminiUsage(response)
+        if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+        const raw = response.text
+        if (!raw) return null
+        let parsed: unknown
+        try { parsed = JSON.parse(raw) } catch { return null }
+        const diagram = normalizeDiagram(parsed)
+        if (diagram) { onLog?.(`[repair ${q.id.slice(0,6)}] OK`); return { id: q.id, diagram } }
+        const fallback = generateDiagramFromText(q.text, q.answer, q.options ?? [])
+        if (fallback) return { id: q.id, diagram: fallback }
+        return null
+      } catch { return null }
     })
   )
   return results.filter((v): v is { id: string; diagram: DiagramSpec } => Boolean(v))
+}
+
+// ── Two-phase question generation ────────────────────────────────────────────
+//
+// Phase 1 (temperature 0.3): decide WHAT each diagram-bearing question will show.
+//   Output: { index, topic, questionType, diagramHint, diagram }[]
+//   The diagram spec is the ground truth — concrete numbers, coordinates, data.
+//
+// Phase 2 (temperature 0.75): write the full question TEXT that references the
+//   diagram data exactly. The diagram JSON is embedded verbatim into the prompt
+//   so Gemini can read the actual coordinates/values it must mention.
+//
+// Questions without diagrams skip Phase 1 and go straight to Phase 2.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Internal descriptor produced in Phase 1 for each question slot. */
+interface QuestionSlot {
+  index: number
+  /** Short description of what the question will test, chosen by Phase 1 */
+  topic: string
+  questionType: 'mcq' | 'short_answer' | 'structured'
+  /** Whether this question needs a diagram */
+  hasDiagram: boolean
+  /** Natural-language description of the diagram to generate (Phase 1 output) */
+  diagramHint: string
+  /** Resolved diagram spec (filled by generateDiagramSpecs, null if no diagram or failed) */
+  diagram: DiagramSpec | null
 }
 
 export async function generateTest(
@@ -653,224 +638,235 @@ export async function generateTest(
   onLog?: (msg: string) => void,
 ): Promise<QuestionItem[]> {
   const ai = getAI(config.apiKey)
+  const model = config.model || 'gemini-2.5-flash-preview-04-17'
   const subjectRules = SUBJECT_SPECIFIC_RULES[config.subject] ?? ''
-  const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
+
+  // ── Phase 1: Plan question slots and generate diagram specs ──────────────
+
+  onLog?.('Phase 1: planning question slots and diagram specs…')
+
+  const phase1Prompt = `You are a Cambridge IGCSE ${config.subject} Chief Examiner planning an assessment.
 
 CONFIGURATION:
 - Topic: ${config.topic}
 - ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 - Number of Questions: ${config.count}
 - Question Type: ${config.type}
-- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
-${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ""}
+- Calculator: ${config.calculator ? 'Allowed' : 'Not Allowed'}
+${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ''}
 
-${subjectRules ? `${subjectRules}\n` : ""}${MARK_SCHEME_FORMAT}
+TASK: For each of the ${config.count} question slots, decide:
+1. A distinct sub-topic to assess (NO two questions may test the same sub-topic or skill)
+2. The question type ("mcq", "short_answer", or "structured") — honour the configured type above
+3. Whether a diagram is needed (hasDiagram)
+4. If hasDiagram=true: a precise diagramHint describing EXACTLY what the diagram should show,
+   including specific numbers, shapes, labels, and values that will later appear in both the diagram
+   and the question text. Be concrete — e.g. "right triangle with legs 5 cm and 12 cm, right angle at B"
+   not "a triangle". The diagram renderer uses this to produce the visual ground truth.
 
-GENERATION RULES:
-1. Generate EXACTLY ${config.count} questions. No more, no less.
+SUB-TOPIC DIVERSITY — strictly enforce:
+- Each question MUST test a DIFFERENT sub-topic or skill.
+- "Different numbers, same method" is NOT diversity — it is forbidden.
+- Spread across the widest possible range within the topic.
 
-2. STRUCTURED QUESTIONS (type="structured", 4+ marks): Must use multi-part format with a shared context paragraph:
-   - Write a 2–4 sentence scenario/stem paragraph first.
-   - Then list sub-questions as **(a)**, **(b)**, **(c)** each with its own mark allocation in brackets, e.g. **[2]**.
-   - Total marks = sum of all sub-part marks.
-   - Each sub-part uses a different command word targeting different cognitive levels.
+Return EXACTLY ${config.count} slots.`
 
-3. MCQ QUESTIONS (type="mcq"): Provide exactly 4 answer choices in the "options" array (no letter prefix). The "answer" field must be ONLY the letter "A", "B", "C", or "D". All four distractors must be plausible — each representing a common misconception. If 4 truly distinct distractor options cannot be written, use short_answer instead. For non-MCQ questions, "options" must be an empty array []. IMPORTANT: any mathematical expression in an option (variables, exponents, fractions, units, symbols) MUST be wrapped in $...$, e.g. "$2x^2 + 7x$" not "2x^2 + 7x", "$120^{\circ}$" not "120°".
+  const phase1Schema = {
+    type: Type.OBJECT,
+    properties: {
+      slots: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            index:        { type: Type.NUMBER },
+            topic:        { type: Type.STRING },
+            questionType: { type: Type.STRING },
+            hasDiagram:   { type: Type.BOOLEAN },
+            diagramHint:  { type: Type.STRING },
+          },
+          required: ['index', 'topic', 'questionType', 'hasDiagram', 'diagramHint'],
+        },
+      },
+    },
+    required: ['slots'],
+  }
 
-4. SHORT ANSWER (type="short_answer"): 1–3 marks. Direct recall or simple application. No sub-parts needed.
-
-5. LaTeX: ALL mathematical expressions, variables, equations, and formulas MUST be wrapped in LaTeX delimiters: $x^2$, $\\frac{a}{b}$, $H_2O$. NEVER write math as plain text. For currency amounts (e.g. dollars), write the number only ("1500") or use a word prefix ("USD 1500") — NEVER use bare $ as a currency symbol, as it conflicts with LaTeX delimiters.
-
-6. Diagrams: If a question requires a visual element, populate the "diagram" JSON field — do NOT embed SVG in the question text. Set hasDiagram=true.
-   The "diagram" field must have a "diagramType" plus its required data:
-
-   MATHEMATICS diagram types:
-   • "geometry" — PREFERRED for ALL geometry questions (triangles, polygons, parallel lines, bearings, angles).
-     points: [{name,x,y}] in 0-10 space. segments:[{from,to,label?}]. angles:[{at,between:[p1,p2],label}]. perpendicular:[{seg1,seg2}]. parallel:[{seg1,seg2}].
-     CRITICAL: angle label must be ONLY the degree value or variable — "72°", "x", "2x+10°". NEVER add point names like "72° EAF".
-     CRITICAL for parallel lines: include BOTH parallel lines (4 endpoints) AND both transversal intersection points. Example: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":7},{"name":"B","x":9,"y":7},{"name":"E","x":6.5,"y":7},{"name":"C","x":1,"y":3},{"name":"D","x":9,"y":3},{"name":"F","x":4,"y":3}],"segments":[{"from":"A","to":"B"},{"from":"C","to":"D"},{"from":"E","to":"F"}],"parallel":[{"seg1":"AB","seg2":"CD"}],"angles":[{"at":"E","between":["A","F"],"label":"72°"}]}
-     Example triangle: {"diagramType":"geometry","points":[{"name":"A","x":1,"y":1},{"name":"B","x":5,"y":8},{"name":"C","x":9,"y":1}],"segments":[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"A","to":"C"}],"angles":[{"at":"A","between":["B","C"],"label":"50°"}]}
-
-   • "circle_theorem" — For circle theorem questions (angle at centre, cyclic quadrilateral, tangent-radius, alternate segment, angles in same segment).
-     centre:{id:"O"}. pointsOnCircumference:[{id:"A",angleDegrees:0}] (0°=right, 90°=top). chords:[{s1:"A",s2:"B"}]. radii:[{s1:"O",s2:"A"}]. tangentPoints:["A"]. angles:[{vertex:"O",rays:["A","B"],label:"124°"}].
-     CRITICAL: angleDegrees must place points visually correctly — spread them around the circle. Verify the angle label matches the geometric truth.
-     Example (angle at centre = 2× circumference): {"diagramType":"circle_theorem","centre":{"id":"O"},"pointsOnCircumference":[{"id":"A","angleDegrees":20},{"id":"B","angleDegrees":144},{"id":"C","angleDegrees":260}],"radii":[{"s1":"O","s2":"A"},{"s1":"O","s2":"B"}],"chords":[{"s1":"A","s2":"C"},{"s1":"B","s2":"C"}],"angles":[{"vertex":"O","rays":["A","B"],"label":"124°"},{"vertex":"C","rays":["A","B"],"label":"x"}]}
-
-   • "cartesian_grid" — Cartesian coordinate grid. Required: xMin,xMax,yMin,yMax,gridStep(1 or 2). Optional: points[{label,x,y,color}], segments[{x1,y1,x2,y2,dashed}], polygons[{vertices:[{x,y,label}],fill}].
-     Example: {"diagramType":"cartesian_grid","xMin":-2,"xMax":6,"yMin":-3,"yMax":5,"gridStep":1,"points":[{"label":"P","x":3,"y":2}]}
-
-   • "number_line" — min,max,step. nlPoints:[{value,label,open}]. ranges:[{from,to,fromOpen,toOpen}]
-
-   • "bar_chart" — bars:[{label,value}]. title,xLabel,yLabel optional.
-
-   • "geometric_shape" — AVOID. Use "geometry" instead.
-
-   BIOLOGY diagram types:
-   • "science_graph" — Multi-dataset line graph for Biology data questions (enzyme activity, photosynthesis rate, population growth, transpiration).
-     chartType:"line_graph". title,xLabel,yLabel. xRange:[min,max], yRange:[min,max]. datasets:[{id,label,dataPoints:[{x,y},...],curve:"smooth"|"linear_segments",style:"solid"|"dashed"}]. annotations:{optimumPoint:{x,y,label},plateaus:[{y,label,xStart,xEnd}]}.
-     DATA MUST BE BIOLOGICALLY REALISTIC: enzyme activity peaks then falls (denaturation). Photosynthesis plateaus (limiting factor). Rate curves flatten at end. Do NOT invent impossible data.
-     Example (enzyme temperature): {"diagramType":"science_graph","chartType":"line_graph","title":"Effect of temperature on enzyme activity","xLabel":"Temperature (°C)","yLabel":"Rate of reaction (au)","xRange":[0,70],"yRange":[0,100],"datasets":[{"id":"enz","label":"Enzyme","dataPoints":[{"x":0,"y":5},{"x":10,"y":15},{"x":20,"y":35},{"x":30,"y":65},{"x":37,"y":95},{"x":40,"y":80},{"x":50,"y":30},{"x":60,"y":5},{"x":70,"y":0}],"curve":"smooth","style":"solid"}],"annotations":{"optimumPoint":{"x":37,"y":95,"label":"Optimum 37°C"}}}
-
-   • "genetic_diagram" — Punnett squares and pedigree diagrams.
-     subtype:"punnett_square": parent1:{label,genotype}, parent2:{label,genotype}, gametes1:["R","r"] (ROW headers = parent1), gametes2:["R","r"] (COLUMN headers = parent2), punnettGridRows:[{"row":["RR","Rr"]},{"row":["Rr","rr"]}] (IMPORTANT: use punnettGridRows not punnettGrid), hiddenCells:[{row,col,pointer}], showRatio:false.
-     subtype:"pedigree": individuals:[{id,generation,sex:"male"|"female",phenotype:"affected"|"unaffected",genotype?,showGenotype}], relationships:[{type:"mating",between:[id1,id2]},{type:"offspring",parents:[id1,id2],children:[id3,...]}].
-     Example (Punnett, tongue rolling): {"diagramType":"genetic_diagram","subtype":"punnett_square","parent1":{"label":"Father","genotype":"Rr"},"parent2":{"label":"Mother","genotype":"Rr"},"gametes1":["R","r"],"gametes2":["R","r"],"punnettGridRows":[{"row":["RR","Rr"]},{"row":["Rr","rr"]}],"hiddenCells":[],"showRatio":false}
-
-   • "food_web" — Organisms at trophic levels connected by arrows.
-     organisms:[{id,label,trophicLevel:"producer"|"primary_consumer"|"secondary_consumer"|"tertiary_consumer",x,y}] (x,y in 0-10; producers at y=0, apex predators at y=8+).
-     arrows:[{from,to}] — ALWAYS from food TO feeder (prey→predator = energy flow direction). NEVER reverse.
-     Example: {"diagramType":"food_web","organisms":[{"id":"grass","label":"Grass","trophicLevel":"producer","x":3,"y":0},{"id":"rabbit","label":"Rabbit","trophicLevel":"primary_consumer","x":1,"y":4},{"id":"fox","label":"Fox","trophicLevel":"secondary_consumer","x":1,"y":8}],"arrows":[{"from":"grass","to":"rabbit"},{"from":"rabbit","to":"fox"}]}
-
-   • "energy_pyramid" — Pyramid of numbers/biomass/energy.
-     subtype:"numbers"|"biomass"|"energy". title (optional). levels:[{trophicLevel,organism,value,unit}] — levels[0] MUST be producer (bottom/widest), last element is apex consumer (top/narrowest). hiddenOrganisms:[{levelIndex,pointer}].
-     Example: {"diagramType":"energy_pyramid","subtype":"biomass","title":"Pyramid of Biomass","levels":[{"trophicLevel":"Producer","organism":"Grass","value":5000,"unit":"kg/m²"},{"trophicLevel":"Primary consumer","organism":"Rabbit","value":500,"unit":"kg/m²"},{"trophicLevel":"Secondary consumer","organism":"Fox","value":50,"unit":"kg/m²"}],"hiddenOrganisms":[]}
-
-   • "flowchart" — Dichotomous keys, separation technique flowcharts, decision trees.
-     nodes:[{id,text,shape:"diamond"|"rectangle"|"rounded_rectangle",x?,y?}] (x,y optional, in 0-10; if omitted renderer auto-layouts). connections:[{from,to,label?}]. hiddenNodes:[] (node IDs to hide — shown as [?]).
-     Decision nodes → diamond. Result/terminal nodes → rounded_rectangle. Process steps → rectangle.
-     Example (dichotomous key): {"diagramType":"flowchart","nodes":[{"id":"q1","text":"Does it have legs?","shape":"diamond"},{"id":"ins","text":"Insect","shape":"rounded_rectangle"},{"id":"spi","text":"Arachnid","shape":"rounded_rectangle"}],"connections":[{"from":"q1","to":"ins","label":"Yes (6 legs)"},{"from":"q1","to":"spi","label":"No (8 legs)"}],"hiddenNodes":[]}
-
-   CHEMISTRY diagram types:
-   • "science_graph" — Also used for Chemistry: rate of reaction graphs, solubility curves, heating/cooling curves, pH titration curves.
-     Same format as Biology. For heating curves use curve:"linear_segments". For rate of reaction: both datasets end at the same total volume/mass.
-     Example (rate with catalyst): {"diagramType":"science_graph","chartType":"line_graph","title":"Volume of gas vs time","xLabel":"Time (s)","yLabel":"Volume of gas (cm³)","xRange":[0,120],"yRange":[0,60],"datasets":[{"id":"cat","label":"With catalyst","dataPoints":[{"x":0,"y":0},{"x":10,"y":20},{"x":20,"y":38},{"x":30,"y":48},{"x":50,"y":52},{"x":80,"y":52}],"curve":"smooth","style":"solid"},{"id":"nocat","label":"Without catalyst","dataPoints":[{"x":0,"y":0},{"x":20,"y":10},{"x":40,"y":28},{"x":80,"y":48},{"x":100,"y":52}],"curve":"smooth","style":"dashed"}]}
-
-   • "energy_level_diagram" — Exothermic/endothermic reaction energy profiles, activation energy, catalyst effect.
-     reactionType:"exothermic"|"endothermic". reactants:{label,energyLevel}, products:{label,energyLevel} (energy levels are relative numbers — e.g. reactants:80, products:20 for exothermic). activationEnergy:{peak,label} (peak MUST be higher than BOTH reactants and products). energyChange:{label:"ΔH = –890 kJ/mol"}. showCatalystPath:false. catalystPeak (optional lower peak number).
-     CRITICAL: exothermic → products.energyLevel < reactants.energyLevel. Endothermic → products.energyLevel > reactants.energyLevel. activationEnergy.peak > max(reactants,products) always.
-     Example (exothermic): {"diagramType":"energy_level_diagram","reactionType":"exothermic","reactants":{"label":"CH₄ + 2O₂","energyLevel":80},"products":{"label":"CO₂ + 2H₂O","energyLevel":20},"activationEnergy":{"peak":120,"label":"Ea"},"energyChange":{"label":"ΔH = –890 kJ/mol"},"showCatalystPath":false}
-
-   BIOLOGY & CHEMISTRY — structural diagrams:
-   • "svg_template" — pre-drawn diagram selected by templateId. svgLabels:[{anchorId,text}] where anchorId must match template anchors exactly.
-     Available templates and their valid anchorIds:
-     - "bio/animal_cell" → anchorIds: cell_membrane, nucleus, nuclear_membrane, nucleolus, mitochondrion, golgi_apparatus, rough_er, ribosome, lysosome, vacuole, cytoplasm
-     - "bio/plant_cell" → anchorIds: cell_wall, cell_membrane, nucleus, nucleolus, chloroplast, central_vacuole, tonoplast, mitochondrion, golgi_apparatus, cytoplasm
-     - "bio/leaf_cross_section" → anchorIds: upper_epidermis, cuticle, palisade_mesophyll, chloroplast, spongy_mesophyll, air_space, lower_epidermis, guard_cell, stoma, xylem, phloem, vascular_bundle
-     - "chem/electrolysis" → anchorIds: beaker, electrolyte, cathode, anode, negative_electrode, positive_electrode, power_supply, gas_at_cathode, gas_at_anode
-     - "chem/simple_distillation" → anchorIds: flask, liquid, thermometer, condenser, water_in, water_out, collecting_flask, distillate, heat
-     Example: {"diagramType":"svg_template","templateId":"bio/animal_cell","svgLabels":[{"anchorId":"nucleus","text":"Nucleus"},{"anchorId":"mitochondrion","text":"Mitochondrion"},{"anchorId":"cell_membrane","text":"Cell surface membrane"}]}
-     IMPORTANT: Only use anchorIds listed above for the chosen template. Never invent new anchorIds.
-
-   LAYER 3 — "tikz" (QuickLaTeX). Use ONLY for complex lab apparatus with no matching svg_template.
-   • "tikz" — TikZ code rendered to PNG. DO NOT use for geometry/angles — use "geometry" type instead.
-     Fields: tikzCode:string — full \\begin{tikzpicture}...\\end{tikzpicture}.
-     CRITICAL: In JSON strings escape ALL backslashes as \\\\ (four chars). Every statement ends with semicolon.
-     Use only simple commands: \\\\draw, \\\\node, \\\\fill. Avoid +() relative coords and complex arcs.
-     Available: tikz, usetikzlibrary{arrows.meta,positioning,patterns}
-
-   SUBJECT-SPECIFIC DIAGRAM SELECTION RULES:
-   - Mathematics: Use geometry for angles/parallel lines/triangles. Use circle_theorem for circle theorems. Use cartesian_grid for coordinate geometry. Do NOT use tikz for maths.
-   - Biology: Use svg_template for cells/leaf. Use science_graph for data/rate, genetic_diagram for genetics, food_web for ecology, energy_pyramid for pyramids, flowchart for dichotomous keys. Use tikz only for apparatus with no matching svg_template.
-   - Chemistry: Use svg_template for electrolysis/distillation. Use energy_level_diagram for energetics, science_graph for rate/heating curves. Use tikz only for apparatus not covered by svg_template.
-
-   CRITICAL DIAGRAM RULES — mandatory:
-   • If hasDiagram=true, the "diagram" field MUST be a complete non-null object. NEVER output hasDiagram=true with diagram=null.
-   • If you cannot provide valid diagram data, set hasDiagram=false and rewrite the question to not reference any visual.
-   • NEVER ask "state coordinates of P shown on the grid" without actually plotting P in the diagram field.
-   • For Cartesian coordinate questions: choose actual coordinates, plot them in the diagram, use nearby wrong coords as MCQ distractors.
-
-7. syllabusObjective: the SPECIFIC Cambridge IGCSE learning objective assessed. Format: "REF – objective statement" (e.g. "C4.1 – Define the term acid in terms of proton donation"). ONE sentence max. Do NOT add this as a line in the question text.
-
-8. assessmentObjective: tag each question as exactly one of:
-   - "AO1" — Knowledge & understanding (recall, state, name, define, describe)
-   - "AO2" — Handling information & problem solving (apply, calculate, interpret, deduce, analyse)
-   - "AO3" — Experimental skills (plan experiment, identify variables, evaluate method, suggest improvements)
-
-9. difficultyStars: 1 = recall/knowledge (1–2 marks), 2 = application/analysis (2–4 marks), 3 = evaluation/synthesis (4+ marks, multi-step, unfamiliar context).
-
-10. marks: integer. Structured questions: sum of all sub-part marks. MCQ: always 1. Short answer: 1–3.
-
-11. SUB-TOPIC DIVERSITY (strictly enforce): Each question in the set MUST test a DIFFERENT sub-topic or skill.
-    - BEFORE writing each question, list the sub-topics already used. NEVER repeat one.
-    - "Different numbers, same method" is NOT diversity — it is a violation.
-    - Spread coverage across the widest possible range of distinct skills within the topic.
-    - If topic is "Mixed Topics", draw from at least 3 different major topic areas.
-    - Wrong: Q1=calculate gradient, Q2=calculate gradient with different points (FORBIDDEN)
-    - Wrong: Q1=find midpoint, Q2=find midpoint of different segment (FORBIDDEN)
-    - Right: Q1=plot coordinates, Q2=calculate gradient, Q3=find midpoint, Q4=find line equation`
-
-  const parts: any[] = config.references && config.references.length > 0
+  const refParts: any[] = config.references && config.references.length > 0
     ? buildReferenceParts(config.references, config.difficulty)
     : []
 
-  parts.push({ text: prompt })
-
-  const raw = await withRetry(async () => {
+  const rawSlots = await withRetry(async () => {
     const response = await ai.models.generateContent({
-    model: config.model || "gemini-3-flash-preview",
-    contents: { parts },
-    config: {
-      responseMimeType: "application/json",
-      maxOutputTokens: 8192,
-      temperature: 0.75,
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          questions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                text: { type: Type.STRING },
-                answer: { type: Type.STRING },
-                markScheme: { type: Type.STRING },
-                marks: { type: Type.NUMBER },
-                commandWord: { type: Type.STRING },
-                type: { type: Type.STRING },
-                hasDiagram: { type: Type.BOOLEAN },
-                syllabusObjective: { type: Type.STRING, nullable: true },
-                assessmentObjective: { type: Type.STRING, nullable: true },
-                difficultyStars: { type: Type.NUMBER, nullable: true },
-                options: { type: Type.ARRAY, items: { type: Type.STRING } },
-                diagram: DIAGRAM_SCHEMA,
-              },
-              required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'options'],
-            },
-          },
-        },
-        required: ['questions'],
+      model,
+      contents: { parts: [...refParts, { text: phase1Prompt }] },
+      config: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 1024,
+        temperature: 0.4,
+        responseSchema: phase1Schema,
       },
-      systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner and Assessment Designer for ${config.subject} with 20+ years of experience setting papers for Cambridge Assessment International Education (CAIE).
+    })
+    const usage = getGeminiUsage(response)
+    if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+    const parsed = safeJsonParse(response.text || '{}') as { slots: any[] }
+    if (!parsed.slots || parsed.slots.length < config.count) {
+      throw { type: 'invalid_response', retryable: true, message: `Phase 1 returned ${parsed.slots?.length ?? 0} slots, expected ${config.count}. Retrying…` }
+    }
+    return parsed.slots as Array<{ index: number; topic: string; questionType: string; hasDiagram: boolean; diagramHint: string }>
+  }, 3, onRetry)
 
-Your questions are indistinguishable from official Cambridge IGCSE papers in terms of:
-- Phrasing, command word usage, and cognitive demand
-- Mark scheme precision (numbered points, accept/reject alternatives, method marks)
-- Syllabus alignment (every question maps to a specific learning objective)
-- Difficulty calibration (mark allocations match cognitive load exactly)
+  // Normalise slots
+  const slots: QuestionSlot[] = rawSlots.slice(0, config.count).map((s, i) => ({
+    index: i,
+    topic: s.topic ?? config.topic,
+    questionType: (['mcq', 'short_answer', 'structured'].includes(s.questionType) ? s.questionType : config.type) as QuestionSlot['questionType'],
+    hasDiagram: Boolean(s.hasDiagram),
+    diagramHint: s.diagramHint ?? '',
+    diagram: null,
+  }))
 
-CAMBRIDGE COMMAND WORDS (use precisely as defined by CAIE):
+  // ── Generate diagram specs in parallel for slots that need one ────────────
+
+  const diagramSlots = slots.filter(s => s.hasDiagram && s.diagramHint)
+  if (diagramSlots.length > 0) {
+    onLog?.(`Phase 1: generating ${diagramSlots.length} diagram spec${diagramSlots.length !== 1 ? 's' : ''}…`)
+    const specResults = await generateDiagramSpecs(
+      diagramSlots.map(s => ({ index: s.index, topic: s.topic, questionType: s.questionType, diagramHint: s.diagramHint })),
+      config.subject, model, ai, onUsage, onLog
+    )
+    for (const result of specResults) {
+      if (result) slots[result.index].diagram = result.diagram
+    }
+  }
+
+  // ── Phase 2: Write questions around the locked diagram specs ─────────────
+
+  onLog?.('Phase 2: writing questions…')
+
+  // Build per-slot diagram context to inject into the Phase 2 prompt
+  const slotDescriptions = slots.map(s => {
+    const diagramSection = s.hasDiagram && s.diagram
+      ? `  hasDiagram: true\n  diagram (GROUND TRUTH — your question text MUST reference these exact values):\n  ${JSON.stringify(s.diagram)}`
+      : s.hasDiagram
+        ? `  hasDiagram: true (diagram spec unavailable — write the question without referencing specific diagram values)`
+        : `  hasDiagram: false`
+    return `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"\n${diagramSection}`
+  }).join('\n\n')
+
+  const phase2Prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
+
+CONFIGURATION:
+- Topic: ${config.topic}
+- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
+- Calculator: ${config.calculator ? 'Allowed' : 'Not Allowed'}
+${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ''}
+
+${subjectRules ? `${subjectRules}\n` : ''}${MARK_SCHEME_FORMAT}
+
+QUESTION SLOTS (write EXACTLY these ${config.count} questions in order):
+${slotDescriptions}
+
+WRITING RULES:
+1. Write EXACTLY ${config.count} questions, one per slot, in slot order.
+
+2. DIAGRAMS: If a slot has hasDiagram=true and provides a diagram JSON above:
+   - You MUST echo the diagram JSON verbatim into the "diagram" field of that question.
+   - Your question text MUST reference the exact numbers/labels shown in that diagram.
+     E.g. if the diagram has a triangle with sides 5 cm and 12 cm, write "In the diagram, triangle ABC has AB = 5 cm and BC = 12 cm…"
+   - Do NOT invent different values or a different shape — the diagram JSON is the ground truth.
+   - Set hasDiagram=true and copy the diagram object exactly.
+   If hasDiagram=false, set hasDiagram=false and diagram=null.
+
+3. STRUCTURED QUESTIONS (type="structured", 4+ marks):
+   - 2–4 sentence scenario/stem paragraph, then **(a)**, **(b)**, **(c)** sub-parts each with mark allocation **[n]**.
+   - Total marks = sum of sub-part marks. Each sub-part uses a different command word.
+
+4. MCQ QUESTIONS: 4 options in "options" array (no letter prefix). "answer" = only "A"/"B"/"C"/"D".
+   All distractors must be plausible misconceptions. Math in options: wrap in $...$.
+
+5. SHORT ANSWER: 1–3 marks. No sub-parts.
+
+6. LaTeX: ALL math expressions MUST be in $...$. Never write math as plain text.
+   Never use bare $ as currency — write "USD 1500" or just "1500".
+
+7. syllabusObjective: "REF – objective statement" format. ONE sentence.
+
+8. assessmentObjective: "AO1" | "AO2" | "AO3"
+
+9. difficultyStars: 1 | 2 | 3
+
+10. marks: integer. MCQ always 1. Short answer 1–3. Structured = sum of sub-parts.`
+
+  const phase2SystemInstruction = `You are a Senior Cambridge IGCSE Chief Examiner for ${config.subject} with 20+ years of experience.
+
+CAMBRIDGE COMMAND WORDS:
 ${Object.entries(CAMBRIDGE_COMMAND_WORDS).map(([w, d]) => `- **${w}**: ${d}`).join('\n')}
 
 ASSESSMENT OBJECTIVES:
-- AO1 (Knowledge): recall, state, name, define — typically 1–2 mark questions
-- AO2 (Application): apply, calculate, interpret data, deduce — typically 2–4 mark questions
-- AO3 (Experimental): plan, evaluate methods, identify variables — typically 2–4 mark questions
+- AO1: recall, state, name, define — 1–2 mark questions
+- AO2: apply, calculate, interpret, deduce — 2–4 mark questions
+- AO3: plan experiments, identify variables, evaluate — 2–4 mark questions
 
-DIAGRAMS (MANDATORY RULES):
-- Use the structured "diagram" JSON field — never embed raw SVG in question text.
-- If hasDiagram=true, diagram MUST be a valid non-null object. hasDiagram=true with diagram=null is FORBIDDEN.
-- Choose the correct diagramType: "cartesian_grid", "geometric_shape", "number_line", or "bar_chart".
-- All text labels in diagram data must be plain text — no LaTeX. Write "5.2 m" not "$5.2 \\text{ m}$", "60°" not "$60^\\circ$".
-- Provide only the data needed to answer the question — no decorative or irrelevant elements.
-- Cartesian coordinate questions: ALWAYS provide the cartesian_grid with points/segments plotted. This is non-negotiable.`,
+DIAGRAM RULE (NON-NEGOTIABLE):
+When a question slot provides a diagram JSON as ground truth, you MUST:
+(a) copy that exact diagram JSON into the "diagram" field unchanged
+(b) write question text that references the exact values shown in that diagram
+Inventing different numbers or a different shape is FORBIDDEN.
+All diagram label strings must be plain text — no LaTeX inside labels.`
+
+  const questionSchema = {
+    type: Type.OBJECT,
+    properties: {
+      text:               { type: Type.STRING },
+      answer:             { type: Type.STRING },
+      markScheme:         { type: Type.STRING },
+      marks:              { type: Type.NUMBER },
+      commandWord:        { type: Type.STRING },
+      type:               { type: Type.STRING },
+      hasDiagram:         { type: Type.BOOLEAN },
+      syllabusObjective:  { type: Type.STRING, nullable: true },
+      assessmentObjective:{ type: Type.STRING, nullable: true },
+      difficultyStars:    { type: Type.NUMBER, nullable: true },
+      options:            { type: Type.ARRAY, items: { type: Type.STRING } },
+      diagram:            DIAGRAM_SCHEMA,
     },
+    required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'options'],
+  }
+
+  const rawQuestions = await withRetry(async () => {
+    const response = await ai.models.generateContent({
+      model,
+      contents: { parts: [...refParts, { text: phase2Prompt }] },
+      config: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 8192,
+        temperature: 0.75,
+        responseSchema: { type: Type.OBJECT, properties: { questions: { type: Type.ARRAY, items: questionSchema } }, required: ['questions'] },
+        systemInstruction: phase2SystemInstruction,
+      },
     })
     const usage = getGeminiUsage(response)
-    if (usage) onUsage?.(config.model || "gemini-3-flash-preview", usage.inputTokens, usage.outputTokens)
+    if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
     const parsed = safeJsonParse(response.text || '{}') as { questions: Omit<QuestionItem, 'id'>[] }
     if (!parsed.questions || parsed.questions.length < config.count) {
-      throw {
-        type: 'invalid_response',
-        retryable: true,
-        message: `Model returned ${parsed.questions?.length ?? 0} questions, expected ${config.count}. Retrying…`,
-      }
+      throw { type: 'invalid_response', retryable: true, message: `Phase 2 returned ${parsed.questions?.length ?? 0} questions, expected ${config.count}. Retrying…` }
     }
     return parsed
   }, 3, onRetry)
-  let questions: QuestionItem[] = (raw.questions ?? []).map(q => {
+
+  // Stitch: sanitize questions and inject Phase 1 diagram specs where Phase 2 didn't preserve them
+  let questions: QuestionItem[] = (rawQuestions.questions ?? []).map((q, i) => {
     const sanitized = sanitizeQuestion(q)
+    const slot = slots[i]
+    // Prefer Phase 2's diagram if valid; fall back to Phase 1 spec
+    const phase2Diagram = sanitized.diagram ? normalizeDiagram(sanitized.diagram) : undefined
+    const resolvedDiagram = phase2Diagram ?? slot?.diagram ?? undefined
     return {
       ...sanitized,
+      diagram: resolvedDiagram,
+      hasDiagram: Boolean(resolvedDiagram) || sanitized.hasDiagram,
+      diagramMissing: sanitized.hasDiagram && !resolvedDiagram ? true : undefined,
       id: crypto.randomUUID(),
       code: sharedGenerateQuestionCode(config.subject, {
         text: sanitized.text,
@@ -880,23 +876,7 @@ DIAGRAMS (MANDATORY RULES):
   })
 
   if (config.difficulty === 'Challenging' && questions.length > 0) {
-    questions = await critiqueForDifficulty(questions, config.subject, config.model || 'gemini-3-flash-preview', ai, onRetry, onUsage)
-  }
-
-  // Phase 2: generate diagrams for questions that need one but didn't get one.
-  // Use diagramMissing (not hasDiagram) because sanitizeQuestion sets hasDiagram=false
-  // when diagramMissing=true, so filtering on hasDiagram would skip all amber-warning questions.
-  const needsDiagram = questions.filter(q => q.diagramMissing && !q.diagram)
-  if (needsDiagram.length > 0) {
-    onLog?.(`Generating diagrams for ${needsDiagram.length} question${needsDiagram.length !== 1 ? 's' : ''}…`)
-    const diagrams = await Promise.all(
-      needsDiagram.map(q => generateDiagramForQuestion(q, config.subject, config.model || 'gemini-2.0-flash', ai, onUsage, onLog))
-    )
-    questions = questions.map(q => {
-      const idx = needsDiagram.findIndex(nd => nd.id === q.id)
-      if (idx === -1 || !diagrams[idx]) return q
-      return { ...q, diagram: diagrams[idx], diagramMissing: undefined } as QuestionItem
-    })
+    questions = await critiqueForDifficulty(questions, config.subject, model, ai, onRetry, onUsage)
   }
 
   return questions
@@ -910,8 +890,15 @@ async function critiqueForDifficulty(
   onRetry?: (attempt: number) => void,
   onUsage?: UsageCallback,
 ): Promise<QuestionItem[]> {
+  // Include diagram summary in prompt so Gemini knows the diagram exists and can reference it.
+  // But we always restore the original diagram after critique — diagram rewrites are forbidden here.
   const questionsText = questions
-    .map((q, i) => `Q${i + 1} [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}`)
+    .map((q, i) => {
+      const diagramNote = q.diagram
+        ? `\n[This question has a diagram: ${q.diagram.diagramType}. Do NOT change the diagram — only rewrite the text/markScheme/commandWord if needed.]`
+        : ''
+      return `Q${i + 1} [${q.marks} marks] (${q.commandWord})\n${q.text}\n\nAnswer: ${q.answer}\n\nMark Scheme: ${q.markScheme}${diagramNote}`
+    })
     .join('\n\n---\n\n')
 
   const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a strict difficulty audit for ${subject}.
@@ -932,6 +919,7 @@ TASK:
    Scoring guide: 1–3 = recall only; 4–6 = standard application; 7–8 = A grade synthesis; 9–10 = A* discrimination.
 2. Any question scoring 6 or below MUST be rewritten to reach 8+.
 3. When rewriting: place in unfamiliar context, increase synthesis steps, upgrade command word, strengthen mark scheme.
+   If the question has a diagram, you may reference it differently but do NOT change the diagram data — output hasDiagram=true and omit the diagram field (it will be restored automatically).
 4. Keep the same syllabus topic and mark allocation.
 5. If a question is already 8+ — preserve it exactly; do NOT simplify.
 6. Return ALL ${questions.length} questions (revised or unchanged).`
@@ -951,18 +939,17 @@ TASK:
             items: {
               type: Type.OBJECT,
               properties: {
-                text: { type: Type.STRING },
-                answer: { type: Type.STRING },
-                markScheme: { type: Type.STRING },
-                marks: { type: Type.NUMBER },
-                commandWord: { type: Type.STRING },
-                type: { type: Type.STRING },
-                hasDiagram: { type: Type.BOOLEAN },
-                syllabusObjective: { type: Type.STRING, nullable: true },
-                assessmentObjective: { type: Type.STRING, nullable: true },
-                difficultyStars: { type: Type.NUMBER, nullable: true },
-                options: { type: Type.ARRAY, items: { type: Type.STRING } },
-                diagram: DIAGRAM_SCHEMA,
+                text:               { type: Type.STRING },
+                answer:             { type: Type.STRING },
+                markScheme:         { type: Type.STRING },
+                marks:              { type: Type.NUMBER },
+                commandWord:        { type: Type.STRING },
+                type:               { type: Type.STRING },
+                hasDiagram:         { type: Type.BOOLEAN },
+                syllabusObjective:  { type: Type.STRING, nullable: true },
+                assessmentObjective:{ type: Type.STRING, nullable: true },
+                difficultyStars:    { type: Type.NUMBER, nullable: true },
+                options:            { type: Type.ARRAY, items: { type: Type.STRING } },
               },
               required: ['text', 'answer', 'markScheme', 'marks', 'commandWord', 'type', 'hasDiagram', 'options'],
             },
@@ -970,7 +957,7 @@ TASK:
         },
         required: ['questions'],
       },
-      systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions discriminate between A and A* candidates. Be ruthless: any question a student could answer from memory or with a single step of reasoning must be rewritten. Unfamiliar contexts, multi-stage synthesis, and higher-order command words are non-negotiable.`,
+      systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions discriminate between A and A* candidates. Be ruthless: any question a student could answer from memory or with a single step of reasoning must be rewritten. Unfamiliar contexts, multi-stage synthesis, and higher-order command words are non-negotiable. Never alter diagram data — diagrams are fixed ground truth.`,
     },
     })
     const usage = getGeminiUsage(response)
@@ -982,8 +969,10 @@ TASK:
     const existing = questions[i]
     return {
       ...sanitized,
-      // Preserve original diagram if the critique pass didn't supply one
-      diagram: sanitized.diagram ?? existing?.diagram,
+      // Always restore original diagram — critique must never change diagram data
+      diagram: existing?.diagram,
+      hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
+      diagramMissing: existing?.diagramMissing,
       id: existing?.id ?? crypto.randomUUID(),
       code: existing?.code ?? sharedGenerateQuestionCode(subject, {
         text: sanitized.text,
