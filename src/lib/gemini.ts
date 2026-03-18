@@ -465,9 +465,12 @@ async function generateDiagramForQuestion(
 ): Promise<DiagramSpec | undefined> {
   const optText = question.options?.length ? `\nMCQ options: ${question.options.join(' | ')}` : ''
   const ansText = question.answer ? `\nCorrect answer: ${question.answer}` : ''
+  const msText = question.markScheme ? `\nMark scheme: ${question.markScheme}` : ''
   const prompt = `Generate a diagram JSON for this Cambridge IGCSE ${subject} question.
 
-QUESTION: ${question.text}${optText}${ansText}
+QUESTION: ${question.text}${optText}${ansText}${msText}
+
+IMPORTANT: The diagram must use the EXACT numbers, labels, and values mentioned in the question and mark scheme above. Do not invent different values — if the question says "5 cm and 8 cm", those exact lengths must appear in the diagram.
 
 If the question says "the shape shown" or "the diagram shows" without specifying the exact shape, INVENT a suitable shape consistent with the question and answer. For example, if answer is "order 3", draw a shape with order-3 rotational symmetry (equilateral triangle). If answer is "order 4", draw a square. If the question mentions a circle with tangent, draw a circle with a tangent line. Always produce a valid diagram — never return null or skip.
 
@@ -536,7 +539,7 @@ All label strings: plain text only, no LaTeX or dollar signs.`
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 768,
+        maxOutputTokens: 2048,
         temperature: 0.2,
         responseSchema: {
           type: Type.OBJECT,
