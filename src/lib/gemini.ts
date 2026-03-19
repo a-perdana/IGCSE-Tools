@@ -1119,144 +1119,7 @@ If you cannot make valid geometry → use "coordinate_geometry" as a safe fallba
     }),
   );
 
-  // ── Phase 2: Write questions ─────────────────────────────────────────────
-
-  onLog?.("Phase 2: writing questions…");
-
-  // Build per-slot diagram context to inject into the Phase 2 prompt.
-  // Values are computed deterministically and injected as named constants.
-  // AI may ONLY use the listed GIVEN values in question text.
-  // UNKNOWN values must NEVER appear in question text.
-  const slotDescriptions = slots
-    .map((s) => {
-      let desc = `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"${s.hasDiagram ? " (has diagram)" : ""}`;
-      if (s.hasDiagram && s.diagramDSL) {
-        const sol = solveDSL(s.diagramDSL);
-        const dsl = s.diagramDSL;
-
-        // Build a flat named-value block for the givens only
-        const givenLines: string[] = [];
-        (dsl.givens ?? []).forEach((g) => givenLines.push(`  ${g}`));
-        // Also expose point coordinates as named pairs for context
-        const pts = dsl.points ?? {};
-        Object.entries(pts).forEach(([name, pt]) => {
-          givenLines.push(`  ${name} = (${pt[0]}, ${pt[1]})`);
-        });
-        if (dsl.radius !== undefined) givenLines.push(`  radius = ${dsl.radius}`);
-
-        // Unknown values — computed, for AI to reference in answer/wording only if allowed
-        const unknownLines: string[] = [];
-        (dsl.unknowns ?? []).forEach((u) => {
-          const v = sol.values[u];
-          if (v !== undefined) {
-            unknownLines.push(`  ${u} = ${Array.isArray(v) ? `(${v[0]}, ${v[1]})` : v} ← computed by mathEngine — STUDENT MUST FIND THIS`);
-          }
-        });
-
-        desc += `\n   DIAGRAM DSL: ${JSON.stringify(dsl)}`;
-        desc += `\n   ━━━ GIVEN VALUES (you MAY reference these in the question text) ━━━\n${givenLines.join("\n")}`;
-        desc += `\n   ━━━ UNKNOWN VALUES (DO NOT write these in text — student finds them) ━━━\n${unknownLines.join("\n")}`;
-        desc += `\n   ━━━ STRICT RULES ━━━`;
-        desc += `\n   • You MUST use ONLY the given values above — do NOT invent any new number`;
-        desc += `\n   • The unknown values are what the student must compute — never mention them in question text`;
-        desc += `\n   • The 'answer' field: write a brief METHOD description only (e.g. "Apply Pythagoras' theorem") — no numbers`;
-        desc += `\n   • The 'markScheme' field: leave empty — it will be generated deterministically`;
-      }
-      return desc;
-    })
-    .join("\n\n");
-
-  const phase2Prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
-
-CONFIGURATION:
-- Topic: ${config.topic}
-- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
-- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
-${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ""}
-
-${subjectRules ? `${subjectRules}\n` : ""}${MARK_SCHEME_FORMAT}
-
-QUESTION SLOTS (write EXACTLY these ${config.count} questions in order):
-${slotDescriptions}
-
-FINAL EXAMINER RULES:
-
-1. If a diagram exists:
-   - At least one required value MUST come from diagram only
-   - That value MUST NOT appear in text
-
-2. Question MUST require:
-   - multi-step reasoning
-   - AND at least one of:
-     • deduction
-     • explanation
-     • proof
-
-3. If question can be solved in one step → INVALID
-
-ABSOLUTE ENFORCEMENT:
-
-1. The diagram MUST contain information NOT written in text.
-2. The student MUST extract values from the diagram.
-3. If all values are written in text → INVALID QUESTION.
-4. Every question must require:
-   - at least 2 reasoning steps
-   - AND one of:
-     • deduction
-     • explanation
-     • proof
-
-WRITING RULES:
-1. Write EXACTLY ${config.count} questions, one per slot, in slot order.
-
-2. DIAGRAM DEPENDENCY (CRITICAL):
-   - If hasDiagram=true, the question MUST BE UNSOLVABLE without the diagram.
-   - Refer to points/lines/angles by their label letters (e.g. "point A", "angle ABC", "line segment OB").
-   - Use ONLY values listed in the slot's GIVEN VALUES block. Do NOT invent any new number.
-   - The diagram contains hidden values (UNKNOWN VALUES) — never write those in the question text.
-
-3. STRUCTURED QUESTIONS (type="structured", 4+ marks):
-   - 2–4 sentence scenario/stem paragraph, then **(a)**, **(b)**, **(c)** sub-parts each with mark allocation **[n]**.
-   - Total marks = sum of sub-part marks. Each sub-part uses a different command word.
-
-4. CAMBRIDGE QUALITY ENFORCEMENT:
-   - Questions must require multi-step reasoning.
-   - Avoid textbook phrasing (e.g., "Find x"). Use exam wording: "Calculate the value of x. Show your working."
-   - FORBIDDEN: Single-step Pythagoras, trivial angle finding, recall-only geometry facts without application.
-   - GEOMETRY: Combine at least TWO of: angle reasoning, algebra, length calculation, proof/justification.
-   - CIRCLE: Do not ask "why angle is 90°". Must include calculation or reasoning + another concept.
-
-5. MCQ QUESTIONS: 4 options in "options" array (no letter prefix). "answer" = only "A"/"B"/"C"/"D".
-   All distractors must be plausible misconceptions. Math in options: wrap in $...$.
-
-6. SHORT ANSWER: 1–3 marks. No sub-parts.
-
-7. LaTeX: ALL math expressions MUST be in $...$. Never write math as plain text.
-   Never use bare $ as currency — write "USD 1500" or just "1500".
-
-8. syllabusObjective: "REF – objective statement" format. ONE sentence.
-
-9. assessmentObjective: "AO1" | "AO2" | "AO3"
-
-10. difficultyStars: 1 | 2 | 3
-
-11. marks: integer. MCQ always 1. Short answer 1–3. Structured = sum of sub-parts.
-
-SELF-CHECK (run mentally before writing each question — fix before outputting):
-A. List every number you used in the question text.
-B. Verify EACH number exists in the slot's GIVEN VALUES. If any number is NOT there → remove it.
-C. Confirm the diagram is REQUIRED: is there at least one value the student can only get from the diagram?
-   If not → rewrite the question so it requires the diagram.
-D. Check labels: only single letters (A, B, C, O) or standard angle notation (∠ABC). No merged text.
-E. Confirm the question needs ≥ 2 reasoning steps. If trivial → add a second part or extend the context.
-
-ANSWER FIELD RULES (CRITICAL):
-- MCQ: "answer" = single letter only: "A", "B", "C", or "D". Nothing else.
-- short_answer / structured: "answer" = a brief WORDING ONLY description of the method
-  (e.g. "Use Pythagoras' theorem and angle sum property").
-  DO NOT write numeric values in the answer field.
-  The system will compute and inject the correct numeric answer automatically.
-  Writing a number in the answer field for non-MCQ will be overridden and discarded.`;
+  // ── Phase 2 shared config ────────────────────────────────────────────────────
 
   const phase2SystemInstruction = `You are a Senior Cambridge IGCSE Chief Examiner for ${config.subject} with 20+ years of experience.
 
@@ -1269,12 +1132,8 @@ ASSESSMENT OBJECTIVES:
 - AO1: recall, state, name, define — 1–2 mark questions
 - AO2: apply, calculate, interpret, deduce — 2–4 mark questions
 - AO3: plan experiments, identify variables, evaluate — 2–4 mark questions
-
 `;
 
-  // Phase 2 schema deliberately excludes the diagram field.
-  // Diagrams are injected from Phase 1 specs — asking Gemini to reproduce the full
-  // diagram schema alongside long question text causes structured-output failures.
   const questionSchema = {
     type: Type.OBJECT,
     properties: {
@@ -1285,39 +1144,187 @@ ASSESSMENT OBJECTIVES:
       commandWord: { type: Type.STRING },
       type: { type: Type.STRING },
       hasDiagram: { type: Type.BOOLEAN },
-      diagramType: { type: Type.STRING, nullable: true },
-      diagramData: { type: Type.OBJECT, nullable: true },
       syllabusObjective: { type: Type.STRING, nullable: true },
       assessmentObjective: { type: Type.STRING, nullable: true },
       difficultyStars: { type: Type.NUMBER, nullable: true },
       options: { type: Type.ARRAY, items: { type: Type.STRING } },
     },
-    required: [
-      "text",
-      "answer",
-      "markScheme",
-      "marks",
-      "commandWord",
-      "type",
-      "hasDiagram",
-      "options",
-    ],
+    required: ["text", "answer", "markScheme", "marks", "commandWord", "type", "hasDiagram", "options"],
   };
 
-  const rawQuestions = await withRetry(
-    async () => {
+  /**
+   * Writes ONE question using a focused DSL-first prompt.
+   * Used for slots that have a valid DiagramDSL.
+   */
+  async function writeQuestionFromDSL(slot: QuestionSlot, sol: ReturnType<typeof solveDSL>): Promise<any> {
+    const dsl = slot.diagramDSL!;
+
+    // Build human-readable given/unknown blocks
+    const givenLines = (dsl.givens ?? []).map((g) => `  ${g}`);
+    const pts = dsl.points ?? {};
+    Object.entries(pts).forEach(([name, pt]) => givenLines.push(`  ${name} = (${pt[0]}, ${pt[1]})`));
+    if (dsl.radius !== undefined) givenLines.push(`  radius = ${dsl.radius}`);
+    if (dsl.line1) givenLines.push(`  line1 = ${JSON.stringify(dsl.line1)}`);
+    if (dsl.line2) givenLines.push(`  line2 = ${JSON.stringify(dsl.line2)}`);
+    if (dsl.transversal) givenLines.push(`  transversal = ${JSON.stringify(dsl.transversal)}`);
+
+    const unknownLines = (dsl.unknowns ?? []).map((u) => {
+      const v = sol.values[u];
+      return `  ${u}${v !== undefined ? ` = ${Array.isArray(v) ? `(${v[0]}, ${v[1]})` : v} ← STUDENT FINDS THIS` : ""}`;
+    });
+
+    const prompt = `You are a Cambridge IGCSE ${config.subject} question writer.
+
+You are given a DiagramDSL. Use it as the ONLY source of truth.
+
+════════════════════════════════════
+INPUT DSL
+
+${JSON.stringify(dsl, null, 2)}
+
+════════════════════════════════════
+COMPUTED VALUES (from mathEngine — do NOT output these)
+
+GIVEN VALUES (you MAY reference these in the question text):
+${givenLines.join("\n") || "  (none)"}
+
+UNKNOWN VALUES (student must find — NEVER write in question text):
+${unknownLines.join("\n") || "  (none)"}
+
+════════════════════════════════════
+CONTEXT
+
+- Subject: ${config.subject}
+- Topic: ${slot.topic}
+- Question type: ${slot.questionType}
+- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
+- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
+${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
+
+════════════════════════════════════
+STRICT RULES
+
+❌ NOT allowed:
+- Invent any number not in GIVEN VALUES above
+- Write the UNKNOWN VALUES in the question text
+- Ignore the diagram
+- Single-step questions
+
+✅ REQUIRED:
+- Reference the diagram (points by letter: A, B, C, O)
+- Require the diagram to solve (at least one value only visible in diagram)
+- Multi-step reasoning (≥ 2 steps)
+- Cambridge command word appropriate for difficulty
+
+════════════════════════════════════
+MARK SCHEME FORMAT
+
+Use Cambridge notation:
+- B1: independent fact/formula
+- M1: method step (awarded even if arithmetic slip follows)
+- A1: correct answer with unit
+
+════════════════════════════════════
+STRUCTURED QUESTIONS (if type=structured):
+- 2–4 sentence stem, then **(a)**, **(b)** sub-parts each with **[n]** marks
+- Each sub-part uses a different command word
+
+MCQ (if type=mcq):
+- 4 options in "options" array (no letter prefix)
+- "answer" = "A", "B", "C", or "D" only
+- All distractors must be plausible misconceptions
+
+════════════════════════════════════
+SELF-CHECK (mandatory before output):
+1. Every number in question text is in GIVEN VALUES → if not, remove it
+2. Diagram is required → at least one value only from diagram
+3. Labels are single letters only: A, B, C, O (no "OABC", no merged text)
+4. Question needs ≥ 2 reasoning steps
+
+════════════════════════════════════
+ANSWER FIELD:
+- MCQ: single letter "A"/"B"/"C"/"D"
+- All others: brief METHOD description only — no numbers
+  (e.g. "Apply Pythagoras' theorem, then use angle sum of triangle")
+  The system computes the numeric answer from the DSL automatically.
+
+LaTeX: ALL math in $...$. Never plain-text math.
+syllabusObjective: "REF – statement" format, one sentence.
+assessmentObjective: "AO1" | "AO2" | "AO3"
+difficultyStars: 1 | 2 | 3
+marks: MCQ=1, short_answer=1–3, structured=sum of sub-parts
+hasDiagram: true`;
+
+    return withRetry(async () => {
       const response = await ai.models.generateContent({
         model,
-        contents: { parts: [...allRefParts, { text: phase2Prompt }] },
+        contents: [{ role: "user", parts: [...allRefParts, { text: prompt }] }],
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 65536,
+          maxOutputTokens: 8192,
+          temperature: 0.6,
+          responseSchema: questionSchema,
+          systemInstruction: phase2SystemInstruction,
+        },
+      });
+      const usage = getGeminiUsage(response);
+      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
+      const finishReason = (response as any)?.candidates?.[0]?.finishReason;
+      if (finishReason === "MAX_TOKENS") {
+        throw { type: "invalid_response", retryable: true, message: `DSL question hit token limit. Retrying…` };
+      }
+      const parsed = safeJsonParse(response.text || "{}");
+      if (!parsed.text) throw { type: "invalid_response", retryable: true, message: "Empty question text returned." };
+      return parsed;
+    }, 3, onRetry);
+  }
+
+  /**
+   * Writes all non-diagram questions (or diagram-less slots) in a single batch call.
+   * This mirrors the original Phase 2 approach but only for non-DSL slots.
+   */
+  async function writeQuestionsWithoutDSL(batchSlots: QuestionSlot[]): Promise<any[]> {
+    if (batchSlots.length === 0) return [];
+
+    const batchDescriptions = batchSlots
+      .map((s) => `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"`)
+      .join("\n");
+
+    const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment.
+
+CONFIGURATION:
+- Topic: ${config.topic}
+- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
+- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
+${config.syllabusContext ? `- Syllabus Context/Focus: ${config.syllabusContext}` : ""}
+
+${subjectRules ? `${subjectRules}\n` : ""}${MARK_SCHEME_FORMAT}
+
+QUESTION SLOTS (write EXACTLY ${batchSlots.length} questions in this order):
+${batchDescriptions}
+
+RULES:
+1. Multi-step reasoning required (≥ 2 steps).
+2. Avoid textbook phrasing. Use Cambridge command words.
+3. MCQ: 4 options (no letter prefix); answer = "A"/"B"/"C"/"D".
+4. Short answer: 1–3 marks, no sub-parts.
+5. Structured: stem + (a),(b),(c) sub-parts with [n] marks each.
+6. LaTeX: all math in $...$. syllabusObjective: "REF – statement" format.
+7. assessmentObjective: "AO1" | "AO2" | "AO3". difficultyStars: 1|2|3.
+8. hasDiagram: false for all these questions.
+9. answer field: MCQ = letter; others = method description only (no numbers).`;
+
+    return withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model,
+        contents: { parts: [...allRefParts, { text: prompt }] },
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 32768,
           temperature: 0.75,
           responseSchema: {
             type: Type.OBJECT,
-            properties: {
-              questions: { type: Type.ARRAY, items: questionSchema },
-            },
+            properties: { questions: { type: Type.ARRAY, items: questionSchema } },
             required: ["questions"],
           },
           systemInstruction: phase2SystemInstruction,
@@ -1325,32 +1332,47 @@ ASSESSMENT OBJECTIVES:
       });
       const usage = getGeminiUsage(response);
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
-      const finishReason2 = (response as any)?.candidates?.[0]?.finishReason;
-      const thoughtTokens2 =
-        (response as any)?.usageMetadata?.thoughtsTokenCount ?? 0;
-      onLog?.(
-        `[Phase 2] length=${response.text?.length ?? 0} finishReason=${finishReason2} thoughtTokens=${thoughtTokens2}`,
-      );
-      if (finishReason2 === "MAX_TOKENS") {
-        throw {
-          type: "invalid_response",
-          retryable: true,
-          message: `Phase 2 hit token limit (thinking used ${thoughtTokens2} tokens). Retrying…`,
-        };
+      const finishReason = (response as any)?.candidates?.[0]?.finishReason;
+      const thoughtTokens = (response as any)?.usageMetadata?.thoughtsTokenCount ?? 0;
+      onLog?.(`[Phase 2 batch] length=${response.text?.length ?? 0} finishReason=${finishReason} thoughtTokens=${thoughtTokens}`);
+      if (finishReason === "MAX_TOKENS") {
+        throw { type: "invalid_response", retryable: true, message: `Phase 2 batch hit token limit. Retrying…` };
       }
       const parsed = safeJsonParse(response.text || "{}");
-      if (!parsed.questions || parsed.questions.length < config.count) {
-        throw {
-          type: "invalid_response",
-          retryable: true,
-          message: `Phase 2 returned ${parsed.questions?.length ?? 0} questions, expected ${config.count}. Retrying…`,
-        };
+      if (!parsed.questions || parsed.questions.length < batchSlots.length) {
+        throw { type: "invalid_response", retryable: true, message: `Phase 2 batch returned ${parsed.questions?.length ?? 0} questions, expected ${batchSlots.length}.` };
       }
-      return parsed;
-    },
-    3,
-    onRetry,
+      return parsed.questions;
+    }, 3, onRetry);
+  }
+
+  // ── Phase 2: Write questions (per-slot for DSL, batch for non-DSL) ───────────
+
+  onLog?.("Phase 2: writing questions…");
+
+  // Separate DSL slots from non-DSL slots
+  const dslSlots    = slots.filter((s) => s.hasDiagram && s.diagramDSL);
+  const nonDslSlots = slots.filter((s) => !s.hasDiagram || !s.diagramDSL);
+
+  // Write DSL questions in parallel (each focused on one DSL)
+  const dslResults = await Promise.all(
+    dslSlots.map(async (slot) => {
+      const sol = solveDSL(slot.diagramDSL!);
+      onLog?.(`[Phase 2] Q${slot.index + 1}: writing DSL question (${slot.diagramDSL!.type})`);
+      const q = await writeQuestionFromDSL(slot, sol);
+      return { index: slot.index, q };
+    }),
   );
+
+  // Write non-DSL questions in one batch
+  const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
+
+  // Reassemble in original slot order
+  const rawQuestionsMap: Record<number, any> = {};
+  for (const { index, q } of dslResults) rawQuestionsMap[index] = q;
+  nonDslSlots.forEach((slot, batchIdx) => { rawQuestionsMap[slot.index] = nonDslResults[batchIdx]; });
+
+  const rawQuestions = { questions: slots.map((s) => rawQuestionsMap[s.index]).filter(Boolean) };
 
   // Stitch: sanitize questions and attach DSL from Phase 1
   let questions: QuestionItem[] = await Promise.all((rawQuestions.questions ?? []).map(async (q: any, i: number) => {
