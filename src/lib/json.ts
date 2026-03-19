@@ -18,13 +18,24 @@ function protectLatexBackslashes(candidate: string): string {
   return candidate.replace(re, '\\\\$1')
 }
 
+function extractJSON(text: string): string {
+  const firstObj = text.indexOf('{')
+  const lastObj  = text.lastIndexOf('}')
+  const firstArr = text.indexOf('[')
+  const lastArr  = text.lastIndexOf(']')
+
+  // Pick whichever root structure appears first
+  const useObj = firstObj !== -1 && (firstArr === -1 || firstObj < firstArr)
+  if (useObj && lastObj > firstObj) return text.slice(firstObj, lastObj + 1)
+  if (!useObj && firstArr !== -1 && lastArr > firstArr) return text.slice(firstArr, lastArr + 1)
+  throw new Error('No JSON found')
+}
+
 export function parseJsonWithRecovery<T = any>(text: string, source = 'model'): T {
   const cleaned = stripMarkdownFences(text)
   const candidates: string[] = [cleaned]
 
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start !== -1 && end > start) candidates.push(cleaned.substring(start, end + 1))
+  try { candidates.push(extractJSON(cleaned)) } catch { /* no braces/brackets */ }
 
   for (const c of candidates) {
     const normalized = protectLatexBackslashes(removeTrailingCommas(c))
