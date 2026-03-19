@@ -38,7 +38,7 @@ function requiresDiagramData(q: QuestionItem): boolean {
   const keyNumbers = dataStr.match(/-?\d+(\.\d+)?/g) || [];
 
   let copiedCount = 0;
-  keyNumbers.forEach(n => {
+  keyNumbers.forEach((n) => {
     if (text.includes(n)) copiedCount++;
   });
 
@@ -95,9 +95,12 @@ export function enforceQuestionQuality(q: QuestionItem): {
 
   // 1. DIAGRAM DEPENDENCY
   if (q.hasDiagram) {
-    const diagramRefs = /\b(diagram|figure|shown|point\s+[A-Z]|angle\s+[A-Z]{2,3}|triangle\s+[A-Z]{3})\b/i;
+    const diagramRefs =
+      /\b(diagram|figure|shown|point\s+[A-Z]|angle\s+[A-Z]{2,3}|triangle\s+[A-Z]{3})\b/i;
     if (!diagramRefs.test(q.text)) {
-      reasons.push("Diagram provided but not referenced in text (must use 'diagram', 'figure', or specific points).");
+      reasons.push(
+        "Diagram provided but not referenced in text (must use 'diagram', 'figure', or specific points).",
+      );
     }
 
     if (!requiresGeometricUse(q)) {
@@ -111,12 +114,19 @@ export function enforceQuestionQuality(q: QuestionItem): {
   }
 
   // 2. MULTI-STEP CHECK & 6. DIFFICULTY ENFORCER
-  const reasoningVerbs = /\b(explain|deduce|determine|justify|show|prove|calculate)\b/i;
-  if (q.marks <= 2 && !reasoningVerbs.test(q.commandWord || "") && !reasoningVerbs.test(q.text)) {
-    reasons.push("Question is too simple (low marks and no reasoning required).");
+  const reasoningVerbs =
+    /\b(explain|deduce|determine|justify|show|prove|calculate)\b/i;
+  if (
+    q.marks <= 2 &&
+    !reasoningVerbs.test(q.commandWord || "") &&
+    !reasoningVerbs.test(q.text)
+  ) {
+    reasons.push(
+      "Question is too simple (low marks and no reasoning required).",
+    );
   }
 
-  if (q.type !== 'mcq' && !hasMultiStepStructure(q)) {
+  if (q.type !== "mcq" && !hasMultiStepStructure(q)) {
     reasons.push("Question lacks multi-step reasoning structure.");
   }
 
@@ -125,13 +135,16 @@ export function enforceQuestionQuality(q: QuestionItem): {
   }
 
   // 3. TEXTBOOK DETECTION
-  const textbookPatterns = /^(find\s+[a-z]+|calculate\s+[a-z]{1,2}|what\s+is\s+the\s+value\s+of)\s*$/i;
+  const textbookPatterns =
+    /^(find\s+[a-z]+|calculate\s+[a-z]{1,2}|what\s+is\s+the\s+value\s+of)\s*$/i;
   if (textbookPatterns.test(q.text.trim()) && q.text.length < 60) {
     reasons.push("Question lacks context (textbook style 'Find x').");
   }
 
   if (q.hasDiagram && !requiresDiagramExtraction(q)) {
-    reasons.push("Question provides values in text (avoid 'given', force extraction).");
+    reasons.push(
+      "Question provides values in text (avoid 'given', force extraction).",
+    );
   }
 
   return { isValid: reasons.length === 0, reasons };
@@ -141,7 +154,9 @@ function isTooEasy(q: QuestionItem): boolean {
   // Check if question is trivial (1-2 marks and no cognitive verbs)
   return (
     q.marks <= 2 &&
-    !/explain|justify|deduce|determine|prove|calculate/i.test((q.commandWord + " " + q.text))
+    !/explain|justify|deduce|determine|prove|calculate/i.test(
+      q.commandWord + " " + q.text,
+    )
   );
 }
 
@@ -400,10 +415,12 @@ export async function withRetry<T>(
       return await fn();
     } catch (err: any) {
       const status = err?.status ?? err?.code;
+
+      // Rate limit (429) — exponential backoff: 15s, 30s, 60s
       if (status === 429) {
         if (i < maxRetries - 1) {
           onRetry?.(i + 1);
-          await new Promise((r) => setTimeout(r, Math.pow(2, i) * 5000));
+          await new Promise((r) => setTimeout(r, Math.pow(2, i + 1) * 7500));
           continue;
         }
         throw {
@@ -413,7 +430,14 @@ export async function withRetry<T>(
             "Rate limit exceeded. Please wait a few minutes and try again.",
         } satisfies GeminiError;
       }
+
+      // Model overloaded (503) — retry with backoff
       if (status === 503) {
+        if (i < maxRetries - 1) {
+          onRetry?.(i + 1);
+          await new Promise((r) => setTimeout(r, Math.pow(2, i) * 5000));
+          continue;
+        }
         throw {
           type: "model_overloaded",
           retryable: false,
@@ -421,6 +445,8 @@ export async function withRetry<T>(
             "Model is currently overloaded. Try switching to a Flash model.",
         } satisfies GeminiError;
       }
+
+      // Not found (404) — no retry
       if (status === 404) {
         throw {
           type: "unknown",
@@ -429,6 +455,8 @@ export async function withRetry<T>(
             "Model not found (404). Check your model selection — the selected model may not exist or your API key may not have access to it.",
         } satisfies GeminiError;
       }
+
+      // Auth errors — no retry
       if (status === 401 || status === 403) {
         throw {
           type: "unknown",
@@ -437,19 +465,23 @@ export async function withRetry<T>(
             "Invalid or unauthorized API key. Please check your key in API Settings.",
         } satisfies GeminiError;
       }
+
+      // Invalid response / JSON / MAX_TOKENS — retry with short delay
       if (status === 422 || err?.type === "invalid_response") {
         if (i < maxRetries - 1) {
           onRetry?.(i + 1);
-          await new Promise((r) => setTimeout(r, 1500));
+          await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
           continue;
         }
         throw {
           type: "invalid_response",
           retryable: true,
           message:
-            "Model returned invalid JSON. Retried automatically but still failed. Please retry.",
+            err?.message ??
+            "Model returned an incomplete response. Please retry.",
         } satisfies GeminiError;
       }
+
       // Preserve original error message if available
       const originalMsg =
         err?.message && !err.message.startsWith("{") ? err.message : null;
@@ -833,9 +865,18 @@ Return EXACTLY ${config.count} slots.`;
                 center: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 radius: { type: Type.NUMBER, nullable: true },
                 // Parallel Lines
-                line1: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
-                line2: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
-                transversal: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+                line1: {
+                  type: Type.ARRAY,
+                  items: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                },
+                line2: {
+                  type: Type.ARRAY,
+                  items: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                },
+                transversal: {
+                  type: Type.ARRAY,
+                  items: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                },
               },
             },
           },
@@ -858,7 +899,7 @@ Return EXACTLY ${config.count} slots.`;
         contents: { parts: [...refParts, { text: phase1Prompt }] },
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
           temperature: 0.4,
           responseSchema: phase1Schema,
         },
@@ -874,8 +915,8 @@ Return EXACTLY ${config.count} slots.`;
       if (finishReason === "MAX_TOKENS") {
         throw {
           type: "invalid_response",
-          retryable: false,
-          message: `Generation failed: model hit token limit during planning (thinking used ${thoughtTokens} tokens). Try a shorter topic or fewer questions.`,
+          retryable: true,
+          message: `Phase 1 hit token limit (thinking used ${thoughtTokens} tokens). Retrying…`,
         };
       }
       const parsed = safeJsonParse(response.text || "{}");
@@ -1070,7 +1111,7 @@ ASSESSMENT OBJECTIVES:
         contents: { parts: [...refParts, { text: phase2Prompt }] },
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 8192,
+          maxOutputTokens: 65536,
           temperature: 0.75,
           responseSchema: {
             type: Type.OBJECT,
@@ -1093,8 +1134,8 @@ ASSESSMENT OBJECTIVES:
       if (finishReason2 === "MAX_TOKENS") {
         throw {
           type: "invalid_response",
-          retryable: false,
-          message: `Generation failed: model hit token limit while writing questions (thinking used ${thoughtTokens2} tokens). Try fewer questions or a less complex topic.`,
+          retryable: true,
+          message: `Phase 2 hit token limit (thinking used ${thoughtTokens2} tokens). Retrying…`,
         };
       }
       const parsed = safeJsonParse(response.text || "{}");
@@ -1174,24 +1215,36 @@ ASSESSMENT OBJECTIVES:
     for (let i = 0; i < questions.length; i++) {
       let q = questions[i];
       let attempts = 0;
-      
+
       while (attempts < 2) {
         const qualityCheck = enforceQuestionQuality(q);
         const tooEasy = isTooEasy(q);
         const isAStar = isAStarLevel(q);
         const hasCognitive = hasCognitiveLoad(q);
-        
+
         if (qualityCheck.isValid && !tooEasy && isAStar && hasCognitive) break;
-        
+
         const issues = [...qualityCheck.reasons];
-        if (tooEasy) issues.push("Question is too easy/recall-based for A* level.");
-        if (!isAStar) issues.push("Not A* level difficulty (requires multi-step deduction/proof).");
+        if (tooEasy)
+          issues.push("Question is too easy/recall-based for A* level.");
+        if (!isAStar)
+          issues.push(
+            "Not A* level difficulty (requires multi-step deduction/proof).",
+          );
         if (!hasCognitive) issues.push("Cognitive load too low.");
-        
-        onLog?.(`Regenerating Q${i + 1} (Attempt ${attempts + 1}): ${issues.join(", ")}`);
-        
+
+        onLog?.(
+          `Regenerating Q${i + 1} (Attempt ${attempts + 1}): ${issues.join(", ")}`,
+        );
+
         // Re-generate this specific question
-        const newQ = await regenerateSingleQuestion(q, issues, config, ai, model);
+        const newQ = await regenerateSingleQuestion(
+          q,
+          issues,
+          config,
+          ai,
+          model,
+        );
         if (newQ) {
           questions[i] = newQ;
           q = newQ;
@@ -1265,7 +1318,7 @@ async function regenerateSingleQuestion(
   issues: string[],
   config: GenerationConfig,
   ai: any,
-  model: string
+  model: string,
 ): Promise<QuestionItem | null> {
   const prompt = `
     REGENERATE this specific Cambridge IGCSE question to meet A* standards.
@@ -1275,7 +1328,7 @@ async function regenerateSingleQuestion(
     (Type: ${original.type}, Marks: ${original.marks})
     
     ISSUES DETECTED (MUST FIX):
-    ${issues.map(s => `- ${s}`).join("\n")}
+    ${issues.map((s) => `- ${s}`).join("\n")}
     
     STRICT REQUIREMENTS:
     1. Make it HARDER (multi-step reasoning).
@@ -1299,7 +1352,7 @@ async function regenerateSingleQuestion(
     });
     const parsed = safeJsonParse(response.text || "{}");
     if (!parsed.text) return null;
-    
+
     const sanitized = sanitizeQuestion(parsed);
     const updated = {
       ...sanitized,
@@ -1308,7 +1361,7 @@ async function regenerateSingleQuestion(
       diagram: undefined, // Clear diagram before regeneration attempt
       diagramType: original.diagramType,
       diagramData: original.diagramData,
-      hasDiagram: original.hasDiagram
+      hasDiagram: original.hasDiagram,
     };
 
     if (original.hasDiagram) {
@@ -1398,7 +1451,7 @@ TASK:
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 8192,
+          maxOutputTokens: 65536,
           responseSchema: {
             type: Type.OBJECT,
             properties: {
