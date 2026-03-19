@@ -991,72 +991,102 @@ Return EXACTLY ${config.count} slots.`;
   // Normalise slots — DSL only; legacy diagramData path is removed.
   const validTypes = ["mcq", "short_answer", "structured"];
 
-  const DSL_RETRY_FEEDBACK = `Your DiagramDSL is invalid. Fix ALL of the following:
-
-REQUIRED FIELDS:
-- triangle: points {A, B, C} as [x,y] arrays, constraints[], givens[], unknowns[]
-- circle: center [x,y], radius (number > 0), points {A/B/C on circumference}, constraints[], givens[], unknowns[]
-- parallel_lines: line1 [[x,y],[x,y]], line2 [[x,y],[x,y]], transversal [[x,y],[x,y]], angleType, constraints[], givens[], unknowns[]
-
-GEOMETRY RULES:
-- triangle: coordinates must form a non-degenerate triangle; if rightAngleAt is set, dot product of the two edge vectors at that vertex MUST be 0.
-- circle: every named point must lie exactly on the circle (distance to center = radius).
-- parallel_lines: line1 and line2 MUST be horizontal (y-values only vary, direction vector = [1,0]).
-  Use line1=[[0,0],[4,0]] and line2=[[0,3],[4,3]]. Transversal must have slope between 0.5 and 2.0.
-
-LABEL RULES (strictly enforce):
-- labels{} values must be SINGLE letters or simple math strings: "A", "B", "5\\text{ cm}", "65^\\circ"
-- NEVER combine multiple items: "OABC", "AB65°", "angle110" are ALL INVALID.
-- Angle arc labels belong in labels{} keyed by the vertex letter only.
-
-If you cannot satisfy all rules, set hasDiagram=false instead.`;
-
-  async function retrySlotDSL(s: any, slotIndex: number): Promise<DiagramDSL | undefined> {
+  /**
+   * Generates a valid DiagramDSL using a focused, single-purpose prompt.
+   * This is intentionally separate from Phase 1 and Phase 2:
+   * it does ONLY one thing — produce a valid DSL JSON object.
+   * Temperature is low (0.2) for deterministic geometry.
+   */
+  async function generateDSLForSlot(s: any, slotIndex: number, prevErrors?: string): Promise<DiagramDSL | undefined> {
     const MAX_DSL_RETRIES = 5;
+
+    // Determine a sensible diagram type for this topic
+    const topicLower = (s.topic ?? "").toLowerCase();
+    let suggestedType = "triangle";
+    if (/circle|arc|chord|diameter|radius|tangent|inscribed|semicircle/i.test(topicLower)) {
+      suggestedType = "circle";
+    } else if (/parallel|transversal|alternate|corresponding|co-interior|z-angle|f-angle/i.test(topicLower)) {
+      suggestedType = "parallel_lines";
+    } else if (/coordinate|gradient|midpoint|distance|locus|line.*equation/i.test(topicLower)) {
+      suggestedType = "coordinate_geometry";
+    }
+
     for (let attempt = 0; attempt < MAX_DSL_RETRIES; attempt++) {
-      const prevErrors = s.diagramDSL
-        ? validateDSL(s.diagramDSL).errors.join("; ")
-        : "No diagramDSL provided";
-      onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1}/${MAX_DSL_RETRIES}: ${prevErrors}`);
+      const errorBlock = prevErrors
+        ? `\nPREVIOUS ATTEMPT REJECTED — errors: ${prevErrors}\nFix ALL errors listed above.\n`
+        : "";
 
-      const retryPrompt = `You are planning a Cambridge IGCSE ${config.subject} question slot.
+      const dslPrompt = `You are a DiagramDSL generator for Cambridge IGCSE ${config.subject} questions.
 
-The previous DSL for slot ${slotIndex} was REJECTED with errors: ${prevErrors}
+Your ONLY task: generate ONE valid DiagramDSL JSON object for this topic:
+Topic: "${s.topic}"
+Suggested type: "${suggestedType}"
+${errorBlock}
+❌ DO NOT write any question, explanation, TikZ, or extra text.
+✅ Return ONLY the JSON object.
 
-${DSL_RETRY_FEEDBACK}
+════════════════════════════════════
+REQUIRED STRUCTURES (pick ONE):
 
-Slot details:
-- topic: "${s.topic}"
-- questionType: "${s.questionType}"
-- hasDiagram: true
+triangle:
+{"type":"triangle","points":{"A":[x,y],"B":[x,y],"C":[x,y]},"rightAngleAt":"B","constraints":["right_angle_at_B"],"givens":["AB=3","BC=4"],"unknowns":["AC","angle_A"]}
 
-Output ONLY a valid diagramDSL JSON object (no wrapper). Example for triangle:
-{"type":"triangle","points":{"A":[0,4],"B":[0,0],"C":[3,0]},"rightAngleAt":"B","constraints":["right_angle_at_B"],"givens":["AB=4","BC=3"],"unknowns":["AC","angle_A"]}`;
+circle:
+{"type":"circle","center":[0,0],"radius":5,"points":{"A":[-5,0],"B":[5,0],"C":[0,5]},"constraints":["AB_is_diameter"],"givens":["radius=5"],"unknowns":["angle_ACB"]}
+
+parallel_lines:
+{"type":"parallel_lines","line1":[[0,0],[4,0]],"line2":[[0,3],[4,3]],"transversal":[[1,-1],[3,4]],"angleType":"alternate","constraints":["parallel_lines"],"givens":["angle_at_A=65"],"unknowns":["angle_at_B"]}
+
+coordinate_geometry:
+{"type":"coordinate_geometry","points":{"A":[1,2],"B":[5,6]},"constraints":[],"givens":["A=(1,2)","B=(5,6)"],"unknowns":["length","midpoint"]}
+
+════════════════════════════════════
+STRICT RULES:
+
+1. Coordinates: clean integers only (e.g. 0, 2, 4, -3). No decimals.
+2. Geometry MUST be valid:
+   - triangle: non-degenerate, all 3 sides > 0; if rightAngleAt set, dot product of edge vectors at that vertex = 0
+   - circle: every point in "points" must be exactly on the circle (distance to center = radius)
+   - parallel_lines: line1 and line2 MUST be horizontal (same y-direction); transversal slope between 0.5 and 2.0
+3. Labels: single letters ONLY — A, B, C, O, P, Q. NEVER "OABC", "AB65", or combined strings.
+4. givens[]: list of "KEY=value" strings for values visible in the diagram (e.g. "AB=3", "radius=5")
+5. unknowns[]: list of what the student must find (e.g. "AC", "angle_A", "angle_at_B")
+6. Output ONLY the JSON object — no markdown fences, no explanation.
+
+If you cannot make valid geometry → use "coordinate_geometry" as a safe fallback.`;
 
       try {
-        const retryResponse = await ai.models.generateContent({
+        const dslResponse = await ai.models.generateContent({
           model,
-          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+          contents: [{ role: "user", parts: [{ text: dslPrompt }] }],
           config: {
             responseMimeType: "application/json",
-            maxOutputTokens: 4096,
-            temperature: 0.3,
+            maxOutputTokens: 2048,
+            temperature: 0.2,
           },
         });
-        const candidate = safeJsonParse(retryResponse.text || "{}");
+        const candidate = safeJsonParse(dslResponse.text || "{}");
         if (candidate && candidate.type) {
           const v = validateDSL(candidate);
           if (v.valid) {
-            onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1} succeeded`);
+            onLog?.(`[DSL] Slot ${slotIndex} valid on attempt ${attempt + 1}`);
             return candidate as DiagramDSL;
           }
-          s.diagramDSL = candidate; // feed back for next iteration's error message
+          // Feed errors back into next attempt
+          prevErrors = v.errors.join("; ");
+          onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1} invalid: ${prevErrors}`);
+          s.diagramDSL = candidate;
+        } else {
+          prevErrors = "No valid type field in response";
+          onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1}: no type field`);
         }
       } catch (err) {
-        onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1} error: ${err}`);
+        prevErrors = String(err);
+        onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1} error: ${err}`);
       }
     }
-    onLog?.(`[Phase 1] Slot ${slotIndex} DSL generation failed after ${MAX_DSL_RETRIES} attempts — fallback to non-diagram question`);
+
+    onLog?.(`[DSL] Slot ${slotIndex} failed after ${MAX_DSL_RETRIES} attempts — fallback to non-diagram`);
     return undefined;
   }
 
@@ -1069,11 +1099,11 @@ Output ONLY a valid diagramDSL JSON object (no wrapper). Example for triangle:
           diagramDSL = s.diagramDSL as DiagramDSL;
         } else {
           onLog?.(`[Phase 1] Slot ${i} DSL invalid (${v.errors.join("; ")}) — retrying DSL`);
-          diagramDSL = await retrySlotDSL(s, i);
+          diagramDSL = await generateDSLForSlot(s, i, v.errors.join("; "));
         }
       } else if (s.hasDiagram) {
-        onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no diagramDSL — retrying DSL`);
-        diagramDSL = await retrySlotDSL(s, i);
+        onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no diagramDSL — generating DSL`);
+        diagramDSL = await generateDSLForSlot(s, i);
       }
       return {
         index: i,
