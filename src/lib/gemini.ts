@@ -933,7 +933,7 @@ Return EXACTLY ${config.count} slots.`;
         contents: { parts: [...syllabusRefParts, { text: phase1Prompt }] },
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 16384,
+          maxOutputTokens: 65536,
           temperature: 0.4,
           responseSchema: phase1Schema,
         },
