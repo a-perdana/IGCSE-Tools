@@ -969,30 +969,91 @@ Return EXACTLY ${config.count} slots.`;
 
   // Normalise slots — DSL only; legacy diagramData path is removed.
   const validTypes = ["mcq", "short_answer", "structured"];
-  const slots: QuestionSlot[] = rawSlots.slice(0, config.count).map((s: any, i: number) => {
-    let diagramDSL: DiagramDSL | undefined;
-    if (s.diagramDSL && s.diagramDSL.type) {
-      const v = validateDSL(s.diagramDSL);
-      if (v.valid) {
-        diagramDSL = s.diagramDSL as DiagramDSL;
-      } else {
-        onLog?.(`[Phase 1] Slot ${i} DSL invalid — diagram dropped: ${v.errors.join("; ")}`);
+
+  const DSL_RETRY_FEEDBACK = `Your DiagramDSL is invalid. You MUST include ALL required fields for your diagram type:
+- triangle: points (A, B, C as [x,y] arrays), constraints, givens, unknowns
+- circle: center ([x,y]), radius (number), points (A/B/C on circumference), constraints, givens, unknowns
+- parallel_lines: line1 ([[x1,y1],[x2,y2]]), line2 ([[x1,y1],[x2,y2]]), transversal ([[x1,y1],[x2,y2]]), angleType, constraints, givens, unknowns
+
+If you cannot produce a valid DSL, set hasDiagram=false instead.`;
+
+  async function retrySlotDSL(s: any, slotIndex: number): Promise<DiagramDSL | undefined> {
+    const MAX_DSL_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_DSL_RETRIES; attempt++) {
+      const prevErrors = s.diagramDSL
+        ? validateDSL(s.diagramDSL).errors.join("; ")
+        : "No diagramDSL provided";
+      onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1}/${MAX_DSL_RETRIES}: ${prevErrors}`);
+
+      const retryPrompt = `You are planning a Cambridge IGCSE ${config.subject} question slot.
+
+The previous DSL for slot ${slotIndex} was REJECTED with errors: ${prevErrors}
+
+${DSL_RETRY_FEEDBACK}
+
+Slot details:
+- topic: "${s.topic}"
+- questionType: "${s.questionType}"
+- hasDiagram: true
+
+Output ONLY a valid diagramDSL JSON object (no wrapper). Example for triangle:
+{"type":"triangle","points":{"A":[0,4],"B":[0,0],"C":[3,0]},"rightAngleAt":"B","constraints":["right_angle_at_B"],"givens":["AB=4","BC=3"],"unknowns":["AC","angle_A"]}`;
+
+      try {
+        const retryResponse = await ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+          config: {
+            responseMimeType: "application/json",
+            maxOutputTokens: 4096,
+            temperature: 0.3,
+          },
+        });
+        const candidate = safeJsonParse(retryResponse.text || "{}");
+        if (candidate && candidate.type) {
+          const v = validateDSL(candidate);
+          if (v.valid) {
+            onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1} succeeded`);
+            return candidate as DiagramDSL;
+          }
+          s.diagramDSL = candidate; // feed back for next iteration's error message
+        }
+      } catch (err) {
+        onLog?.(`[Phase 1] Slot ${slotIndex} DSL retry ${attempt + 1} error: ${err}`);
       }
-    } else if (s.hasDiagram) {
-      onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no valid diagramDSL — diagram dropped`);
     }
-    return {
-      index: i,
-      topic: s.topic ?? config.topic,
-      questionType: (validTypes.includes(s.questionType)
-        ? s.questionType
-        : cleanType === "mixed"
-          ? "short_answer"
-          : cleanType) as QuestionSlot["questionType"],
-      hasDiagram: Boolean(s.hasDiagram) && !!diagramDSL,
-      diagramDSL,
-    };
-  });
+    onLog?.(`[Phase 1] Slot ${slotIndex} DSL generation failed after ${MAX_DSL_RETRIES} attempts — fallback to non-diagram question`);
+    return undefined;
+  }
+
+  const slots: QuestionSlot[] = await Promise.all(
+    rawSlots.slice(0, config.count).map(async (s: any, i: number) => {
+      let diagramDSL: DiagramDSL | undefined;
+      if (s.diagramDSL && s.diagramDSL.type) {
+        const v = validateDSL(s.diagramDSL);
+        if (v.valid) {
+          diagramDSL = s.diagramDSL as DiagramDSL;
+        } else {
+          onLog?.(`[Phase 1] Slot ${i} DSL invalid (${v.errors.join("; ")}) — retrying DSL`);
+          diagramDSL = await retrySlotDSL(s, i);
+        }
+      } else if (s.hasDiagram) {
+        onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no diagramDSL — retrying DSL`);
+        diagramDSL = await retrySlotDSL(s, i);
+      }
+      return {
+        index: i,
+        topic: s.topic ?? config.topic,
+        questionType: (validTypes.includes(s.questionType)
+          ? s.questionType
+          : cleanType === "mixed"
+            ? "short_answer"
+            : cleanType) as QuestionSlot["questionType"],
+        hasDiagram: Boolean(s.hasDiagram) && !!diagramDSL,
+        diagramDSL,
+      };
+    }),
+  );
 
   // ── Phase 2: Write questions ─────────────────────────────────────────────
 
@@ -1239,11 +1300,42 @@ ASSESSMENT OBJECTIVES:
   );
 
   // Stitch: sanitize questions and attach DSL from Phase 1
-  let questions: QuestionItem[] = (rawQuestions.questions ?? []).map((q: any, i: number) => {
+  let questions: QuestionItem[] = await Promise.all((rawQuestions.questions ?? []).map(async (q: any, i: number) => {
     const sanitized = sanitizeQuestion(q);
     const slot = slots[i];
-    const hasDiagram = slot?.hasDiagram || sanitized.hasDiagram;
+    // CRITICAL: hasDiagram is only true if a valid DSL exists.
+    // If the slot lost its DSL (all retries failed), force hasDiagram=false on the question too.
+    const hasDiagram = (slot?.hasDiagram || sanitized.hasDiagram) && !!slot?.diagramDSL;
     const dsl = slot?.diagramDSL;
+
+    // ── HARD DIAGRAM REQUIREMENT ─────────────────────────────────────────────
+    // If the question claims hasDiagram but has no valid DSL, regenerate it as
+    // a non-diagram question. A diagram-based question without a diagram is NEVER allowed.
+    if ((slot?.hasDiagram || sanitized.hasDiagram) && !dsl) {
+      onLog?.(`[REJECT] Q${i + 1}: hasDiagram=true but no valid DSL — regenerating as non-diagram question`);
+      const fallback = await regenerateSingleQuestion(
+        { ...sanitized, hasDiagram: false, id: crypto.randomUUID(), code: "" } as QuestionItem,
+        ["DiagramDSL is missing or invalid. Generate this as a non-diagram question instead. Do NOT set hasDiagram=true."],
+        { ...config, topic: slot?.topic ?? config.topic },
+        ai,
+        model,
+      );
+      if (fallback) {
+        onLog?.(`[FALLBACK] Q${i + 1}: replaced with non-diagram question`);
+        return fallback;
+      }
+      // If even fallback fails, force hasDiagram=false on the original
+      onLog?.(`[FALLBACK] Q${i + 1}: regeneration failed — stripping hasDiagram`);
+      return {
+        ...sanitized,
+        hasDiagram: false,
+        id: crypto.randomUUID(),
+        code: sharedGenerateQuestionCode(config.subject, {
+          text: sanitized.text,
+          syllabusObjective: sanitized.syllabusObjective,
+        }),
+      } as QuestionItem;
+    }
 
     // ── MATH ENGINE ENFORCEMENT ──────────────────────────────────────────────
     // For non-MCQ with a DSL: answer and markScheme are ALWAYS from mathEngine.
@@ -1296,7 +1388,7 @@ ASSESSMENT OBJECTIVES:
         syllabusObjective: sanitized.syllabusObjective,
       }),
     };
-  });
+  }));
 
   // ── Phase 3: Generate TikZ diagrams for questions that need them ─────────
   const diagramQuestions = questions.filter((q) => q.hasDiagram);
