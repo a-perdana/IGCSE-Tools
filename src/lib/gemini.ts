@@ -992,132 +992,196 @@ Return EXACTLY ${config.count} slots.`;
   const validTypes = ["mcq", "short_answer", "structured"];
 
   /**
-   * Generates a valid DiagramDSL using a focused, single-purpose prompt.
-   * This is intentionally separate from Phase 1 and Phase 2:
-   * it does ONLY one thing — produce a valid DSL JSON object.
-   * Temperature is low (0.2) for deterministic geometry.
+   * DETERMINISTIC DSL BUILDER — AI never creates geometry.
+   *
+   * Coordinates are fixed templates. AI only picks angle/length VALUES
+   * (integers) via a tiny focused call. If that fails, defaults are used.
+   * This guarantees geometric validity 100% of the time.
    */
-  async function generateDSLForSlot(s: any, slotIndex: number, prevErrors?: string): Promise<DiagramDSL | undefined> {
-    const MAX_DSL_RETRIES = 5;
-
-    // Determine a sensible diagram type for this topic
-    const topicLower = (s.topic ?? "").toLowerCase();
-    let suggestedType = "triangle";
-    if (/circle|arc|chord|diameter|radius|tangent|inscribed|semicircle/i.test(topicLower)) {
-      suggestedType = "circle";
-    } else if (/parallel|transversal|alternate|corresponding|co-interior|z-angle|f-angle/i.test(topicLower)) {
-      suggestedType = "parallel_lines";
-    } else if (/coordinate|gradient|midpoint|distance|locus|line.*equation/i.test(topicLower)) {
-      suggestedType = "coordinate_geometry";
-    }
-
-    for (let attempt = 0; attempt < MAX_DSL_RETRIES; attempt++) {
-      const errorBlock = prevErrors
-        ? `\nPREVIOUS ATTEMPT REJECTED — errors: ${prevErrors}\nFix ALL errors listed above.\n`
-        : "";
-
-      const dslPrompt = `You are a DiagramDSL generator for Cambridge IGCSE ${config.subject} questions.
-
-Your ONLY task: generate ONE valid DiagramDSL JSON object for this topic:
-Topic: "${s.topic}"
-Suggested type: "${suggestedType}"
-${errorBlock}
-❌ DO NOT write any question, explanation, TikZ, or extra text.
-✅ Return ONLY the JSON object.
-
-════════════════════════════════════
-REQUIRED STRUCTURES (pick ONE):
-
-triangle:
-{"type":"triangle","points":{"A":[x,y],"B":[x,y],"C":[x,y]},"rightAngleAt":"B","constraints":["right_angle_at_B"],"givens":["AB=3","BC=4"],"unknowns":["AC","angle_A"]}
-
-circle:
-{"type":"circle","center":[0,0],"radius":5,"points":{"A":[-5,0],"B":[5,0],"C":[0,5]},"constraints":["AB_is_diameter"],"givens":["radius=5"],"unknowns":["angle_ACB"]}
-
-parallel_lines:
-{"type":"parallel_lines","line1":[[0,0],[4,0]],"line2":[[0,3],[4,3]],"transversal":[[1,-1],[3,4]],"angleType":"alternate","constraints":["parallel_lines"],"givens":["angle_at_A=65"],"unknowns":["angle_at_B"]}
-
-coordinate_geometry:
-{"type":"coordinate_geometry","points":{"A":[1,2],"B":[5,6]},"constraints":[],"givens":["A=(1,2)","B=(5,6)"],"unknowns":["length","midpoint"]}
-
-════════════════════════════════════
-STRICT RULES:
-
-1. Coordinates: clean integers only (e.g. 0, 2, 4, -3). No decimals.
-2. Geometry MUST be valid:
-   - triangle: non-degenerate, all 3 sides > 0; if rightAngleAt set, dot product of edge vectors at that vertex = 0
-   - circle: every point in "points" must be exactly on the circle (distance to center = radius)
-   - parallel_lines: line1 and line2 MUST be horizontal (same y-direction); transversal slope between 0.5 and 2.0
-3. Labels: single letters ONLY — A, B, C, O, P, Q. NEVER "OABC", "AB65", or combined strings.
-4. givens[]: list of "KEY=value" strings for values visible in the diagram (e.g. "AB=3", "radius=5")
-5. unknowns[]: list of what the student must find (e.g. "AC", "angle_A", "angle_at_B")
-6. Output ONLY the JSON object — no markdown fences, no explanation.
-
-If you cannot make valid geometry → use "coordinate_geometry" as a safe fallback.`;
-
-      try {
-        const dslResponse = await ai.models.generateContent({
-          model,
-          contents: [{ role: "user", parts: [{ text: dslPrompt }] }],
-          config: {
-            responseMimeType: "application/json",
-            maxOutputTokens: 2048,
-            temperature: 0.2,
-          },
-        });
-        const candidate = safeJsonParse(dslResponse.text || "{}");
-        if (candidate && candidate.type) {
-          const v = validateDSL(candidate);
-          if (v.valid) {
-            onLog?.(`[DSL] Slot ${slotIndex} valid on attempt ${attempt + 1}`);
-            return candidate as DiagramDSL;
-          }
-          // Feed errors back into next attempt
-          prevErrors = v.errors.join("; ");
-          onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1} invalid: ${prevErrors}`);
-          s.diagramDSL = candidate;
-        } else {
-          prevErrors = "No valid type field in response";
-          onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1}: no type field`);
-        }
-      } catch (err) {
-        prevErrors = String(err);
-        onLog?.(`[DSL] Slot ${slotIndex} attempt ${attempt + 1} error: ${err}`);
+  function buildDeterministicDSL(
+    diagramType: string,
+    angleValue: number,   // e.g. 65 for parallel_lines, ignored for triangle
+    lengthA: number,      // e.g. 3 for AB
+    lengthB: number,      // e.g. 4 for BC
+  ): DiagramDSL {
+    switch (diagramType) {
+      case "circle": {
+        // Fixed template: AB is diameter, C on circumference at top
+        const r = Math.max(2, Math.min(6, lengthA)); // clamp radius to [2,6]
+        return {
+          type: "circle",
+          center: [0, 0],
+          radius: r,
+          points: { A: [-r, 0], B: [r, 0], C: [0, r] },
+          constraints: ["AB_is_diameter"],
+          givens: [`radius=${r}`],
+          unknowns: ["angle_ACB"],
+        };
+      }
+      case "parallel_lines": {
+        // Fixed template: two horizontal lines, transversal with slope ~1
+        const ang = Math.max(25, Math.min(75, angleValue)); // clamp to [25,75]
+        return {
+          type: "parallel_lines",
+          line1: [[0, 0], [5, 0]],
+          line2: [[0, 3], [5, 3]],
+          transversal: [[1, -1], [3, 4]],
+          angleType: "alternate",
+          constraints: ["parallel_lines"],
+          givens: [`angle_at_A=${ang}`],
+          unknowns: ["angle_at_B"],
+        };
+      }
+      case "coordinate_geometry": {
+        // Fixed template: two points with clean coordinates
+        const x2 = Math.max(2, Math.min(6, lengthA + 1));
+        const y2 = Math.max(2, Math.min(6, lengthB + 1));
+        return {
+          type: "coordinate_geometry",
+          points: { A: [0, 0], B: [x2, y2] },
+          constraints: [],
+          givens: [`A=(0,0)`, `B=(${x2},${y2})`],
+          unknowns: ["length", "midpoint"],
+        };
+      }
+      case "triangle":
+      default: {
+        // Fixed template: right-angled triangle at B with legs lengthA × lengthB
+        const a = Math.max(2, Math.min(8, lengthA));
+        const b = Math.max(2, Math.min(8, lengthB));
+        return {
+          type: "triangle",
+          points: { A: [0, a], B: [0, 0], C: [b, 0] },
+          rightAngleAt: "B",
+          constraints: ["right_angle_at_B"],
+          givens: [`AB=${a}`, `BC=${b}`],
+          unknowns: ["AC", "angle_A"],
+        };
       }
     }
-
-    onLog?.(`[DSL] Slot ${slotIndex} failed after ${MAX_DSL_RETRIES} attempts — fallback to non-diagram`);
-    return undefined;
   }
 
-  const slots: QuestionSlot[] = await Promise.all(
-    rawSlots.slice(0, config.count).map(async (s: any, i: number) => {
-      let diagramDSL: DiagramDSL | undefined;
-      if (s.diagramDSL && s.diagramDSL.type) {
-        const v = validateDSL(s.diagramDSL);
-        if (v.valid) {
-          diagramDSL = s.diagramDSL as DiagramDSL;
-        } else {
-          onLog?.(`[Phase 1] Slot ${i} DSL invalid (${v.errors.join("; ")}) — retrying DSL`);
-          diagramDSL = await generateDSLForSlot(s, i, v.errors.join("; "));
-        }
-      } else if (s.hasDiagram) {
-        onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no diagramDSL — generating DSL`);
-        diagramDSL = await generateDSLForSlot(s, i);
+  /**
+   * Asks AI for a diagram type + two integer values for the topic.
+   * This is the ONLY decision AI makes about the diagram — never coordinates.
+   * Falls back to sensible defaults if the call fails.
+   */
+  async function selectDiagramParams(s: any, slotIndex: number): Promise<{
+    diagramType: string;
+    angleValue: number;
+    lengthA: number;
+    lengthB: number;
+  }> {
+    const topicLower = (s.topic ?? "").toLowerCase();
+
+    // Infer diagram type from topic keywords — no AI needed for this
+    let diagramType = "triangle";
+    if (/circle|arc|chord|diameter|radius|tangent|inscribed|semicircle/i.test(topicLower)) {
+      diagramType = "circle";
+    } else if (/parallel|transversal|alternate|corresponding|co.interior|z.angle|f.angle/i.test(topicLower)) {
+      diagramType = "parallel_lines";
+    } else if (/coordinate|gradient|midpoint|distance|locus|line.*equation/i.test(topicLower)) {
+      diagramType = "coordinate_geometry";
+    }
+
+    // Ask AI for values only — NOT coordinates
+    try {
+      const valPrompt = `You are choosing numeric values for a Cambridge IGCSE ${config.subject} diagram.
+
+Topic: "${s.topic}"
+Diagram type: "${diagramType}"
+
+Return ONLY JSON with these fields:
+- "angleValue": integer between 25 and 75 (for parallel_lines questions)
+- "lengthA": integer between 2 and 8 (first length/radius)
+- "lengthB": integer between 2 and 8 (second length, must differ from lengthA)
+
+Choose values that produce an interesting, non-trivial ${config.difficulty} question.
+Return ONLY the JSON object. No text.`;
+
+      const valResponse = await ai.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: valPrompt }] }],
+        config: { responseMimeType: "application/json", maxOutputTokens: 128, temperature: 0.5 },
+      });
+      const vals = safeJsonParse(valResponse.text || "{}");
+      const angle = Number(vals.angleValue);
+      const la    = Number(vals.lengthA);
+      const lb    = Number(vals.lengthB);
+
+      if (angle >= 25 && angle <= 75 && la >= 2 && la <= 8 && lb >= 2 && lb <= 8 && la !== lb) {
+        onLog?.(`[DSL] Slot ${slotIndex}: type=${diagramType} angle=${angle} la=${la} lb=${lb}`);
+        return { diagramType, angleValue: angle, lengthA: la, lengthB: lb };
       }
-      return {
-        index: i,
-        topic: s.topic ?? config.topic,
-        questionType: (validTypes.includes(s.questionType)
-          ? s.questionType
-          : cleanType === "mixed"
-            ? "short_answer"
-            : cleanType) as QuestionSlot["questionType"],
-        hasDiagram: Boolean(s.hasDiagram) && !!diagramDSL,
-        diagramDSL,
-      };
-    }),
-  );
+    } catch {
+      /* fall through to defaults */
+    }
+
+    // Defaults: vary by slot index for diversity
+    const defaults = [
+      { angleValue: 65, lengthA: 3, lengthB: 4 },
+      { angleValue: 55, lengthA: 5, lengthB: 12 },
+      { angleValue: 40, lengthA: 6, lengthB: 8 },
+      { angleValue: 70, lengthA: 4, lengthB: 7 },
+    ];
+    const d = defaults[slotIndex % defaults.length];
+    onLog?.(`[DSL] Slot ${slotIndex}: using defaults — type=${diagramType} angle=${d.angleValue} la=${d.lengthA} lb=${d.lengthB}`);
+    return { diagramType, ...d };
+  }
+
+  // ── Slot normalisation — SEQUENTIAL (rate-limit safe) ───────────────────────
+  // Rule: AI never creates geometry. For diagram slots:
+  //   1. If Phase 1 returned a valid DSL → use it directly
+  //   2. If DSL missing/invalid → select params (tiny AI call) + build deterministically
+  // All slots processed one-by-one to avoid rate limit bursts.
+
+  const slots: QuestionSlot[] = [];
+  for (let i = 0; i < Math.min(rawSlots.length, config.count); i++) {
+    const s = rawSlots[i];
+    let diagramDSL: DiagramDSL | undefined;
+
+    if (s.diagramDSL && s.diagramDSL.type) {
+      const v = validateDSL(s.diagramDSL);
+      if (v.valid) {
+        diagramDSL = s.diagramDSL as DiagramDSL;
+        onLog?.(`[DSL] Slot ${i}: Phase 1 DSL valid — using directly`);
+      } else {
+        onLog?.(`[DSL] Slot ${i}: Phase 1 DSL invalid (${v.errors.join("; ")}) — building deterministically`);
+        const params = await selectDiagramParams(s, i);
+        diagramDSL = buildDeterministicDSL(params.diagramType, params.angleValue, params.lengthA, params.lengthB);
+      }
+    } else if (s.hasDiagram) {
+      onLog?.(`[DSL] Slot ${i}: no DSL from Phase 1 — building deterministically`);
+      const params = await selectDiagramParams(s, i);
+      diagramDSL = buildDeterministicDSL(params.diagramType, params.angleValue, params.lengthA, params.lengthB);
+    }
+
+    // Verify the built DSL is valid (should always be — templates are pre-validated)
+    if (diagramDSL) {
+      const v = validateDSL(diagramDSL);
+      if (!v.valid) {
+        onLog?.(`[DSL] Slot ${i}: deterministic DSL failed validation (${v.errors.join("; ")}) — no diagram`);
+        diagramDSL = undefined;
+      }
+    }
+
+    slots.push({
+      index: i,
+      topic: s.topic ?? config.topic,
+      questionType: (validTypes.includes(s.questionType)
+        ? s.questionType
+        : cleanType === "mixed"
+          ? "short_answer"
+          : cleanType) as QuestionSlot["questionType"],
+      hasDiagram: Boolean(s.hasDiagram) && !!diagramDSL,
+      diagramDSL,
+    });
+
+    // Small pause between slots to avoid rate limit bursts
+    if (i < config.count - 1) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
 
   // ── Phase 2 shared config ────────────────────────────────────────────────────
 
@@ -1354,22 +1418,21 @@ RULES:
   const dslSlots    = slots.filter((s) => s.hasDiagram && s.diagramDSL);
   const nonDslSlots = slots.filter((s) => !s.hasDiagram || !s.diagramDSL);
 
-  // Write DSL questions in parallel (each focused on one DSL)
-  const dslResults = await Promise.all(
-    dslSlots.map(async (slot) => {
-      const sol = solveDSL(slot.diagramDSL!);
-      onLog?.(`[Phase 2] Q${slot.index + 1}: writing DSL question (${slot.diagramDSL!.type})`);
-      const q = await writeQuestionFromDSL(slot, sol);
-      return { index: slot.index, q };
-    }),
-  );
-
-  // Write non-DSL questions in one batch
-  const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
-
-  // Reassemble in original slot order
+  // Write DSL questions SEQUENTIALLY — one focused call per question.
+  // Sequential execution prevents rate limit bursts and keeps each prompt minimal.
   const rawQuestionsMap: Record<number, any> = {};
-  for (const { index, q } of dslResults) rawQuestionsMap[index] = q;
+  for (let di = 0; di < dslSlots.length; di++) {
+    const slot = dslSlots[di];
+    const sol = solveDSL(slot.diagramDSL!);
+    onLog?.(`[Phase 2] Q${slot.index + 1}: writing DSL question (${slot.diagramDSL!.type})`);
+    const q = await writeQuestionFromDSL(slot, sol);
+    rawQuestionsMap[slot.index] = q;
+    // Rate limit protection between questions
+    if (di < dslSlots.length - 1) await new Promise((r) => setTimeout(r, 500));
+  }
+
+  // Write non-DSL questions in one batch (no diagram = no heavy DSL context)
+  const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
   nonDslSlots.forEach((slot, batchIdx) => { rawQuestionsMap[slot.index] = nonDslResults[batchIdx]; });
 
   const rawQuestions = { questions: slots.map((s) => rawQuestionsMap[s.index]).filter(Boolean) };
