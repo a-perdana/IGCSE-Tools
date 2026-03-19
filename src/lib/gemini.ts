@@ -15,7 +15,7 @@ import {
 } from "./sanitize";
 import { parseJsonWithRecovery } from "./json";
 import { renderDiagramFromDSL } from "../components/RichEditor/diagramEngine";
-import { validateDSL, solveDSL, coerceToDSL } from "./mathEngine";
+import { validateDSL, solveDSL, computeAnswerFromDSL, detectRogueNumbers, generateMarkSchemeFromDSL, checkDiagramDependency } from "./mathEngine";
 import type { DiagramDSL } from "./mathEngine";
 
 function getAI(apiKey?: string) {
@@ -30,23 +30,6 @@ function getAI(apiKey?: string) {
   return new GoogleGenAI({ apiKey });
 }
 
-function requiresDiagramData(q: QuestionItem): boolean {
-  if (!q.diagramData) return true;
-
-  const text = q.text.toLowerCase();
-  const dataStr = JSON.stringify(q.diagramData);
-
-  // If diagram values are directly copied into text → diagram is useless
-  const keyNumbers = dataStr.match(/-?\d+(\.\d+)?/g) || [];
-
-  let copiedCount = 0;
-  keyNumbers.forEach((n) => {
-    if (text.includes(n)) copiedCount++;
-  });
-
-  // If too many diagram values appear in text → BAD (threshold 80%)
-  return copiedCount < keyNumbers.length * 0.8;
-}
 
 function hasMultiStepStructure(q: QuestionItem): boolean {
   return (
@@ -120,8 +103,9 @@ export function enforceQuestionQuality(q: QuestionItem): {
   }
 
   // 1.5 FAKE DIAGRAM DEPENDENCY
-  if (q.hasDiagram && !requiresDiagramData(q)) {
-    reasons.push("Diagram data is duplicated in text → diagram not required.");
+  // Uses DSL-based check: if all unknown values appear in text, diagram is redundant.
+  if (q.hasDiagram && q.diagramDSL && !checkDiagramDependency(q.text, q.diagramDSL)) {
+    reasons.push("Diagram dependency violated — all unknown values already present in question text.");
   }
 
   // 2. MULTI-STEP CHECK & 6. DIFFICULTY ENFORCER
@@ -188,6 +172,16 @@ const DIFFICULTY_CODES: Record<string, string> = {
   Balanced: "BAL",
 };
 
+/** Deterministic short hash — no Math.random(). */
+function deterministicId(seed: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return h.toString(36).toUpperCase().padStart(4, "0").substring(0, 4);
+}
+
 export function generateAssessmentCode(
   subject: string,
   difficulty: string,
@@ -195,7 +189,7 @@ export function generateAssessmentCode(
   const subj = SUBJECT_CODES[subject] ?? subject.substring(0, 3).toUpperCase();
   const diff =
     DIFFICULTY_CODES[difficulty] ?? difficulty.substring(0, 3).toUpperCase();
-  const shortId = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const shortId = deterministicId(`${subject}-${difficulty}-${Date.now()}`);
   return `${subj}-${diff}-${shortId}`;
 }
 
@@ -725,7 +719,7 @@ export async function regenerateDiagramsForQuestions(
   subject: string,
   model: string = "gemini-2.0-flash",
   apiKey?: string,
-  onUsage?: UsageCallback,
+  _onUsage?: UsageCallback,
   onLog?: (msg: string) => void,
 ): Promise<Array<{ id: string; diagram: TikzSpec }>> {
   const ai = getAI(apiKey);
@@ -973,22 +967,19 @@ Return EXACTLY ${config.count} slots.`;
     onRetry,
   );
 
-  // Normalise slots — coerce raw diagramData → validated DiagramDSL
+  // Normalise slots — DSL only; legacy diagramData path is removed.
   const validTypes = ["mcq", "short_answer", "structured"];
   const slots: QuestionSlot[] = rawSlots.slice(0, config.count).map((s: any, i: number) => {
-    // Build DSL: prefer explicit diagramDSL, otherwise coerce legacy diagramData
     let diagramDSL: DiagramDSL | undefined;
     if (s.diagramDSL && s.diagramDSL.type) {
       const v = validateDSL(s.diagramDSL);
-      if (v.valid) diagramDSL = s.diagramDSL as DiagramDSL;
-      else onLog?.(`[Phase 1] Slot ${i} diagramDSL invalid: ${v.errors.join("; ")}`);
-    } else if (s.diagramData && s.diagramType) {
-      const coerced = coerceToDSL(s.diagramType, s.diagramData);
-      if (coerced) {
-        const v = validateDSL(coerced);
-        if (v.valid) diagramDSL = coerced;
-        else onLog?.(`[Phase 1] Slot ${i} coerced DSL invalid: ${v.errors.join("; ")}`);
+      if (v.valid) {
+        diagramDSL = s.diagramDSL as DiagramDSL;
+      } else {
+        onLog?.(`[Phase 1] Slot ${i} DSL invalid — diagram dropped: ${v.errors.join("; ")}`);
       }
+    } else if (s.hasDiagram) {
+      onLog?.(`[Phase 1] Slot ${i} hasDiagram=true but no valid diagramDSL — diagram dropped`);
     }
     return {
       index: i,
@@ -1007,16 +998,44 @@ Return EXACTLY ${config.count} slots.`;
 
   onLog?.("Phase 2: writing questions…");
 
-  // Build per-slot diagram context to inject into the Phase 2 prompt
+  // Build per-slot diagram context to inject into the Phase 2 prompt.
+  // Values are computed deterministically and injected as named constants.
+  // AI may ONLY use the listed GIVEN values in question text.
+  // UNKNOWN values must NEVER appear in question text.
   const slotDescriptions = slots
     .map((s) => {
       let desc = `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"${s.hasDiagram ? " (has diagram)" : ""}`;
       if (s.hasDiagram && s.diagramDSL) {
-        // Compute all values deterministically — hand these to AI for question wording
         const sol = solveDSL(s.diagramDSL);
-        desc += `\n   DIAGRAM DSL (single source of truth): ${JSON.stringify(s.diagramDSL)}`;
-        desc += `\n   COMPUTED VALUES (use these in question — do NOT invent other numbers): ${JSON.stringify(sol)}`;
-        desc += `\n   RULE: unknowns (${(s.diagramDSL.unknowns ?? []).join(", ")}) must NOT appear in question text — student reads them from diagram.`;
+        const dsl = s.diagramDSL;
+
+        // Build a flat named-value block for the givens only
+        const givenLines: string[] = [];
+        (dsl.givens ?? []).forEach((g) => givenLines.push(`  ${g}`));
+        // Also expose point coordinates as named pairs for context
+        const pts = dsl.points ?? {};
+        Object.entries(pts).forEach(([name, pt]) => {
+          givenLines.push(`  ${name} = (${pt[0]}, ${pt[1]})`);
+        });
+        if (dsl.radius !== undefined) givenLines.push(`  radius = ${dsl.radius}`);
+
+        // Unknown values — computed, for AI to reference in answer/wording only if allowed
+        const unknownLines: string[] = [];
+        (dsl.unknowns ?? []).forEach((u) => {
+          const v = sol.values[u];
+          if (v !== undefined) {
+            unknownLines.push(`  ${u} = ${Array.isArray(v) ? `(${v[0]}, ${v[1]})` : v} ← computed by mathEngine — STUDENT MUST FIND THIS`);
+          }
+        });
+
+        desc += `\n   DIAGRAM DSL: ${JSON.stringify(dsl)}`;
+        desc += `\n   ━━━ GIVEN VALUES (you MAY reference these in the question text) ━━━\n${givenLines.join("\n")}`;
+        desc += `\n   ━━━ UNKNOWN VALUES (DO NOT write these in text — student finds them) ━━━\n${unknownLines.join("\n")}`;
+        desc += `\n   ━━━ STRICT RULES ━━━`;
+        desc += `\n   • You MUST use ONLY the given values above — do NOT invent any new number`;
+        desc += `\n   • The unknown values are what the student must compute — never mention them in question text`;
+        desc += `\n   • The 'answer' field: write a brief METHOD description only (e.g. "Apply Pythagoras' theorem") — no numbers`;
+        desc += `\n   • The 'markScheme' field: leave empty — it will be generated deterministically`;
       }
       return desc;
     })
@@ -1115,7 +1134,15 @@ WRITING RULES:
 
 9. difficultyStars: 1 | 2 | 3
 
-10. marks: integer. MCQ always 1. Short answer 1–3. Structured = sum of sub-parts.`;
+10. marks: integer. MCQ always 1. Short answer 1–3. Structured = sum of sub-parts.
+
+ANSWER FIELD RULES (CRITICAL):
+- MCQ: "answer" = single letter only: "A", "B", "C", or "D". Nothing else.
+- short_answer / structured: "answer" = a brief WORDING ONLY description of the method
+  (e.g. "Use Pythagoras' theorem and angle sum property").
+  DO NOT write numeric values in the answer field.
+  The system will compute and inject the correct numeric answer automatically.
+  Writing a number in the answer field for non-MCQ will be overridden and discarded.`;
 
   const phase2SystemInstruction = `You are a Senior Cambridge IGCSE Chief Examiner for ${config.subject} with 20+ years of experience.
 
@@ -1216,10 +1243,53 @@ ASSESSMENT OBJECTIVES:
     const sanitized = sanitizeQuestion(q);
     const slot = slots[i];
     const hasDiagram = slot?.hasDiagram || sanitized.hasDiagram;
+    const dsl = slot?.diagramDSL;
+
+    // ── MATH ENGINE ENFORCEMENT ──────────────────────────────────────────────
+    // For non-MCQ with a DSL: answer and markScheme are ALWAYS from mathEngine.
+    // AI-generated values are discarded entirely.
+    let enforcedAnswer = sanitized.answer;
+    let enforcedMarkScheme = sanitized.markScheme;
+
+    if (dsl && sanitized.type !== "mcq") {
+      const computedAns = computeAnswerFromDSL(dsl);
+      if (computedAns) {
+        enforcedAnswer = computedAns;
+        onLog?.(`[Enforce] Q${i + 1}: answer set from mathEngine → ${computedAns}`);
+      }
+      const computedMS = generateMarkSchemeFromDSL(dsl);
+      if (computedMS) {
+        enforcedMarkScheme = computedMS;
+        onLog?.(`[Enforce] Q${i + 1}: markScheme set from mathEngine (${computedMS.split("\n").length} lines)`);
+      }
+    }
+
+    // ── ROGUE NUMBER HARD REJECTION ──────────────────────────────────────────
+    // If AI invented numbers not in the DSL, flag the question so the UI
+    // surfaces it as broken. Do NOT silently pass.
+    if (dsl) {
+      const rogues = detectRogueNumbers(sanitized.text, dsl);
+      if (rogues.length > 0) {
+        onLog?.(`[REJECT] Q${i + 1}: rogue numbers in text: ${rogues.join(", ")} — flagged`);
+        (sanitized as any).diagramMissing = true;
+        (sanitized as any).rogueNumbers = rogues;
+      }
+
+      // ── DIAGRAM DEPENDENCY HARD CHECK ─────────────────────────────────────
+      // At least one unknown value must be absent from the question text.
+      // If all unknowns appear in the text, the diagram is not actually required.
+      if (hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) {
+        onLog?.(`[REJECT] Q${i + 1}: diagram dependency violated — all unknown values present in text`);
+        (sanitized as any).diagramMissing = true;
+      }
+    }
+
     return {
       ...sanitized,
+      answer: enforcedAnswer,
+      markScheme: enforcedMarkScheme,
       hasDiagram,
-      ...(slot?.diagramDSL ? { diagramDSL: slot.diagramDSL } : {}),
+      ...(dsl ? { diagramDSL: dsl } : {}),
       id: crypto.randomUUID(),
       code: sharedGenerateQuestionCode(config.subject, {
         text: sanitized.text,
@@ -1420,13 +1490,36 @@ async function regenerateSingleQuestion(
     if (!parsed.text) return null;
 
     const sanitized = sanitizeQuestion(parsed);
+    const dsl = original.diagramDSL;
+
+    // Re-enforce answer and markScheme from mathEngine — AI regeneration is wording-only
+    let enforcedAnswer = sanitized.answer;
+    let enforcedMarkScheme = sanitized.markScheme;
+    if (dsl && sanitized.type !== "mcq") {
+      const computedAns = computeAnswerFromDSL(dsl);
+      if (computedAns) enforcedAnswer = computedAns;
+      const computedMS = generateMarkSchemeFromDSL(dsl);
+      if (computedMS) enforcedMarkScheme = computedMS;
+    }
+
+    // Rogue number + diagram dependency checks on regenerated text
+    let diagramMissing = false;
+    if (dsl) {
+      const rogues = detectRogueNumbers(sanitized.text, dsl);
+      if (rogues.length > 0) diagramMissing = true;
+      if (original.hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) diagramMissing = true;
+    }
+
     const updated: QuestionItem = {
       ...sanitized,
+      answer: enforcedAnswer,
+      markScheme: enforcedMarkScheme,
       id: original.id,
       code: original.code,
       diagram: undefined,
-      ...(original.diagramDSL ? { diagramDSL: original.diagramDSL } : {}),
+      ...(dsl ? { diagramDSL: dsl } : {}),
       hasDiagram: original.hasDiagram,
+      ...(diagramMissing ? { diagramMissing } : {}),
     };
 
     if (original.hasDiagram && original.diagramDSL) {
@@ -1568,10 +1661,36 @@ TASK:
   return (raw.questions ?? []).map((q, i) => {
     const sanitized = sanitizeQuestion(q);
     const existing = questions[i];
+    const dsl = existing?.diagramDSL;
+
+    // Always re-enforce answer and markScheme from mathEngine — critique may rewrite
+    // text/markScheme, but computed values are the single source of truth.
+    let enforcedAnswer = sanitized.answer;
+    let enforcedMarkScheme = sanitized.markScheme;
+    if (dsl && sanitized.type !== "mcq") {
+      const computedAns = computeAnswerFromDSL(dsl);
+      if (computedAns) enforcedAnswer = computedAns;
+      const computedMS = generateMarkSchemeFromDSL(dsl);
+      if (computedMS) enforcedMarkScheme = computedMS;
+    }
+
+    // Rogue number + diagram dependency checks after critique rewrite
+    let diagramMissing = existing?.diagramMissing ?? false;
+    if (dsl) {
+      const rogues = detectRogueNumbers(sanitized.text, dsl);
+      if (rogues.length > 0) diagramMissing = true;
+      const hasDiagram = existing?.hasDiagram ?? sanitized.hasDiagram;
+      if (hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) diagramMissing = true;
+    }
+
     return {
       ...sanitized,
+      answer: enforcedAnswer,
+      markScheme: enforcedMarkScheme,
       diagram: existing?.diagram,
       hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
+      ...(dsl ? { diagramDSL: dsl } : {}),
+      ...(diagramMissing ? { diagramMissing } : {}),
       id: existing?.id ?? crypto.randomUUID(),
       code:
         existing?.code ??

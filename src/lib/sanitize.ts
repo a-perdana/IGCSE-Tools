@@ -191,6 +191,16 @@ export function repairQuestionItem<T extends QuestionItem>(q: T): T {
   } as T;
 }
 
+/** Deterministic short hash from a seed string — no Math.random(). */
+function deterministicId(seed: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return h.toString(36).toUpperCase().padStart(4, "0").substring(0, 4);
+}
+
 /** Generate a short question code like MAT-C4.1-A4BF. */
 export function generateQuestionCode(
   subject: string,
@@ -204,6 +214,7 @@ export function generateQuestionCode(
     /Syllabus Reference[:\s]+([A-Za-z]?\d+(?:\.\d+)*)/i,
   )?.[1];
   const syl = fromObjective ?? fromText ?? "GEN";
-  const shortId = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const seed = `${subject}-${syl}-${opts.text?.substring(0, 40) ?? ""}-${Date.now()}`;
+  const shortId = deterministicId(seed);
   return `${subj}-${syl}-${shortId}`;
 }

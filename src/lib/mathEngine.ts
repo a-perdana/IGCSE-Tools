@@ -484,6 +484,264 @@ export function solveDSL(dsl: DiagramDSL): DSLSolution {
   return { valid: true, errors: [], values };
 }
 
+// ── Mark scheme generation (deterministic — no AI) ────────────────────────────
+
+/**
+ * Generates a Cambridge-style mark scheme from the DSL and its solution.
+ *
+ * Rules:
+ *   triangle  → Pythagoras / angle-sum / trigonometry steps
+ *   circle    → theorem identification + application + answer
+ *   parallel  → angle rule + application + answer
+ *   coord_geom→ formula + substitution + answer
+ *
+ * Returns null only if the DSL is invalid or has no unknowns.
+ */
+export function generateMarkSchemeFromDSL(dsl: DiagramDSL): string | null {
+  const sol = solveDSL(dsl);
+  if (!sol.valid || (dsl.unknowns ?? []).length === 0) return null;
+
+  const unknowns = dsl.unknowns!;
+  const vals = sol.values;
+  const lines: string[] = [];
+
+  switch (dsl.type) {
+    case "triangle": {
+      const tri = sol.triangle!;
+      const isRight = dsl.rightAngleAt !== undefined ||
+        (dsl.constraints ?? []).some((c) => c.toLowerCase().includes("right_angle"));
+
+      for (const u of unknowns) {
+        if (u === "AC" || u === "BC" || u === "AB" || u === "CA") {
+          if (isRight) {
+            const given = dsl.givens ?? [];
+            const side1 = given[0]?.match(/=(\d+(?:\.\d+)?)/)?.[1] ?? "a";
+            const side2 = given[1]?.match(/=(\d+(?:\.\d+)?)/)?.[1] ?? "b";
+            lines.push(`M1: Applies Pythagoras' theorem: $${u}^2 = ${side1}^2 + ${side2}^2$`);
+            lines.push(`A1: Correct substitution`);
+          } else {
+            lines.push(`M1: Applies cosine rule or correct geometric method to find $${u}$`);
+            lines.push(`A1: Correct substitution`);
+          }
+          const answer = vals[u];
+          if (answer !== undefined) {
+            lines.push(`A1: $${u} = ${answer}$ (accept ${u} = ${answer} cm or equivalent units)`);
+          }
+        } else if (u.startsWith("angle_")) {
+          const vertex = u.replace("angle_", "");
+          if (isRight) {
+            lines.push(`B1: Identifies right angle at ${dsl.rightAngleAt ?? "vertex"}`);
+            lines.push(`M1: Uses angle sum of triangle: angles sum to $180°$`);
+          } else {
+            lines.push(`M1: Applies sine rule or angle-sum property to find angle at $${vertex}$`);
+          }
+          const answer = vals[u];
+          if (answer !== undefined) {
+            lines.push(`A1: Angle $${vertex} = ${answer}°$`);
+          }
+        } else if (u === "area") {
+          lines.push(`M1: Uses area formula $\\frac{1}{2} \\times base \\times height$ or $\\frac{1}{2}ab\\sin C$`);
+          const answer = vals["area"];
+          if (answer !== undefined) lines.push(`A1: Area $= ${answer}$ cm$^2$`);
+        } else if (u === "perimeter") {
+          lines.push(`M1: Sums all three sides correctly`);
+          const answer = vals["perimeter"];
+          if (answer !== undefined)
+            lines.push(`A1: Perimeter $= ${answer}$ cm`);
+        } else {
+          lines.push(`M1: Identifies correct method for $${u}$`);
+          const answer = vals[u];
+          if (answer !== undefined) lines.push(`A1: $${u} = ${answer}$`);
+        }
+      }
+      break;
+    }
+
+    case "circle": {
+      const cir = sol.circle!;
+      for (const u of unknowns) {
+        if (u === "angle_ACB" || u === "inscribed_angle") {
+          const isDiameter = cir.isDiameter;
+          if (isDiameter) {
+            lines.push(`B1: States angle in a semicircle $= 90°$ (Thales' theorem)`);
+            lines.push(`A1: Angle $ACB = 90°$`);
+          } else {
+            lines.push(`B1: States inscribed angle theorem: inscribed angle $=$ half central angle`);
+            const ang = vals["inscribed_angle"] ?? vals["central_angle"];
+            if (ang !== undefined)
+              lines.push(`A1: Angle $= ${ang}°$`);
+          }
+        } else if (u === "central_angle") {
+          lines.push(`B1: Identifies central angle subtended by arc $AB$`);
+          lines.push(`M1: Applies central angle formula`);
+          const ang = vals["central_angle"];
+          if (ang !== undefined) lines.push(`A1: Central angle $= ${ang}°$`);
+        } else if (u === "circumference") {
+          lines.push(`M1: Uses $C = 2\\pi r$ with $r = ${dsl.radius}$`);
+          lines.push(`A1: $C = ${vals["circumference"]}$ cm (allow $2\\pi \\times ${dsl.radius}$)`);
+        } else if (u === "area") {
+          lines.push(`M1: Uses $A = \\pi r^2$ with $r = ${dsl.radius}$`);
+          lines.push(`A1: $A = ${vals["area"]}$ cm$^2$`);
+        } else {
+          lines.push(`M1: Identifies correct circle theorem or formula for $${u}$`);
+          const answer = vals[u];
+          if (answer !== undefined) lines.push(`A1: $${u} = ${answer}$`);
+        }
+      }
+      break;
+    }
+
+    case "parallel_lines": {
+      const par = sol.parallelLines!;
+      const rule =
+        dsl.angleType === "alternate"
+          ? "alternate angles (Z-angles) are equal"
+          : dsl.angleType === "corresponding"
+            ? "corresponding angles (F-angles) are equal"
+            : dsl.angleType === "co-interior"
+              ? "co-interior angles sum to $180°$"
+              : "parallel line angle relationship";
+
+      for (const u of unknowns) {
+        lines.push(`B1: States correct angle rule: ${rule}`);
+        const answer =
+          u.includes("angle_at_B") || u.includes("alternate") ? par.alternateAngle :
+          u.includes("corresponding") ? par.correspondingAngle :
+          u.includes("co_interior") || u.includes("co-interior") ? par.coInteriorAngle :
+          vals[u];
+        if (answer !== undefined)
+          lines.push(`A1: $${u} = ${answer}°$`);
+        else
+          lines.push(`M1: Applies rule correctly`);
+      }
+      break;
+    }
+
+    case "coordinate_geometry": {
+      const cg = sol.coordGeom!;
+      for (const u of unknowns) {
+        if (u === "length") {
+          lines.push(`M1: Uses distance formula $d = \\sqrt{(x_2-x_1)^2+(y_2-y_1)^2}$`);
+          lines.push(`A1: Correct substitution`);
+          lines.push(`A1: $d = ${vals["length"]}$ units`);
+        } else if (u === "midpoint") {
+          lines.push(`M1: Uses midpoint formula $M = \\left(\\frac{x_1+x_2}{2}, \\frac{y_1+y_2}{2}\\right)$`);
+          const mp = vals["midpoint"];
+          if (Array.isArray(mp))
+            lines.push(`A1: $M = (${mp[0]}, ${mp[1]})$`);
+        } else if (u === "slope") {
+          lines.push(`M1: Uses gradient formula $m = \\frac{y_2-y_1}{x_2-x_1}$`);
+          lines.push(`A1: $m = ${vals["slope"]}$`);
+        } else {
+          lines.push(`M1: Applies correct formula for $${u}$`);
+          const answer = vals[u];
+          if (answer !== undefined) lines.push(`A1: $${u} = ${answer}$`);
+        }
+      }
+      break;
+    }
+  }
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/**
+ * Derives a canonical answer string from the DSL solution's unknowns.
+ * Returns null if DSL is invalid or has no unknowns.
+ *
+ * The returned string is the AUTHORITATIVE answer — it overrides any AI output.
+ */
+export function computeAnswerFromDSL(dsl: DiagramDSL): string | null {
+  const sol = solveDSL(dsl);
+  if (!sol.valid || Object.keys(sol.values).length === 0) return null;
+  const unknowns = dsl.unknowns ?? [];
+  if (unknowns.length === 0) return null;
+
+  const parts: string[] = [];
+  for (const key of unknowns) {
+    const val = sol.values[key];
+    if (val === undefined) continue;
+    if (Array.isArray(val)) {
+      // Point value
+      parts.push(`${key} = (${val[0]}, ${val[1]})`);
+    } else {
+      parts.push(`${key} = ${val}`);
+    }
+  }
+  return parts.length > 0 ? parts.join("; ") : null;
+}
+
+/**
+ * Hard diagram-dependency check.
+ *
+ * For a diagram to be genuinely required, at least one unknown value computed
+ * by the mathEngine must NOT appear in the question text (the student must
+ * extract it visually from the diagram, not read it from the text).
+ *
+ * Returns true  → diagram dependency satisfied (at least one hidden value)
+ * Returns false → all unknown values are already written in the text (broken)
+ */
+export function checkDiagramDependency(
+  questionText: string,
+  dsl: DiagramDSL,
+): boolean {
+  const sol = solveDSL(dsl);
+  if (!sol.valid) return false;
+  const unknowns = dsl.unknowns ?? [];
+  if (unknowns.length === 0) return false;
+
+  // At least one unknown value must be absent from the question text
+  for (const key of unknowns) {
+    const v = sol.values[key];
+    if (v === undefined) continue;
+    const numStr = Array.isArray(v) ? null : String(v);
+    if (numStr && !questionText.includes(numStr)) return true; // found a hidden value
+  }
+  return false; // every computed unknown is already written in the text
+}
+
+/**
+ * Validates that the question text does not contain numbers that are NOT in
+ * the DSL (i.e. AI invented values not present in the diagram).
+ *
+ * Returns a list of "rogue" numbers found in text but absent from DSL.
+ */
+export function detectRogueNumbers(
+  questionText: string,
+  dsl: DiagramDSL,
+): number[] {
+  const sol = solveDSL(dsl);
+  const dslNumbers = new Set<string>();
+
+  // Collect all numeric strings from DSL values
+  const addNumbers = (v: unknown) => {
+    if (typeof v === "number") dslNumbers.add(String(v));
+    else if (Array.isArray(v)) v.forEach(addNumbers);
+    else if (typeof v === "string" && !isNaN(Number(v))) dslNumbers.add(v);
+  };
+  Object.values(sol.values).forEach(addNumbers);
+
+  // Also include raw givens from DSL
+  (dsl.givens ?? []).forEach((g) => {
+    const m = g.match(/-?\d+(?:\.\d+)?/g);
+    if (m) m.forEach((n) => dslNumbers.add(n));
+  });
+  if (dsl.radius !== undefined) dslNumbers.add(String(dsl.radius));
+
+  // Extract numbers from question text (skip year-like 4-digit numbers)
+  const textNumbers = (questionText.match(/-?\d+(?:\.\d+)?/g) ?? []).filter(
+    (n) => !/^\d{4}$/.test(n),
+  );
+
+  const rogue: number[] = [];
+  for (const n of textNumbers) {
+    if (!dslNumbers.has(n)) {
+      rogue.push(Number(n));
+    }
+  }
+  return rogue;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function isValidPoint(p: unknown): p is Point {
