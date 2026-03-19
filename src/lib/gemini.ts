@@ -28,6 +28,123 @@ function getAI(apiKey?: string) {
   return new GoogleGenAI({ apiKey });
 }
 
+function requiresDiagramData(q: QuestionItem): boolean {
+  if (!q.diagramData) return true;
+
+  const text = q.text.toLowerCase();
+  const dataStr = JSON.stringify(q.diagramData);
+
+  // If diagram values are directly copied into text → diagram is useless
+  const keyNumbers = dataStr.match(/-?\d+(\.\d+)?/g) || [];
+
+  let copiedCount = 0;
+  keyNumbers.forEach(n => {
+    if (text.includes(n)) copiedCount++;
+  });
+
+  // If too many diagram values appear in text → BAD
+  return copiedCount < keyNumbers.length * 0.6;
+}
+
+function hasMultiStepStructure(q: QuestionItem): boolean {
+  return (
+    q.text.includes("(a)") ||
+    q.text.includes("(b)") ||
+    /show that|hence|deduce|explain why/i.test(q.text)
+  );
+}
+
+function requiresGeometricUse(q: QuestionItem): boolean {
+  const text = q.text.toLowerCase();
+  return (
+    /angle|triangle|circle|radius|diameter|parallel|line/.test(text) &&
+    /calculate|determine|deduce|show|prove|justify/.test(text)
+  );
+}
+
+function hasCognitiveLoad(q: QuestionItem): boolean {
+  return (
+    q.text.split(".").length >= 2 || // multi-sentence
+    q.text.includes("(a)") ||
+    q.text.includes("(b)") ||
+    /hence|deduce|explain why|show that/i.test(q.text)
+  );
+}
+
+function isAStarLevel(q: QuestionItem): boolean {
+  return (
+    q.marks >= 3 &&
+    hasMultiStepStructure(q) &&
+    hasCognitiveLoad(q) &&
+    /deduce|justify|prove|show that|explain/i.test(q.text)
+  );
+}
+
+function requiresDiagramExtraction(q: QuestionItem): boolean {
+  return !q.text.toLowerCase().includes("given") && q.hasDiagram;
+}
+
+/**
+ * Hard Validation Layer for Cambridge IGCSE A* Quality
+ */
+export function enforceQuestionQuality(q: QuestionItem): {
+  isValid: boolean;
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+
+  // 1. DIAGRAM DEPENDENCY
+  if (q.hasDiagram) {
+    const diagramRefs = /\b(diagram|figure|shown|point\s+[A-Z]|angle\s+[A-Z]{2,3}|triangle\s+[A-Z]{3})\b/i;
+    if (!diagramRefs.test(q.text)) {
+      reasons.push("Diagram provided but not referenced in text (must use 'diagram', 'figure', or specific points).");
+    }
+
+    if (!requiresGeometricUse(q)) {
+      reasons.push("Diagram is mentioned but not used geometrically.");
+    }
+  }
+
+  // 1.5 FAKE DIAGRAM DEPENDENCY
+  if (q.hasDiagram && !requiresDiagramData(q)) {
+    reasons.push("Diagram data is duplicated in text → diagram not required.");
+  }
+
+  // 2. MULTI-STEP CHECK & 6. DIFFICULTY ENFORCER
+  const reasoningVerbs = /\b(explain|deduce|determine|justify|show|prove|calculate)\b/i;
+  if (q.marks <= 2 && !reasoningVerbs.test(q.commandWord || "") && !reasoningVerbs.test(q.text)) {
+    reasons.push("Question is too simple (low marks and no reasoning required).");
+  }
+
+  if (q.type !== 'mcq' && !hasMultiStepStructure(q)) {
+    reasons.push("Question lacks multi-step reasoning structure.");
+  }
+
+  if (!hasCognitiveLoad(q)) {
+    reasons.push("Low cognitive load (too direct / single-step).");
+  }
+
+  // 3. TEXTBOOK DETECTION
+  const textbookPatterns = /^(find\s+[a-z]+|calculate\s+[a-z]{1,2}|what\s+is\s+the\s+value\s+of)\s*$/i;
+  if (textbookPatterns.test(q.text.trim()) && q.text.length < 60) {
+    reasons.push("Question lacks context (textbook style 'Find x').");
+  }
+
+  if (q.hasDiagram && !requiresDiagramExtraction(q)) {
+    reasons.push("Question provides values in text (avoid 'given', force extraction).");
+  }
+
+  return { isValid: reasons.length === 0, reasons };
+}
+
+function isTooEasy(q: QuestionItem): boolean {
+  // Check if question is trivial (1-2 marks and no cognitive verbs)
+  return (
+    q.marks <= 2 &&
+    !/explain|justify|deduce|determine|prove|calculate/i.test((q.commandWord + " " + q.text))
+  );
+}
+
 const SUBJECT_CODES: Record<string, string> = {
   Mathematics: "MAT",
   Biology: "BIO",
@@ -651,26 +768,40 @@ TASK: For each of the ${config.count} question slots, output:
 - questionType: one of "mcq", "short_answer", "structured" — match the configured type
 - hasDiagram: true only if a visual diagram is VITAL for this sub-topic.
 
+NEW REQUIRED FIELDS:
+
+- reasoningType: "multi-step geometry" | "algebraic reasoning" | "scientific deduction" | "data analysis"
+- difficultyIntent: "A*"
+- diagramMustBeUsed: true if hasDiagram is true
+
+RULE:
+If diagramMustBeUsed = true:
+→ The diagram MUST contain hidden information not repeated in text
+
 DIAGRAM DATA (If hasDiagram=true):
 You must provide structured JSON in 'diagramData' for the deterministic renderer.
 NEVER write vague descriptions. Use EXACT coordinates.
 
-Supported diagramType: "triangle"
+Supported types: "triangle", "circle", "parallel_lines"
 
-Example (Triangle):
-{
-  "diagramType": "triangle",
-  "diagramData": {
-    "A": [0, 4],
-    "B": [0, 0],
-    "C": [3, 0],
-    "rightAngleAt": "B"
-  }
-}
+Constraint Examples:
+- Triangle: { A: [0,4], B: [0,0], C: [3,0], rightAngleAt: "B" }
+- Circle: { center: [0,0], radius: 3, A: [-3,0], B: [3,0], C: [0,3] } (AB is diameter)
+- Parallel Lines: { line1: [[0,0],[4,0]], line2: [[0,2],[4,2]], transversal: [[1,-1],[3,3]] }
 
 SUB-TOPIC DIVERSITY (strictly enforce):
 - Each slot MUST test a DIFFERENT sub-topic or skill within ${config.topic}.
 - Spread across the widest possible range.
+
+STRICT ADDITION:
+
+Each slot MUST include:
+- reasoningType
+- difficultyIntent = "A*"
+- diagramMustBeUsed = true (if hasDiagram)
+
+If diagramMustBeUsed:
+→ Diagram must contain hidden information NOT repeated in text
 Return EXACTLY ${config.count} slots.`;
 
   const phase1Schema = {
@@ -685,15 +816,26 @@ Return EXACTLY ${config.count} slots.`;
             topic: { type: Type.STRING },
             questionType: { type: Type.STRING },
             hasDiagram: { type: Type.BOOLEAN },
+            reasoningType: { type: Type.STRING, nullable: true },
+            difficultyIntent: { type: Type.STRING, nullable: true },
+            diagramMustBeUsed: { type: Type.BOOLEAN, nullable: true },
             diagramType: { type: Type.STRING, nullable: true },
             diagramData: {
               type: Type.OBJECT,
               nullable: true,
               properties: {
+                // Triangle / Common
                 A: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 B: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 C: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 rightAngleAt: { type: Type.STRING, nullable: true },
+                // Circle
+                center: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                radius: { type: Type.NUMBER, nullable: true },
+                // Parallel Lines
+                line1: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+                line2: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+                transversal: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
               },
             },
           },
@@ -793,17 +935,72 @@ ${subjectRules ? `${subjectRules}\n` : ""}${MARK_SCHEME_FORMAT}
 QUESTION SLOTS (write EXACTLY these ${config.count} questions in order):
 ${slotDescriptions}
 
+FINAL EXAMINER RULES:
+
+1. If a diagram exists:
+   - At least one required value MUST come from diagram only
+   - That value MUST NOT appear in text
+
+2. Question MUST require:
+   - multi-step reasoning
+   - AND at least one of:
+     • deduction
+     • explanation
+     • proof
+
+3. If question can be solved in one step → INVALID
+
+ABSOLUTE ENFORCEMENT:
+
+1. The diagram MUST contain information NOT written in text.
+2. The student MUST extract values from the diagram.
+3. If all values are written in text → INVALID QUESTION.
+4. Every question must require:
+   - at least 2 reasoning steps
+   - AND one of:
+     • deduction
+     • explanation
+     • proof
+
 WRITING RULES:
 1. Write EXACTLY ${config.count} questions, one per slot, in slot order.
 
-2. DIAGRAMS: If a slot has hasDiagram=true and provides a diagram JSON above:
-   - Use the EXACT coordinates/values from the JSON in your question text.
+2. DIAGRAM DEPENDENCY (CRITICAL):
+   - If hasDiagram=true, the question MUST BE UNSOLVABLE without the diagram.
+   - Refer to points/lines/angles shown in the diagram.
+   - Use the EXACT coordinates/values from the diagramData in your question text.
    - Do NOT invent new numbers. The diagram is already fixed.
 
 3. STRUCTURED QUESTIONS (type="structured", 4+ marks):
    - 2–4 sentence scenario/stem paragraph, then **(a)**, **(b)**, **(c)** sub-parts each with mark allocation **[n]**.
    - Total marks = sum of sub-part marks. Each sub-part uses a different command word.
 
+4. CAMBRIDGE QUALITY ENFORCEMENT:
+   - Questions must require multi-step reasoning.
+   - Avoid textbook phrasing (e.g., "Find x"). Use exam wording: "Calculate the value of x. Show your working."
+   - FORBIDDEN: Single-step Pythagoras, trivial angle finding, recall-only geometry facts without application.
+   
+   ABSOLUTE RULES (DO NOT VIOLATE):
+
+   1. If a diagram is provided:
+      - The question MUST require the diagram to solve
+      - The student must extract at least one value from the diagram
+      - MANDATORY: The diagram contains information NOT repeated in text.
+
+   2. FORBIDDEN:
+      - Single-step calculations
+      - Direct Pythagoras (unless part of multi-step)
+      - "Find x" style questions without context
+
+   3. REQUIRED:
+      - Minimum 2 reasoning steps
+      - Hidden concept (not explicitly stated)
+      - Real-world or unfamiliar context where possible
+
+   4. GEOMETRY QUESTIONS:
+      MUST combine at least TWO of: angle reasoning, algebra, length calculation, proof/justification.
+
+   5. CIRCLE QUESTIONS: Do not ask "why angle is 90". Must include calculation or reasoning + another concept.
 4. MCQ QUESTIONS: 4 options in "options" array (no letter prefix). "answer" = only "A"/"B"/"C"/"D".
    All distractors must be plausible misconceptions. Math in options: wrap in $...$.
 
@@ -960,8 +1157,9 @@ ASSESSMENT OBJECTIVES:
     );
   }
 
-  if (config.difficulty === "Challenging" && questions.length > 0) {
-    questions = await critiqueForDifficulty(
+  // Phase 4: Mandatory Critique & Refine (Diagram Dependency & Quality)
+  if (questions.length > 0) {
+    questions = await critiqueAndRefine(
       questions,
       config.subject,
       model,
@@ -969,6 +1167,38 @@ ASSESSMENT OBJECTIVES:
       onRetry,
       onUsage,
     );
+  }
+
+  // Phase 4.5: Auto-Regeneration Loop (Hard Validation)
+  if (questions.length > 0) {
+    for (let i = 0; i < questions.length; i++) {
+      let q = questions[i];
+      let attempts = 0;
+      
+      while (attempts < 2) {
+        const qualityCheck = enforceQuestionQuality(q);
+        const tooEasy = isTooEasy(q);
+        const isAStar = isAStarLevel(q);
+        const hasCognitive = hasCognitiveLoad(q);
+        
+        if (qualityCheck.isValid && !tooEasy && isAStar && hasCognitive) break;
+        
+        const issues = [...qualityCheck.reasons];
+        if (tooEasy) issues.push("Question is too easy/recall-based for A* level.");
+        if (!isAStar) issues.push("Not A* level difficulty (requires multi-step deduction/proof).");
+        if (!hasCognitive) issues.push("Cognitive load too low.");
+        
+        onLog?.(`Regenerating Q${i + 1} (Attempt ${attempts + 1}): ${issues.join(", ")}`);
+        
+        // Re-generate this specific question
+        const newQ = await regenerateSingleQuestion(q, issues, config, ai, model);
+        if (newQ) {
+          questions[i] = newQ;
+          q = newQ;
+        }
+        attempts++;
+      }
+    }
   }
 
   return questions;
@@ -1029,7 +1259,72 @@ STRICT REQUIREMENTS — follow exactly:
   }
 }
 
-async function critiqueForDifficulty(
+/** Regenerate a single failing question with strict feedback */
+async function regenerateSingleQuestion(
+  original: QuestionItem,
+  issues: string[],
+  config: GenerationConfig,
+  ai: any,
+  model: string
+): Promise<QuestionItem | null> {
+  const prompt = `
+    REGENERATE this specific Cambridge IGCSE question to meet A* standards.
+    
+    PREVIOUS FAILED VERSION:
+    "${original.text}"
+    (Type: ${original.type}, Marks: ${original.marks})
+    
+    ISSUES DETECTED (MUST FIX):
+    ${issues.map(s => `- ${s}`).join("\n")}
+    
+    STRICT REQUIREMENTS:
+    1. Make it HARDER (multi-step reasoning).
+    2. Use Cambridge command words (Deduce, Show that, Explain).
+    3. Ensure diagram is REQUIRED (if present).
+    4. Marks should reflect difficulty (3-6 marks).
+    5. Do NOT output markdown. Output ONLY the JSON object for the question.
+    
+    Return JSON matching the schema:
+    { "text": "...", "answer": "...", "markScheme": "...", "marks": 4, "commandWord": "...", "type": "...", "hasDiagram": ${original.hasDiagram}, "options": [...] }
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.8,
+      },
+    });
+    const parsed = safeJsonParse(response.text || "{}");
+    if (!parsed.text) return null;
+    
+    const sanitized = sanitizeQuestion(parsed);
+    const updated = {
+      ...sanitized,
+      id: original.id,
+      code: original.code,
+      diagram: undefined, // Clear diagram before regeneration attempt
+      diagramType: original.diagramType,
+      diagramData: original.diagramData,
+      hasDiagram: original.hasDiagram
+    };
+
+    if (original.hasDiagram) {
+      const newTikz = renderDiagram(updated);
+      if (newTikz) {
+        updated.diagram = { diagramType: "tikz", code: newTikz };
+      }
+    }
+    return updated;
+  } catch (e) {
+    console.warn("Regeneration failed:", e);
+    return null;
+  }
+}
+
+async function critiqueAndRefine(
   questions: QuestionItem[],
   subject: string,
   model: string,
@@ -1037,8 +1332,6 @@ async function critiqueForDifficulty(
   onRetry?: (attempt: number) => void,
   onUsage?: UsageCallback,
 ): Promise<QuestionItem[]> {
-  // Include diagram summary in prompt so Gemini knows the diagram exists and can reference it.
-  // But we always restore the original diagram after critique — diagram rewrites are forbidden here.
   const questionsText = questions
     .map((q, i) => {
       const diagramNote = q.diagram
@@ -1048,28 +1341,55 @@ async function critiqueForDifficulty(
     })
     .join("\n\n---\n\n");
 
-  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a strict difficulty audit for ${subject}.
+  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a strict quality audit for ${subject}.
 
-REQUIRED DIFFICULTY STANDARD: Challenging (A* discriminator level)
+REQUIRED STANDARD: Cambridge IGCSE
 - Target: Only 10–20% of students answer fully correctly
 - Command words: Evaluate, Deduce, Predict, Suggest, Discuss, Justify — NEVER State/Name/Define
 - Must require 3+ distinct cognitive steps or multi-stage synthesis
 - Content must be in UNFAMILIAR context — novel scenario, never a textbook example
 - Mark schemes must have 4+ distinct marking points for 4+ mark questions
-- A question a student can answer from memory alone FAILS this standard
+
+REWRITE ANY QUESTION THAT:
+- does not require diagram
+- duplicates diagram values in text
+- can be solved in 1 step
+- looks like textbook
+- lacks reasoning chain
+- a student can answer from memory alone
+
+CRITICAL DIAGRAM CHECK:
+- If a question has a diagram, is the diagram ESSENTIAL?
+- If the question can be solved without looking at the diagram, it is BROKEN. Rewrite it so the diagram contains vital info (e.g. lengths, angles, relationships) not in the text.
+
+REWRITE if:
+- diagram is not essential
+- values are duplicated in text
+- question is solvable in one step
+- question looks like textbook
+
+REWRITE ANY QUESTION THAT:
+- Can be solved in 1 step
+- Does not require diagram (if present)
+- Looks like a textbook example ("Find x")
+- Uses predictable patterns
+- Is too easy for A* candidates
 
 QUESTIONS TO AUDIT:
 ${questionsText}
 
 TASK:
-1. Score each question 1–10 for difficulty (1 = trivial recall, 10 = A* discriminator question).
-   Scoring guide: 1–3 = recall only; 4–6 = standard application; 7–8 = A grade synthesis; 9–10 = A* discrimination.
-2. Any question scoring 6 or below MUST be rewritten to reach 8+.
-3. When rewriting: place in unfamiliar context, increase synthesis steps, upgrade command word, strengthen mark scheme.
-   If the question has a diagram, you may reference it differently but output hasDiagram=true.
+1. Audit each question for quality, difficulty, and diagram dependency.
+2. REWRITE any question that:
+   - Is too easy (recall only).
+   - Does not require the diagram (if present).
+   - Uses textbook phrasing.
+3. When rewriting:
+   - Place in unfamiliar context.
+   - Increase synthesis steps.
+   - Ensure diagram is vital to the solution.
 4. Keep the same syllabus topic and mark allocation.
-5. If a question is already 8+ — preserve it exactly; do NOT simplify.
-6. Return ALL ${questions.length} questions (revised or unchanged).`;
+5. Return ALL ${questions.length} questions (revised or unchanged).`;
 
   const raw = await withRetry(
     async () => {
@@ -1114,7 +1434,7 @@ TASK:
             },
             required: ["questions"],
           },
-          systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner. Your only job is to ensure questions discriminate between A and A* candidates. Be ruthless: any question a student could answer from memory or with a single step of reasoning must be rewritten. Unfamiliar contexts, multi-stage synthesis, and higher-order command words are non-negotiable.`,
+          systemInstruction: `You are a Senior Cambridge IGCSE Chief Examiner. Your job is to ensure questions meet Cambridge standards. Be ruthless: any question solvable without its diagram (if present) or answerable from memory must be rewritten.`,
         },
       });
       const usage = getGeminiUsage(response);

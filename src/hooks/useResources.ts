@@ -363,6 +363,7 @@ Extract as many items as possible — aim for complete coverage of the paper, no
             questionType?: string;
             difficultyBand?: "easy" | "medium" | "challenging";
             topic?: string;
+            tags?: string[];
             assessmentObjective?: string;
           }>;
         };
