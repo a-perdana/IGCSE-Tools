@@ -31,13 +31,19 @@ function quicklatexDevProxy(): Plugin {
         req.on('data', (chunk: Buffer) => chunks.push(chunk))
         req.on('end', async () => {
           try {
-            const { formula } = JSON.parse(Buffer.concat(chunks).toString()) as { formula?: string }
+            const { formula, libraries } = JSON.parse(Buffer.concat(chunks).toString()) as { formula?: string; libraries?: string }
             if (!formula) { res.writeHead(400); res.end('Missing formula'); return }
 
-            const params = new URLSearchParams({
+            const isFullDoc = formula.trim().startsWith('\\documentclass')
+            const preamble = isFullDoc
+              ? ''
+              : (libraries ? `${QUICKLATEX_PREAMBLE}\n\\usetikzlibrary{${libraries}}` : QUICKLATEX_PREAMBLE)
+            const paramObj: Record<string, string> = {
               formula, fsize: '17px', fcolor: '000000', bcolor: 'ffffff',
-              mode: '0', out: '1', errors: '1', preamble: QUICKLATEX_PREAMBLE,
-            })
+              mode: isFullDoc ? '1' : '0', out: '1', errors: '1',
+            }
+            if (!isFullDoc) paramObj.preamble = preamble
+            const params = new URLSearchParams(paramObj)
             const qlRes = await fetch('https://quicklatex.com/latex3.f', {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
