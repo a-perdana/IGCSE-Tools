@@ -1199,14 +1199,13 @@ async function generateTikzCode(
 ): Promise<string | null> {
   const improvementBlock = previousCode
     ? `
-PREVIOUS VERSION (improve accuracy — keep it concise, max 25 lines inside tikzpicture):
+PREVIOUS VERSION (improve this diagram):
 ${previousCode}
 
 IMPROVE BY:
 - Fix any incorrect coordinates or proportions
 - Add missing labels, angle marks, or tick marks
-- Keep total line count inside tikzpicture ≤ 25 — do not add unnecessary commands
-- Still end with \\end{tikzpicture} and \\end{document}
+- Keep total line count inside tikzpicture ≤ 25
 `
     : "";
 
