@@ -274,16 +274,21 @@ export function AssessmentView({
     if (questionPage > totalQuestionPages) setQuestionPage(totalQuestionPages)
   }, [questionPage, totalQuestionPages])
 
+  const logEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [generationLog?.length])
+
   if (!assessment) {
     if (isGenerating && generationLog) {
       return (
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="w-full max-w-md">
-            <div className="flex items-center gap-3 mb-8">
+        <div className="flex-1 flex flex-col p-8 overflow-hidden">
+          <div className="w-full max-w-md mx-auto flex flex-col min-h-0 flex-1">
+            <div className="flex items-center gap-3 mb-6 shrink-0">
               <Loader2 className="w-5 h-5 text-emerald-500 animate-spin shrink-0" />
               <span className="text-sm font-semibold text-stone-700">Generating assessment…</span>
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
               {generationLog.map((step, i) => {
                 const isCurrent = i === generationLog.length - 1
                 return (
@@ -303,6 +308,7 @@ export function AssessmentView({
                   </div>
                 )
               })}
+              <div ref={logEndRef} />
             </div>
           </div>
         </div>

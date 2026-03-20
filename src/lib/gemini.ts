@@ -1672,13 +1672,17 @@ RULES:
       questions.map(async (q) => {
         if (q.hasDiagram && q.diagramDSL) {
           // Deterministic render only — no AI fallback (core principle)
-          const tikzCode = renderDiagramFromDSL(q.diagramDSL);
+          const qIdx = questions.indexOf(q) + 1;
+          const dsl = q.diagramDSL;
+          onLog?.(`[Phase 3] Q${qIdx}: DSL type=${dsl.type} labels=${JSON.stringify(dsl.labels ?? {})} unknowns=${JSON.stringify(dsl.unknowns ?? [])}`);
+          const tikzCode = renderDiagramFromDSL(dsl);
           if (tikzCode) {
             q.diagram = { diagramType: "tikz", code: tikzCode };
+            onLog?.(`[Phase 3] Q${qIdx}: TikZ generated (${tikzCode.length} chars)`);
           } else {
             // DSL render failed → mark diagram missing, log for debugging
             q.diagramMissing = true;
-            onLog?.(`[Phase 3] Q${questions.indexOf(q) + 1}: DSL render failed — diagram marked missing`);
+            onLog?.(`[Phase 3] Q${qIdx}: DSL render failed — diagram marked missing`);
           }
         }
       }),
@@ -2029,6 +2033,18 @@ TASK:
     const existing = questions[i];
     const dsl = existing?.diagramDSL;
 
+    // DSL-based diagram questions: preserve the original question text/answer/markScheme.
+    // The critique AI does not know the DSL constraints and will introduce rogue numbers
+    // or break diagram dependency if allowed to rewrite diagram question text.
+    if (dsl && existing) {
+      return {
+        ...existing,
+        // Re-enforce computed values in case critique touched them
+        answer: computeAnswerFromDSL(dsl) ?? existing.answer,
+        markScheme: generateMarkSchemeFromDSL(dsl) ?? existing.markScheme,
+      };
+    }
+
     // Always re-enforce answer and markScheme from mathEngine — critique may rewrite
     // text/markScheme, but computed values are the single source of truth.
     let enforcedAnswer = sanitized.answer;
@@ -2040,15 +2056,6 @@ TASK:
       if (computedMS) enforcedMarkScheme = computedMS;
     }
 
-    // Rogue number + diagram dependency checks after critique rewrite
-    let diagramMissing = existing?.diagramMissing ?? false;
-    if (dsl) {
-      const rogues = detectRogueNumbers(sanitized.text, dsl);
-      if (rogues.length > 0) diagramMissing = true;
-      const hasDiagram = existing?.hasDiagram ?? sanitized.hasDiagram;
-      if (hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) diagramMissing = true;
-    }
-
     return {
       ...sanitized,
       answer: enforcedAnswer,
@@ -2056,7 +2063,6 @@ TASK:
       diagram: existing?.diagram,
       hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
       ...(dsl ? { diagramDSL: dsl } : {}),
-      ...(diagramMissing ? { diagramMissing } : {}),
       id: existing?.id ?? crypto.randomUUID(),
       code:
         existing?.code ??
