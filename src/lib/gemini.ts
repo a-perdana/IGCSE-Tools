@@ -947,54 +947,45 @@ ASSESSMENT OBJECTIVES:
   /**
    * Writes ONE diagram question AND generates the TikZ code for it in a single Gemini call.
    */
-  async function writeQuestionWithTikz(slot: QuestionSlot): Promise<any> {
+  async function writeQuestionsWithTikz(tikzSlots: QuestionSlot[]): Promise<any[]> {
+    if (tikzSlots.length === 0) return [];
+
+    const slotDescriptions = tikzSlots
+      .map((s) => `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"`)
+      .join("\n");
+
     const prompt = `You are a Cambridge IGCSE ${config.subject} examiner AND a LaTeX/TikZ expert.
 
-Your task: Write ONE exam question that requires a geometric diagram, AND write the TikZ code for that diagram.
+Write EXACTLY ${tikzSlots.length} exam questions, each with a geometric diagram.
 
-QUESTION REQUIREMENTS:
-- Topic: ${slot.topic}
-- Type: ${slot.questionType}
+CONFIGURATION:
 - ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 - Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
+${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
+
+QUESTION SLOTS:
+${slotDescriptions}
+
+QUESTION REQUIREMENTS (each question):
 - Must require the diagram to solve
 - Cambridge command word appropriate for difficulty
 - Multi-step reasoning (≥ 2 steps)
 - LaTeX: all math in $...$
+- MCQ: 4 options array, answer = "A"/"B"/"C"/"D"
 
-TIKZ DIAGRAM REQUIREMENTS:
+TIKZ REQUIREMENTS (each diagram):
 - Write a complete \\begin{tikzpicture}...\\end{tikzpicture} block
-- Clean Cambridge exam style: thick lines, filled dots at key points, clear labels
-- Labels: single letters (A, B, C, O) at vertices, side lengths/angles where given
-- Scale: use coordinates in range -3 to 3 so the diagram is readable
-- Vertex labels: place them OUTSIDE the shape, offset away from the interior
-  - Use explicit coordinates: e.g. \\node at (x+0.3, y+0.3) {$A$};
-  - Do NOT use \\node[anchor] at (named_coord) — use explicit numeric coords only
-- Side length labels: place at midpoint of each side, offset outward from centroid
-- Angle arcs: use \\draw (vx,vy) ++(start:r) arc[start angle=start, end angle=end, radius=r];
-- Right angles: draw a small square marker
-- Do NOT use \\coordinate named references in \\node commands
-- Do NOT use tikzlibrary 'angles' or 'quotes'
-- Available libraries: calc, arrows.meta only
-- The diagram must match the question exactly (same letters, same given values)
+- Cambridge exam style: thick lines, filled dots at vertices, clear labels
+- Coordinates in range -3 to 3
+- Vertex labels OUTSIDE the shape using explicit numeric offsets:
+  e.g. \\node at (1.3, 2.4) {$A$}; (NOT \\node[above] at (A))
+- Side length labels at edge midpoints, offset away from interior
+- Angle arcs: \\draw (x,y) ++(startDeg:r) arc[start angle=startDeg, end angle=endDeg, radius=r];
+- Right angles: small square marker
+- Libraries: calc, arrows.meta only (NO 'angles', NO 'quotes')
+- Diagram must match question exactly
 
-${config.syllabusContext ? `Syllabus focus: ${config.syllabusContext}` : ""}
-
-MARK SCHEME: Use Cambridge notation (B1, M1, A1).
-
-Return JSON with these fields:
-- text: question wording (string)
-- tikzCode: the \\begin{tikzpicture}...\\end{tikzpicture} block only (string)
-- answer: brief method description (non-MCQ) or letter A/B/C/D (MCQ)
-- markScheme: full mark scheme with B1/M1/A1 marks
-- marks: total marks (number)
-- commandWord: Cambridge command word
-- type: "${slot.questionType}"
-- hasDiagram: true
-- syllabusObjective: "REF – statement" format
-- assessmentObjective: "AO1" | "AO2" | "AO3"
-- difficultyStars: 1 | 2 | 3
-- options: [] (empty unless MCQ)`;
+MARK SCHEME: Cambridge notation (B1, M1, A1).`;
 
     return withRetry(async () => {
       const response = await ai.models.generateContent({
@@ -1002,22 +993,34 @@ Return JSON with these fields:
         contents: [{ role: "user", parts: [...allRefParts, { text: prompt }] }],
         config: {
           responseMimeType: "application/json",
-          maxOutputTokens: 8192,
+          maxOutputTokens: 32768,
           temperature: 0.7,
-          responseSchema: tikzQuestionSchema,
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: { type: Type.ARRAY, items: tikzQuestionSchema },
+            },
+            required: ["questions"],
+          },
           systemInstruction: phase2SystemInstruction,
         },
       });
       const usage = getGeminiUsage(response);
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
       const finishReason = (response as any)?.candidates?.[0]?.finishReason;
+      const thoughtTokens = (response as any)?.usageMetadata?.thoughtsTokenCount ?? 0;
+      onLog?.(`[Phase 2 TikZ batch] length=${response.text?.length ?? 0} finishReason=${finishReason} thoughtTokens=${thoughtTokens}`);
       if (finishReason === "MAX_TOKENS") {
-        throw { type: "invalid_response", retryable: true, message: `TikZ question hit token limit. Retrying…` };
+        throw { type: "invalid_response", retryable: true, message: `TikZ batch hit token limit. Retrying…` };
       }
       const parsed = safeJsonParse(response.text || "{}");
-      if (!parsed.text) throw { type: "invalid_response", retryable: true, message: "Empty question text returned." };
-      onLog?.(`[Phase 2] Q${slot.index + 1}: TikZ generated (${parsed.tikzCode?.length ?? 0} chars)`);
-      return parsed;
+      if (!parsed.questions || parsed.questions.length < tikzSlots.length) {
+        throw { type: "invalid_response", retryable: true, message: `TikZ batch returned ${parsed.questions?.length ?? 0} questions, expected ${tikzSlots.length}.` };
+      }
+      parsed.questions.forEach((q: any, i: number) => {
+        onLog?.(`[Phase 2] Q${tikzSlots[i].index + 1}: TikZ generated (${q.tikzCode?.length ?? 0} chars)`);
+      });
+      return parsed.questions;
     }, 3, onRetry);
   }
 
@@ -1095,12 +1098,12 @@ RULES:
   const nonDslSlots = slots.filter((s) => !s.hasDiagram);
 
   const rawQuestionsMap: Record<number, any> = {};
-  for (let di = 0; di < dslSlots.length; di++) {
-    const slot = dslSlots[di];
-    onLog?.(`[Phase 2] Q${slot.index + 1}: writing question + TikZ (${slot.topic})`);
-    const q = await writeQuestionWithTikz(slot);
-    rawQuestionsMap[slot.index] = q;
-    if (di < dslSlots.length - 1) await new Promise((r) => setTimeout(r, 3000));
+
+  // Diagram questions — single batch call (all slots together)
+  if (dslSlots.length > 0) {
+    onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) + TikZ…`);
+    const tikzResults = await writeQuestionsWithTikz(dslSlots);
+    dslSlots.forEach((slot, i) => { rawQuestionsMap[slot.index] = tikzResults[i]; });
   }
 
   const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
