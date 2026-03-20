@@ -1,18 +1,43 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef } from 'react'
 import type { TikzSpec } from '../../lib/types'
-import { renderTikz } from '../../lib/quicklatex'
+
+declare global {
+  interface Window {
+    TikzJax?: any
+  }
+}
 
 export function DiagramRenderer({ spec }: { spec: TikzSpec | undefined | null }) {
-  const [state, setState] = useState<{ url?: string; width?: number; height?: number; error?: string; loading: boolean }>({ loading: false })
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!spec) { setState({ loading: false }); return }
-    let cancelled = false
-    setState({ loading: true })
-    renderTikz(spec.code)
-      .then(result => { if (!cancelled) setState({ ...result, loading: false }) })
-      .catch(err => { if (!cancelled) setState({ error: String(err), loading: false }) })
-    return () => { cancelled = true }
+    if (!spec?.code || !containerRef.current) return
+
+    const container = containerRef.current
+
+    // Extract tikzpicture block
+    const blockMatch = spec.code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/)
+    const tikzBlock = blockMatch ? blockMatch[0] : spec.code
+
+    // Extract usetikzlibrary calls
+    const libMatches = [...spec.code.matchAll(/\\usetikzlibrary\{([^}]+)\}/g)]
+    const libs = [...new Set(libMatches.flatMap(m => m[1].split(',').map(s => s.trim()).filter(Boolean)))]
+    const libLine = libs.length > 0 ? `\\usetikzlibrary{${libs.join(',')}}` : ''
+
+    const fullCode = `${libLine}\n${tikzBlock}`
+
+    // TikZJax renders <script type="text/tikz"> elements
+    container.innerHTML = ''
+    const script = document.createElement('script')
+    script.type = 'text/tikz'
+    script.textContent = fullCode
+    container.appendChild(script)
+
+    // Trigger TikZJax to process the new element
+    if (window.TikzJax) {
+      // TikZJax auto-processes on DOMContentLoaded; for dynamic content dispatch a custom event
+      document.dispatchEvent(new Event('tikzjax-load-finished'))
+    }
   }, [spec?.code])
 
   if (!spec) return null
@@ -23,36 +48,11 @@ export function DiagramRenderer({ spec }: { spec: TikzSpec | undefined | null })
         <span className="w-1.5 h-1.5 rounded-full bg-violet-300 inline-block" />
         Diagram
       </p>
-      <div className="px-1">
-        {state.loading && (
-          <div className="flex items-center gap-2 py-4 px-2 text-sm text-violet-400">
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-            Rendering diagram…
-          </div>
-        )}
-        {state.error && (
-          <div className="text-xs text-red-400 py-2 px-1 font-mono whitespace-pre-wrap">
-            TikZ error: {state.error}
-          </div>
-        )}
-        {state.url && (
-          <img
-            src={state.url}
-            alt="diagram"
-            width={state.width}
-            height={state.height}
-            style={{
-              maxWidth: spec.maxWidth ? `${spec.maxWidth}px` : '320px',
-              minHeight: spec.minHeight ? `${spec.minHeight}px` : undefined,
-              display: 'block',
-              margin: '0 auto',
-            }}
-          />
-        )}
-      </div>
+      <div
+        ref={containerRef}
+        className="px-1 flex justify-center"
+        style={{ maxWidth: spec.maxWidth ? `${spec.maxWidth}px` : '360px', margin: '0 auto' }}
+      />
     </div>
   )
 }
