@@ -1,6 +1,6 @@
 /**
  * LaTeX render client — sends TikZ code to /api/latex proxy
- * (Vercel Edge Function → Railway pdflatex renderer).
+ * (Vercel Serverless → Railway pdflatex renderer).
  */
 
 interface RenderResult {
@@ -15,11 +15,9 @@ function sanitize(code: string): string {
   // Strip markdown code fences
   const fenced = code.match(/```(?:latex|tex)?\s*([\s\S]*?)```/i)
   if (fenced) code = fenced[1]
-  // Fix double-escaped backslashes from JSON context
-  return code
-    .replace(/\\n/g, '\n')
-    .replace(/\\\\(draw|node|fill|filldraw|coordinate|path|begin|end|tikz|usetikzlibrary|usepackage|def|scope)\b/g, '\\$1')
-    .trim()
+  // Fix literal \n sequences from JSON serialization
+  code = code.replace(/\\n/g, '\n')
+  return code.trim()
 }
 
 export async function renderTikz(code: string): Promise<RenderResult> {
