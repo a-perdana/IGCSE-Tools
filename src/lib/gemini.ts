@@ -974,15 +974,15 @@ QUESTION REQUIREMENTS (each question):
 - MCQ: 4 options array, answer = "A"/"B"/"C"/"D"
 
 TIKZ REQUIREMENTS (each diagram):
-- Write a complete \\begin{tikzpicture}...\\end{tikzpicture} block
+- Write ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}
 - Cambridge exam style: thick lines, filled dots at vertices, clear labels
 - Coordinates in range -3 to 3
-- Vertex labels OUTSIDE the shape using explicit numeric offsets:
-  e.g. \\node at (1.3, 2.4) {$A$}; (NOT \\node[above] at (A))
-- Side length labels at edge midpoints, offset away from interior
+- Vertex labels: \\node[above] at (A) {$A$}; using named coordinates is fine
+- Side length labels: compute midpoints as plain numbers e.g. \\node at (3.5, 0.2) {$7$};
+- NEVER use calc interpolation $(A)!0.5!(B)$ — always use explicit numeric midpoint coordinates
 - Angle arcs: \\draw (x,y) ++(startDeg:r) arc[start angle=startDeg, end angle=endDeg, radius=r];
-- Right angles: small square marker
-- Libraries: calc, arrows.meta only (NO 'angles', NO 'quotes')
+- Right angles: small square \\draw (B) -- ++(0.3,0) -- ++(0,0.3) -- ++(-0.3,0);
+- Available libraries: calc, arrows.meta, angles, quotes, patterns, positioning
 - Diagram must match question exactly
 
 MARK SCHEME: Cambridge notation (B1, M1, A1).`;
@@ -1224,14 +1224,15 @@ QUESTION: ${question.text}
 ANSWER: ${question.answer}
 
 STRICT REQUIREMENTS — follow exactly:
-1. Output ONLY raw LaTeX: start with \\documentclass[tikz,border=4mm]{standalone}, end with \\end{document}.
-2. Only \\usetikzlibrary{...} is allowed — do NOT use \\usepackage.
-3. MAXIMUM 25 lines inside \\begin{tikzpicture}...\\end{tikzpicture}. Keep it short and complete.
+1. Output ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}.
+2. Use \\usetikzlibrary{calc} on the line BEFORE \\begin{tikzpicture} if needed.
+3. MAXIMUM 25 lines inside the tikzpicture block.
 4. Use ONLY plain numeric coordinates — NO trig functions (cos/sin). Pre-compute: cos30°=0.866, sin30°=0.5, cos45°=0.707, cos60°=0.5, sin60°=0.866.
-5. Label key points and values using \\node. Mark right angles with a small square.
-6. CRITICAL: every \\draw command MUST end with a semicolon on the same line. Never leave a command unfinished.
-7. You MUST output the complete file ending with \\end{tikzpicture} and \\end{document} — never truncate.
-8. If no diagram is needed, output nothing (empty string).`;
+5. NEVER use calc interpolation syntax like $(A)!0.5!(B)$ — compute midpoints manually as plain numbers instead.
+6. Label key points and values using \\node. Mark right angles with a small square.
+7. CRITICAL: every \\draw command MUST end with a semicolon on the same line.
+8. You MUST output the complete block ending with \\end{tikzpicture} — never truncate.
+9. If no diagram is needed, output nothing (empty string).`;
 
   try {
     const response = await ai.models.generateContent({
