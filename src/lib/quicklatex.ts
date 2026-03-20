@@ -1,6 +1,6 @@
 /**
- * LaTeX render client — sends a full standalone document to the /api/latex proxy
- * (Vercel Edge Function → latex.codecogs.com), which supports complete TikZ.
+ * LaTeX render client — sends TikZ code to /api/latex proxy
+ * (Vercel Edge Function → Railway pdflatex renderer).
  */
 
 interface RenderResult {
@@ -9,93 +9,38 @@ interface RenderResult {
   height: number;
 }
 
-// Simple in-memory cache keyed by TikZ code
 const cache = new Map<string, RenderResult>();
 
-/**
- * Extracts the tikzpicture block from any input (snippet, full doc, or bare commands).
- * api/latex.ts expects only the tikzpicture block — it adds the preamble itself.
- */
-function extractBlock(code: string): string {
-  // Always extract only the tikzpicture block — strip any \documentclass wrapper
-  const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/);
-  if (blockMatch) {
-    // Also prepend any \usetikzlibrary lines that appear before the block
-    const libMatches = [...code.matchAll(/\\usetikzlibrary\{[^}]+\}/g)];
-    const libLines = [...new Set(libMatches.map(m => m[0]))].join('\n');
-    return libLines ? `${libLines}\n${blockMatch[0]}` : blockMatch[0];
-  }
-  // No block found — wrap bare commands
-  return `\\begin{tikzpicture}\n${code.trim()}\n\\end{tikzpicture}`;
-}
-
-/**
- * Fixes common AI TikZ generation mistakes.
- */
-function sanitizeTikz(code: string): string {
+function sanitize(code: string): string {
   // Strip markdown code fences
   const fenced = code.match(/```(?:latex|tex)?\s*([\s\S]*?)```/i)
   if (fenced) code = fenced[1]
+  // Fix double-escaped backslashes from JSON context
   return code
-    .replace(/\\n/g, "\n")
-    .replace(
-      /\\\\(draw|node|fill|filldraw|shade|clip|coordinate|path|foreach|pgf|text|begin|end|tikz|usepackage|usetikzlibrary|def|let|scope)\b/g,
-      "\\$1",
-    )
-    .replace(/\+\s*-\s*\(/g, "(")
-    .replace(/-\s*\+\s*\(/g, "(")
-    .replace(/\+\s*;/g, ";")
-    .trim();
-}
-
-/**
- * Renders TikZ code and returns a PNG data URL via the /api/latex proxy.
- */
-/**
- * Shifts all coordinates so none are negative (QuickLaTeX rejects negative coords).
- * Finds the minimum x and y across all (x,y) pairs and adds an offset.
- */
-function shiftToPositive(code: string): string {
-  const coordRe = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g
-  let minX = 0, minY = 0
-  let m: RegExpExecArray | null
-  while ((m = coordRe.exec(code)) !== null) {
-    const x = parseFloat(m[1]), y = parseFloat(m[2])
-    if (x < minX) minX = x
-    if (y < minY) minY = y
-  }
-  if (minX >= 0 && minY >= 0) return code
-  const dx = minX < 0 ? -minX + 0.5 : 0
-  const dy = minY < 0 ? -minY + 0.5 : 0
-  return code.replace(/\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g, (_, x, y) => {
-    return `(${parseFloat((parseFloat(x) + dx).toFixed(4))},${parseFloat((parseFloat(y) + dy).toFixed(4))})`
-  })
+    .replace(/\\n/g, '\n')
+    .replace(/\\\\(draw|node|fill|filldraw|coordinate|path|begin|end|tikz|usetikzlibrary|usepackage|def|scope)\b/g, '\\$1')
+    .trim()
 }
 
 export async function renderTikz(code: string): Promise<RenderResult> {
-  const sanitized = sanitizeTikz(code);
-  const extracted = extractBlock(sanitized);
-  const document = shiftToPositive(extracted);
+  const clean = sanitize(code)
+  const cached = cache.get(clean)
+  if (cached) return cached
 
-  const cached = cache.get(document);
-  if (cached) return cached;
-
-  const res = await fetch("/api/latex", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: document }),
-  });
+  const res = await fetch('/api/latex', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: clean }),
+  })
 
   if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(`LaTeX render error: HTTP ${res.status}${msg ? ` — ${msg}` : ""}`);
+    const msg = await res.text().catch(() => '')
+    throw new Error(`LaTeX render error: HTTP ${res.status}${msg ? ` — ${msg}` : ''}`)
   }
 
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-
-  // We don't know exact dimensions until the image loads — use defaults
-  const result: RenderResult = { url, width: 400, height: 300 };
-  cache.set(document, result);
-  return result;
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const result: RenderResult = { url, width: 400, height: 300 }
+  cache.set(clean, result)
+  return result
 }

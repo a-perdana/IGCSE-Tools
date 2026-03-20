@@ -1,28 +1,10 @@
 /**
- * Vercel Edge Function — QuickLaTeX proxy.
- * Accepts POST { code: string } — tikzpicture block or full standalone document.
- * Extracts the tikzpicture block and sends it as formula+preamble to QuickLaTeX.
+ * Vercel Edge Function — LaTeX render proxy.
+ * Forwards to the Railway pdflatex renderer service.
  */
 export const config = { runtime: 'edge' }
 
-const BASE_PREAMBLE = [
-  '\\usepackage{tikz}',
-  '\\usepackage{amsmath}',
-  '\\usetikzlibrary{arrows.meta,calc,patterns,positioning,angles,quotes}',
-].join('\n')
-
-function extractTikzBlock(code: string): { formula: string; extraLibs: string } {
-  // Extract tikzpicture block
-  const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/)
-  const formula = blockMatch ? blockMatch[0] : code
-
-  // Collect all \usetikzlibrary calls from anywhere in the document
-  const libMatches = [...code.matchAll(/\\usetikzlibrary\{([^}]+)\}/g)]
-  const libs = [...new Set(
-    libMatches.flatMap(m => m[1].split(',').map((s: string) => s.trim()).filter(Boolean))
-  )]
-  return { formula, extraLibs: libs.join(',') }
-}
+const RENDERER_URL = 'https://latex-renderer-production.up.railway.app/render'
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -45,55 +27,18 @@ export default async function handler(req: Request): Promise<Response> {
   }
   if (!code) return new Response('Missing code', { status: 400 })
 
-  const { formula, extraLibs } = extractTikzBlock(code)
-  const preamble = extraLibs
-    ? `${BASE_PREAMBLE}\n\\usetikzlibrary{${extraLibs}}`
-    : BASE_PREAMBLE
-
-  const params = [
-    `formula=${encodeURIComponent(formula)}`,
-    `fsize=17px`,
-    `fcolor=000000`,
-    `bcolor=ffffff`,
-    `mode=0`,
-    `out=1`,
-    `errors=1`,
-    `preamble=${encodeURIComponent(preamble)}`,
-  ].join('&')
-
-  const qlRes = await fetch('https://quicklatex.com/latex3.f', {
+  const res = await fetch(RENDERER_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
   })
 
-  const text = await qlRes.text()
-  const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean)
-
-  // QuickLaTeX response format:
-  //   Success: "0\n<url> <w> <h>\n"
-  //   Error:   "1\n<error message>\n"
-  const statusLine = lines[0]
-  if (statusLine === '1') {
-    const errMsg = lines.slice(1).join(' ').trim()
-    return new Response(`QuickLaTeX error: ${errMsg || 'unknown error'}`, { status: 502 })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    return new Response(`Render error: ${msg}`, { status: 502 })
   }
 
-  const urlLine = lines.find((l: string) => l.startsWith('http'))
-  if (!urlLine) {
-    return new Response(`QuickLaTeX unexpected response: ${text.slice(0, 300)}`, { status: 502 })
-  }
-
-  const imageUrl = urlLine.split(/\s+/)[0]
-  if (imageUrl.includes('/error.png')) {
-    const errMsg = lines.filter((l: string) => !l.startsWith('http') && !/^\d/.test(l)).join(' ')
-    return new Response(`QuickLaTeX render error: ${errMsg || 'unknown'}`, { status: 502 })
-  }
-
-  const imgRes = await fetch(imageUrl)
-  if (!imgRes.ok) return new Response(`Image fetch failed: HTTP ${imgRes.status}`, { status: 502 })
-
-  const buf = await imgRes.arrayBuffer()
+  const buf = await res.arrayBuffer()
   return new Response(buf, {
     headers: {
       'Content-Type': 'image/png',
