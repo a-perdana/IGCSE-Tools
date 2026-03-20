@@ -4,22 +4,15 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import type { Plugin } from 'vite';
 
-const QUICKLATEX_PREAMBLE = [
-  '\\usepackage{tikz}',
-  '\\usepackage{pgfplots}',
-  '\\pgfplotsset{compat=1.18}',
-  '\\usetikzlibrary{arrows.meta,calc,angles,quotes,patterns,decorations.pathmorphing,positioning}',
-].join('\n')
-
 /**
- * Dev-only proxy: intercepts POST /api/quicklatex and forwards to quicklatex.com.
- * In production this is handled by the Vercel Edge Function at api/quicklatex.ts.
+ * Dev-only proxy: intercepts POST /api/latex and forwards to latex.codecogs.com.
+ * In production this is handled by the Vercel Edge Function at api/latex.ts.
  */
-function quicklatexDevProxy(): Plugin {
+function latexDevProxy(): Plugin {
   return {
-    name: 'quicklatex-dev-proxy',
+    name: 'latex-dev-proxy',
     configureServer(server) {
-      server.middlewares.use('/api/quicklatex', (req, res) => {
+      server.middlewares.use('/api/latex', (req, res) => {
         if (req.method === 'OPTIONS') {
           res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' })
           res.end()
@@ -31,27 +24,29 @@ function quicklatexDevProxy(): Plugin {
         req.on('data', (chunk: Buffer) => chunks.push(chunk))
         req.on('end', async () => {
           try {
-            const { formula, libraries } = JSON.parse(Buffer.concat(chunks).toString()) as { formula?: string; libraries?: string }
-            if (!formula) { res.writeHead(400); res.end('Missing formula'); return }
+            const { code } = JSON.parse(Buffer.concat(chunks).toString()) as { code?: string }
+            if (!code) { res.writeHead(400); res.end('Missing code'); return }
 
-            const isFullDoc = formula.trim().startsWith('\\documentclass')
-            const preamble = isFullDoc
-              ? ''
-              : (libraries ? `${QUICKLATEX_PREAMBLE}\n\\usetikzlibrary{${libraries}}` : QUICKLATEX_PREAMBLE)
-            const paramObj: Record<string, string> = {
-              formula, fsize: '17px', fcolor: '000000', bcolor: 'ffffff',
-              mode: isFullDoc ? '1' : '0', out: '1', errors: '1',
-            }
-            if (!isFullDoc) paramObj.preamble = preamble
-            const params = new URLSearchParams(paramObj)
-            const qlRes = await fetch('https://quicklatex.com/latex3.f', {
+            const codecogsRes = await fetch('https://latex.codecogs.com/png.latex', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: params.toString(),
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'igcse-tools/1.0',
+              },
+              body: `latex=${encodeURIComponent(code)}`,
             })
-            const text = await qlRes.text()
-            res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' })
-            res.end(text)
+
+            if (!codecogsRes.ok) {
+              res.writeHead(502); res.end(`Codecogs error: HTTP ${codecogsRes.status}`); return
+            }
+
+            const buf = Buffer.from(await codecogsRes.arrayBuffer())
+            res.writeHead(200, {
+              'Content-Type': 'image/png',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'public, max-age=86400',
+            })
+            res.end(buf)
           } catch (err) {
             res.writeHead(500); res.end(String(err))
           }
@@ -63,7 +58,7 @@ function quicklatexDevProxy(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), quicklatexDevProxy()],
+    plugins: [react(), tailwindcss(), latexDevProxy()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
