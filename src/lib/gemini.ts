@@ -978,6 +978,7 @@ TIKZ REQUIREMENTS (each diagram):
 - Cambridge exam style: thick lines, filled dots at vertices, clear labels
 - Coordinates in range -3 to 3
 - Vertex labels: \\node[above] at (A) {$A$}; using named coordinates is fine
+- ALL coordinates MUST be non-negative (≥ 0). Place bottom-left at (0,0), use range 0–6. NO negative numbers.
 - Side length labels: compute midpoints as plain numbers e.g. \\node at (3.5, 0.2) {$7$};
 - NEVER use calc interpolation $(A)!0.5!(B)$ — always use explicit numeric midpoint coordinates
 - Angle arcs: \\draw (x,y) ++(startDeg:r) arc[start angle=startDeg, end angle=endDeg, radius=r];
@@ -1226,12 +1227,13 @@ STRICT REQUIREMENTS — follow exactly:
 1. Output ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}.
 2. Use \\usetikzlibrary{calc} on the line BEFORE \\begin{tikzpicture} if needed.
 3. MAXIMUM 25 lines inside the tikzpicture block.
-4. Use ONLY plain numeric coordinates — NO trig functions (cos/sin). Pre-compute: cos30°=0.866, sin30°=0.5, cos45°=0.707, cos60°=0.5, sin60°=0.866.
-5. NEVER use calc interpolation syntax like $(A)!0.5!(B)$ — compute midpoints manually as plain numbers instead.
-6. Label key points and values using \\node. Mark right angles with a small square.
-7. CRITICAL: every \\draw command MUST end with a semicolon on the same line.
-8. You MUST output the complete block ending with \\end{tikzpicture} — never truncate.
-9. If no diagram is needed, output nothing (empty string).`;
+4. ALL coordinates MUST be non-negative (≥ 0). Place the bottom-left corner at (0,0) and use range 0–6. NEVER use negative numbers in coordinates.
+5. Use ONLY plain numeric coordinates — NO trig functions (cos/sin). Pre-compute: cos30°=0.866, sin30°=0.5, cos45°=0.707, cos60°=0.5, sin60°=0.866.
+6. NEVER use calc interpolation syntax like $(A)!0.5!(B)$ — compute midpoints manually as plain numbers instead.
+7. Label key points and values using \\node. Mark right angles with a small square.
+8. CRITICAL: every \\draw command MUST end with a semicolon on the same line.
+9. You MUST output the complete block ending with \\end{tikzpicture} — never truncate.
+10. If no diagram is needed, output nothing (empty string).`;
 
   try {
     const response = await ai.models.generateContent({

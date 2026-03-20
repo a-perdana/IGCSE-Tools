@@ -45,9 +45,31 @@ function sanitizeTikz(code: string): string {
 /**
  * Renders TikZ code and returns a PNG data URL via the /api/latex proxy.
  */
+/**
+ * Shifts all coordinates so none are negative (QuickLaTeX rejects negative coords).
+ * Finds the minimum x and y across all (x,y) pairs and adds an offset.
+ */
+function shiftToPositive(code: string): string {
+  const coordRe = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g
+  let minX = 0, minY = 0
+  let m: RegExpExecArray | null
+  while ((m = coordRe.exec(code)) !== null) {
+    const x = parseFloat(m[1]), y = parseFloat(m[2])
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+  }
+  if (minX >= 0 && minY >= 0) return code
+  const dx = minX < 0 ? -minX + 0.5 : 0
+  const dy = minY < 0 ? -minY + 0.5 : 0
+  return code.replace(/\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g, (_, x, y) => {
+    return `(${parseFloat((parseFloat(x) + dx).toFixed(4))},${parseFloat((parseFloat(y) + dy).toFixed(4))})`
+  })
+}
+
 export async function renderTikz(code: string): Promise<RenderResult> {
   const sanitized = sanitizeTikz(code);
-  const document = extractBlock(sanitized);
+  const shifted = shiftToPositive(sanitized);
+  const document = extractBlock(shifted);
 
   const cached = cache.get(document);
   if (cached) return cached;
