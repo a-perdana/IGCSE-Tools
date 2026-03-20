@@ -1,9 +1,27 @@
 /**
- * Vercel Edge Function — QuickLaTeX proxy (full document mode).
- * Accepts POST { code: string } — a full \documentclass standalone document.
- * Uses QuickLaTeX mode=1 which supports complete LaTeX documents.
+ * Vercel Edge Function — QuickLaTeX proxy.
+ * Accepts POST { code: string } — tikzpicture block or full standalone document.
+ * Extracts the tikzpicture block and sends it as formula with preamble.
  */
 export const config = { runtime: 'edge' }
+
+const DEFAULT_PREAMBLE = [
+  '\\usepackage{tikz}',
+  '\\usetikzlibrary{arrows.meta,calc,patterns,positioning}',
+].join('\n')
+
+function extractTikzBlock(code: string): { formula: string; extraLibs: string } {
+  // Extract tikzpicture block
+  const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/)
+  const formula = blockMatch ? blockMatch[0] : code
+
+  // Extract any \usetikzlibrary calls from outside the block
+  const libMatches = [...code.matchAll(/\\usetikzlibrary\{([^}]+)\}/g)]
+  const libs = [...new Set(
+    libMatches.flatMap(m => m[1].split(',').map((s: string) => s.trim()).filter(Boolean))
+  )]
+  return { formula, extraLibs: libs.join(',') }
+}
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -15,9 +33,7 @@ export default async function handler(req: Request): Promise<Response> {
       },
     })
   }
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
-  }
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   let code: string
   try {
@@ -26,18 +42,22 @@ export default async function handler(req: Request): Promise<Response> {
   } catch {
     return new Response('Invalid JSON body', { status: 400 })
   }
-
   if (!code) return new Response('Missing code', { status: 400 })
 
-  // QuickLaTeX mode=1 accepts full \documentclass documents
+  const { formula, extraLibs } = extractTikzBlock(code)
+  const preamble = extraLibs
+    ? `${DEFAULT_PREAMBLE}\n\\usetikzlibrary{${extraLibs}}`
+    : DEFAULT_PREAMBLE
+
   const params = [
-    `formula=${encodeURIComponent(code)}`,
+    `formula=${encodeURIComponent(formula)}`,
     `fsize=17px`,
     `fcolor=000000`,
     `bcolor=ffffff`,
-    `mode=1`,
+    `mode=0`,
     `out=1`,
     `errors=1`,
+    `preamble=${encodeURIComponent(preamble)}`,
   ].join('&')
 
   const qlRes = await fetch('https://quicklatex.com/latex3.f', {
@@ -47,33 +67,21 @@ export default async function handler(req: Request): Promise<Response> {
   })
 
   const text = await qlRes.text()
+  const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean)
+  const urlLine = lines.find((l: string) => l.startsWith('http'))
 
-  // QuickLaTeX response: "0\n<url> <w> <h>\n" (status 0 = ok) or "1\n<error>\n"
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const status = lines[0]
-
-  if (status === '1' || status?.startsWith('1')) {
-    const errMsg = lines.slice(1).join(' ')
-    return new Response(`QuickLaTeX error: ${errMsg}`, { status: 502 })
-  }
-
-  const urlLine = lines.find(l => l.startsWith('http'))
   if (!urlLine) {
-    return new Response(`QuickLaTeX returned no URL. Response: ${text}`, { status: 502 })
+    return new Response(`QuickLaTeX no URL. Response: ${text.slice(0, 300)}`, { status: 502 })
   }
 
   const imageUrl = urlLine.split(/\s+/)[0]
-
   if (imageUrl.includes('/error.png')) {
-    const errMsg = lines.filter(l => !l.startsWith('http') && !/^\d/.test(l)).join(' ')
-    return new Response(`QuickLaTeX render error: ${errMsg}`, { status: 502 })
+    const errMsg = lines.filter((l: string) => !l.startsWith('http') && !/^\d/.test(l)).join(' ')
+    return new Response(`QuickLaTeX render error: ${errMsg || text.slice(0, 200)}`, { status: 502 })
   }
 
-  // Fetch the PNG and proxy it (avoids CORS issues with direct image URL)
   const imgRes = await fetch(imageUrl)
-  if (!imgRes.ok) {
-    return new Response(`Failed to fetch rendered image: HTTP ${imgRes.status}`, { status: 502 })
-  }
+  if (!imgRes.ok) return new Response(`Image fetch failed: HTTP ${imgRes.status}`, { status: 502 })
 
   const buf = await imgRes.arrayBuffer()
   return new Response(buf, {

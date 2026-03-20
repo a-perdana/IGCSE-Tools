@@ -4,8 +4,21 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import type { Plugin } from 'vite';
 
+const DEV_PREAMBLE = [
+  '\\usepackage{tikz}',
+  '\\usetikzlibrary{arrows.meta,calc,patterns,positioning}',
+].join('\n')
+
+function extractTikzBlock(code: string): { formula: string; extraLibs: string } {
+  const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/)
+  const formula = blockMatch ? blockMatch[0] : code
+  const libMatches = [...code.matchAll(/\\usetikzlibrary\{([^}]+)\}/g)]
+  const libs = [...new Set(libMatches.flatMap(m => m[1].split(',').map((s: string) => s.trim()).filter(Boolean)))]
+  return { formula, extraLibs: libs.join(',') }
+}
+
 /**
- * Dev-only proxy: intercepts POST /api/latex and forwards to latex.codecogs.com.
+ * Dev-only proxy: intercepts POST /api/latex and forwards to QuickLaTeX.
  * In production this is handled by the Vercel Edge Function at api/latex.ts.
  */
 function latexDevProxy(): Plugin {
@@ -27,11 +40,14 @@ function latexDevProxy(): Plugin {
             const { code } = JSON.parse(Buffer.concat(chunks).toString()) as { code?: string }
             if (!code) { res.writeHead(400); res.end('Missing code'); return }
 
-            // QuickLaTeX mode=1: full \documentclass document support
+            const { formula, extraLibs } = extractTikzBlock(code)
+            const preamble = extraLibs ? `${DEV_PREAMBLE}\n\\usetikzlibrary{${extraLibs}}` : DEV_PREAMBLE
+
             const params = [
-              `formula=${encodeURIComponent(code)}`,
+              `formula=${encodeURIComponent(formula)}`,
               `fsize=17px`, `fcolor=000000`, `bcolor=ffffff`,
-              `mode=1`, `out=1`, `errors=1`,
+              `mode=0`, `out=1`, `errors=1`,
+              `preamble=${encodeURIComponent(preamble)}`,
             ].join('&')
 
             const qlRes = await fetch('https://quicklatex.com/latex3.f', {
@@ -44,7 +60,7 @@ function latexDevProxy(): Plugin {
             const urlLine = lines.find((l: string) => l.startsWith('http'))
             if (!urlLine) { res.writeHead(502); res.end(`QuickLaTeX no URL: ${text}`); return }
             const imageUrl = urlLine.split(/\s+/)[0]
-            if (imageUrl.includes('/error.png')) { res.writeHead(502); res.end(`QuickLaTeX render error`); return }
+            if (imageUrl.includes('/error.png')) { res.writeHead(502); res.end(`QuickLaTeX render error: ${text.slice(0, 200)}`); return }
 
             const imgRes = await fetch(imageUrl)
             if (!imgRes.ok) { res.writeHead(502); res.end(`Image fetch failed: ${imgRes.status}`); return }
