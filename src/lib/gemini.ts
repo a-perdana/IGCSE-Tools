@@ -985,7 +985,7 @@ triangleSubtype, circleSubtype, coordSkill enrich the diagram — always fill th
       const response = await ai.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ text: intentPrompt }] }],
-        config: { responseMimeType: "application/json", maxOutputTokens: 256, temperature: 0.5, responseSchema: intentSchema },
+        config: { responseMimeType: "application/json", maxOutputTokens: 512, temperature: 0.5, responseSchema: intentSchema, thinkingConfig: { thinkingBudget: 0 } },
       });
       const usage = getGeminiUsage(response);
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
@@ -1020,429 +1020,235 @@ triangleSubtype, circleSubtype, coordSkill enrich the diagram — always fill th
    * `intent.given` provides the key numeric value (angle or length) chosen in Step 1.
    */
   function buildDSL(intent: QuestionIntent, seed: number): DiagramDSL {
-    const g = intent.given;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const deg2rad = (d: number) => d * Math.PI / 180;
+    const cos = (d: number) => r2(Math.cos(deg2rad(d)));
+    const sin = (d: number) => r2(Math.sin(deg2rad(d)));
 
+    // ── Parallel lines ──────────────────────────────────────────────────────
     if (intent.diagramType === "parallel_lines") {
-      const ang = Math.max(25, Math.min(75, g));
-      const s = (seed % 3) + 1; // 1, 2, or 3
-      // Rotate baseline lines so they're not always horizontal
-      const rotationAngle = seed * 15; // 0°, 15°, 30°, 45°…
-      const baseLine1: [[number, number], [number, number]] = [[0, 0], [10, 0]];
-      const baseLine2: [[number, number], [number, number]] = [[0, 5], [10, 5]];
-      const line1 = baseLine1.map((p) => rotate(p, rotationAngle)) as [[number, number], [number, number]];
-      const line2 = baseLine2.map((p) => rotate(p, rotationAngle)) as [[number, number], [number, number]];
+      const ang = Math.max(30, Math.min(70, intent.given));
+      const angleType = intent.angleType ?? "alternate";
+      // Guarantee true-parallel: both lines share same direction vector
+      // Line angle varies by seed so lines aren't always horizontal
+      const lineAngDeg = [0, 10, 20, 0, 10, 20, 0, 10][seed % 8];
+      const gap = 2.5;
+      // Perpendicular offset direction for line2
+      const perpDeg = lineAngDeg + 90;
+      const L1: [[number, number], [number, number]] = [
+        [r2(-4 * cos(lineAngDeg)), r2(-4 * sin(lineAngDeg))],
+        [r2( 4 * cos(lineAngDeg)), r2( 4 * sin(lineAngDeg))],
+      ];
+      const L2: [[number, number], [number, number]] = [
+        [r2(L1[0][0] + gap * cos(perpDeg)), r2(L1[0][1] + gap * sin(perpDeg))],
+        [r2(L1[1][0] + gap * cos(perpDeg)), r2(L1[1][1] + gap * sin(perpDeg))],
+      ];
+      // Transversal crosses both lines — angle from horizontal = ang
+      const tvOffsets = [-1, 0, 1, -0.5, 0.5, -1, 0, 1];
+      const xOff = tvOffsets[seed % 8];
+      const tvLen = 4;
+      const TV: [[number, number], [number, number]] = [
+        [r2(xOff - tvLen * cos(ang)), r2(-tvLen * sin(ang) - 0.5)],
+        [r2(xOff + tvLen * cos(ang)), r2( tvLen * sin(ang) + gap + 0.5)],
+      ];
       return {
         type: "parallel_lines",
-        line1,
-        line2,
-        transversal: [[2 + s, -2], [8 - s, 8]],
-        angleType: intent.angleType ?? "alternate",
+        line1: L1, line2: L2, transversal: TV,
+        angleType,
         constraints: ["parallel_lines"],
         givens: [`angle_at_A=${ang}`],
         unknowns: ["angle_at_B"],
       };
     }
 
+    // ── Circle ──────────────────────────────────────────────────────────────
     if (intent.diagramType === "circle") {
-      const r = Math.max(3, Math.min(6, Math.round(g / 10) + 3 + (seed % 2)));
-      // Vary center so it's not always at origin
-      const cx = seed % 2 === 0 ? seed : -seed;
-      const cy = seed % 3 === 0 ? seed : -(seed % 2);
+      const subtype = intent.circleSubtype ?? "thales";
+      // Fixed radius options for clean diagrams; always center at origin for rendering
+      const radii = [4, 5, 4, 5, 4, 5, 4, 5];
+      const rad = radii[seed % 8];
+      // Vary angle of C for diversity
+      const cAngles = [60, 75, 100, 120, 45, 135, 80, 110];
+      const cDeg = cAngles[seed % 8];
+
+      if (subtype === "thales" || subtype === "inscribed_angle") {
+        // Thales: AB is diameter, angle_ACB = 90°
+        const A: [number, number] = [-rad, 0];
+        const B: [number, number] = [ rad, 0];
+        const C: [number, number] = [r2(rad * cos(cDeg)), r2(rad * sin(cDeg))];
+        return {
+          type: "circle", center: [0, 0], radius: rad,
+          points: { A, B, C },
+          constraints: ["AB_is_diameter"],
+          givens: [`radius=${rad}`],
+          unknowns: ["angle_ACB"],
+        };
+      }
+
+      if (subtype === "central_angle") {
+        // Central angle = 2 × inscribed angle
+        const aAngles = [0, 15, 30, 45, 0, 15, 30, 45];
+        const aDeg = aAngles[seed % 8];
+        const centralDeg = Math.max(60, Math.min(120, intent.given));
+        const bDeg = aDeg + centralDeg;
+        // C on major arc — place opposite the chord AB
+        const midArcDeg = aDeg + centralDeg / 2 + 180;
+        const A: [number, number] = [r2(rad * cos(aDeg)), r2(rad * sin(aDeg))];
+        const B: [number, number] = [r2(rad * cos(bDeg)), r2(rad * sin(bDeg))];
+        const C: [number, number] = [r2(rad * cos(midArcDeg)), r2(rad * sin(midArcDeg))];
+        return {
+          type: "circle", center: [0, 0], radius: rad,
+          points: { A, B, C },
+          constraints: ["OA_is_radius", "OB_is_radius"],
+          givens: [`radius=${rad}`, `central_angle=${centralDeg}`],
+          unknowns: ["angle_ACB"],
+        };
+      }
+
+      // Default: thales
+      const A: [number, number] = [-rad, 0];
+      const B: [number, number] = [ rad, 0];
+      const C: [number, number] = [r2(rad * cos(cDeg)), r2(rad * sin(cDeg))];
       return {
-        type: "circle",
-        center: [cx, cy],
-        radius: r,
-        points: {
-          A: [cx - r, cy],
-          B: [cx + r, cy],
-          C: [cx, cy + r],
-        },
+        type: "circle", center: [0, 0], radius: rad,
+        points: { A, B, C },
         constraints: ["AB_is_diameter"],
-        givens: [`radius=${r}`],
+        givens: [`radius=${rad}`],
         unknowns: ["angle_ACB"],
       };
     }
 
+    // ── Coordinate geometry ─────────────────────────────────────────────────
     if (intent.diagramType === "coordinate_geometry") {
-      const x2 = Math.max(2, Math.min(8, Math.round(g / 8) + 2 + (seed % 3)));
-      const y2 = Math.max(2, Math.min(8, Math.round(g / 10) + 3 + ((seed + 1) % 3)));
+      const skill = intent.coordSkill ?? "distance";
+      // Pre-selected pairs chosen for pedagogical clarity
+      const pairs: [[number, number], [number, number]][] = [
+        [[1, 2], [5, 5]],   // distance=5, midpoint=(3,3.5), grad=3/4
+        [[0, 1], [4, 4]],   // distance=5, midpoint=(2,2.5), grad=3/4
+        [[2, 0], [6, 3]],   // distance=5, midpoint=(4,1.5), grad=3/4
+        [[1, 1], [7, 5]],   // distance≈7.2, midpoint=(4,3), grad=2/3
+        [[0, 3], [4, 0]],   // distance=5, midpoint=(2,1.5), grad=-3/4
+        [[2, 1], [8, 5]],   // distance≈7.2, midpoint=(5,3), grad=2/3
+        [[1, 0], [5, 3]],   // distance=5, midpoint=(3,1.5), grad=3/4
+        [[0, 2], [6, 6]],   // distance≈7.2, midpoint=(3,4), grad=2/3
+      ];
+      const [A, B] = pairs[seed % pairs.length];
+      const unknowns = skill === "gradient"             ? ["slope"] :
+                       skill === "midpoint"             ? ["midpoint"] :
+                       skill === "perpendicular_bisector" ? ["midpoint", "slope"] :
+                       ["length"];
       return {
         type: "coordinate_geometry",
-        points: { A: [0, 0], B: [x2, y2] },
+        points: { A, B },
         constraints: [],
-        givens: [`A=(0,0)`, `B=(${x2},${y2})`],
-        unknowns: ["length", "midpoint"],
+        givens: [`A=(${A[0]},${A[1]})`, `B=(${B[0]},${B[1]})`],
+        unknowns,
       };
     }
 
-    // triangle (default)
-    const a = Math.max(2, Math.min(8, Math.round(g / 10) + 2 + (seed % 3)));
-    const b = Math.max(2, Math.min(8, a + 1 + (seed % 2))); // ensure a ≠ b
-    if (intent.rightAngle) {
-      // Vary A position so it's not always at [0, a]
+    // ── Triangle ─────────────────────────────────────────────────────────────
+    const subtype = intent.triangleSubtype ?? (intent.rightAngle ? "right" : "scalene");
+
+    // Helper: format number cleanly for diagram labels (no trailing zeros)
+    const lbl = (n: number) => String(parseFloat(n.toFixed(2)));
+
+    if (subtype === "right") {
+      // Pythagorean triples — integer sides, clean diagrams
+      const triples: [number, number, number][] = [
+        [3, 4, 5], [5, 12, 13], [8, 6, 10], [9, 12, 15],
+        [6, 8, 10], [4, 3, 5],  [12, 5, 13], [8, 15, 17],
+      ];
+      const [leg1, leg2] = triples[seed % triples.length];
       return {
         type: "triangle",
-        points: { A: [seed, a], B: [seed, 0], C: [seed + b, 0] },
+        points: { A: [0, leg1], B: [0, 0], C: [leg2, 0] },
         rightAngleAt: "B",
         constraints: ["right_angle_at_B"],
-        givens: [`AB=${a}`, `BC=${b}`],
+        givens: [`AB=${leg1}`, `BC=${leg2}`],
         unknowns: ["AC", "angle_A"],
+        labels: { AB: lbl(leg1), BC: lbl(leg2), CA: "?" },
       };
     }
-    // Oblique triangle: non-right, balanced
-    const cx = Math.max(1, Math.round(b / 2) + (seed % 2));
-    const cy = Math.max(2, a - 1 + (seed % 2));
+
+    if (subtype === "isosceles") {
+      // Symmetric apex: A at top, B and C on base
+      const configs: [number, number][] = [
+        [6, 4], [8, 5], [5, 6], [7, 5],
+        [6, 4], [8, 5], [5, 6], [7, 5],
+      ];
+      const [base, height] = configs[seed % 8];
+      const halfBase = base / 2;
+      const leg = r2(Math.sqrt(halfBase ** 2 + height ** 2));
+      return {
+        type: "triangle",
+        points: { A: [halfBase, height], B: [0, 0], C: [base, 0] },
+        constraints: ["AB=AC"],
+        givens: [`BC=${base}`, `AB=${lbl(leg)}`],
+        unknowns: ["angle_A", "angle_B"],
+        labels: { BC: lbl(base), AB: lbl(leg) },
+      };
+    }
+
+    if (subtype === "obtuse") {
+      const configs: [[number, number], [number, number], [number, number]][] = [
+        [[0, 0], [7, 0], [2, 3]],
+        [[0, 0], [8, 0], [1, 4]],
+        [[0, 0], [6, 0], [1, 3]],
+        [[0, 0], [9, 0], [2, 4]],
+        [[0, 0], [7, 0], [1, 3]],
+        [[0, 0], [8, 0], [3, 5]],
+        [[0, 0], [6, 0], [2, 3]],
+        [[0, 0], [9, 0], [1, 4]],
+      ];
+      const [A, B, C] = configs[seed % configs.length];
+      const AB = r2(Math.sqrt((B[0]-A[0])**2 + (B[1]-A[1])**2));
+      const BC = r2(Math.sqrt((C[0]-B[0])**2 + (C[1]-B[1])**2));
+      return {
+        type: "triangle",
+        points: { A, B, C },
+        constraints: [],
+        givens: [`AB=${AB}`, `BC=${BC}`],
+        unknowns: ["angle_A", "angle_C"],
+        labels: { AB: lbl(AB), BC: lbl(BC) },
+      };
+    }
+
+    // Scalene (default)
+    const scaleneConfigs: [[number, number], [number, number], [number, number]][] = [
+      [[0, 0], [6, 0], [2, 4]],
+      [[0, 0], [7, 0], [3, 5]],
+      [[0, 0], [5, 0], [1, 4]],
+      [[0, 0], [8, 0], [3, 4]],
+      [[0, 0], [6, 0], [4, 5]],
+      [[0, 0], [7, 0], [2, 5]],
+      [[0, 0], [5, 0], [3, 4]],
+      [[0, 0], [8, 0], [5, 6]],
+    ];
+    const [sA, sB, sC] = scaleneConfigs[seed % scaleneConfigs.length];
+    const sAB = r2(Math.sqrt((sB[0]-sA[0])**2 + (sB[1]-sA[1])**2));
+    const sBC = r2(Math.sqrt((sC[0]-sB[0])**2 + (sC[1]-sB[1])**2));
     return {
       type: "triangle",
-      points: { A: [seed, seed], B: [seed + b, seed], C: [seed + cx, seed + cy] },
+      points: { A: sA, B: sB, C: sC },
       constraints: [],
-      givens: [`AB=${b}`, `BC=${Math.round(Math.sqrt((b - cx) ** 2 + cy ** 2))}`],
-      unknowns: ["angle_A", "angle_B"],
+      givens: [`AB=${sAB}`, `BC=${sBC}`],
+      unknowns: ["angle_A", "angle_C"],
+      labels: { AB: lbl(sAB), BC: lbl(sBC) },
     };
   }
 
-  /** Rotate a 2D point by `angle` degrees around the origin. */
-  function rotate([x, y]: [number, number], angle: number): [number, number] {
-    const rad = angle * Math.PI / 180;
-    return [
-      Math.round((x * Math.cos(rad) - y * Math.sin(rad)) * 100) / 100,
-      Math.round((x * Math.sin(rad) + y * Math.cos(rad)) * 100) / 100,
-    ];
-  }
 
-  // ── Step 2 (New): AI-generated DSL ──────────────────────────────────────────
-  //
-  // Replaces the hardcoded buildDSL() templates with an AI call that receives the
-  // QuestionIntent and returns geometrically valid DSL coordinates.
-  //
-  // Flow:
-  //   Attempt 1 → AI generates flat JSON → flatResponseToDSL → validateDSL
-  //   Attempt 2 → retry with validation errors appended (lower temperature)
-  //   Fallback  → buildDSL(intent, seed) — guaranteed valid, kept as safety net
+  // ── Step 2: Deterministic DSL builder ───────────────────────────────────────
+  // AI cannot reliably generate exact numeric coordinates.
+  // buildDSL() produces geometrically valid, varied geometry from the QuestionIntent.
   // ────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Gemini structured-output schema for DSL generation.
-   * Uses a FLAT layout (all points as scalar x/y fields) because Gemini's
-   * responseSchema does not reliably support free-key Record<string, [n,n]>.
-   * flatResponseToDSL() reassembles the proper DiagramDSL from these fields.
-   */
-  const dslResponseSchema = {
-    type: Type.OBJECT,
-    properties: {
-      type:             { type: Type.STRING },
-      // Named points (A–E, O, M) as explicit scalar pairs
-      point_A_x: { type: Type.NUMBER, nullable: true }, point_A_y: { type: Type.NUMBER, nullable: true },
-      point_B_x: { type: Type.NUMBER, nullable: true }, point_B_y: { type: Type.NUMBER, nullable: true },
-      point_C_x: { type: Type.NUMBER, nullable: true }, point_C_y: { type: Type.NUMBER, nullable: true },
-      point_D_x: { type: Type.NUMBER, nullable: true }, point_D_y: { type: Type.NUMBER, nullable: true },
-      point_O_x: { type: Type.NUMBER, nullable: true }, point_O_y: { type: Type.NUMBER, nullable: true },
-      point_M_x: { type: Type.NUMBER, nullable: true }, point_M_y: { type: Type.NUMBER, nullable: true },
-      // Triangle
-      rightAngleAt: { type: Type.STRING, nullable: true },
-      // Circle
-      center_x: { type: Type.NUMBER, nullable: true },
-      center_y: { type: Type.NUMBER, nullable: true },
-      radius:   { type: Type.NUMBER, nullable: true },
-      // Parallel lines
-      line1_x1: { type: Type.NUMBER, nullable: true }, line1_y1: { type: Type.NUMBER, nullable: true },
-      line1_x2: { type: Type.NUMBER, nullable: true }, line1_y2: { type: Type.NUMBER, nullable: true },
-      line2_x1: { type: Type.NUMBER, nullable: true }, line2_y1: { type: Type.NUMBER, nullable: true },
-      line2_x2: { type: Type.NUMBER, nullable: true }, line2_y2: { type: Type.NUMBER, nullable: true },
-      transversal_x1: { type: Type.NUMBER, nullable: true }, transversal_y1: { type: Type.NUMBER, nullable: true },
-      transversal_x2: { type: Type.NUMBER, nullable: true }, transversal_y2: { type: Type.NUMBER, nullable: true },
-      angleType: { type: Type.STRING, nullable: true },
-      // Semantic fields
-      constraints: { type: Type.ARRAY, items: { type: Type.STRING } },
-      givens:      { type: Type.ARRAY, items: { type: Type.STRING } },
-      unknowns:    { type: Type.ARRAY, items: { type: Type.STRING } },
-      // Side and angle labels
-      label_AB:      { type: Type.STRING, nullable: true },
-      label_BC:      { type: Type.STRING, nullable: true },
-      label_CA:      { type: Type.STRING, nullable: true },
-      label_angle_A: { type: Type.STRING, nullable: true },
-      label_angle_B: { type: Type.STRING, nullable: true },
-      label_angle_C: { type: Type.STRING, nullable: true },
-    },
-    required: ["type", "givens", "unknowns", "constraints"],
-  };
-
-  /**
-   * Assembles a proper DiagramDSL from the flat Gemini response.
-   * Named points are read back from the scalar x/y fields.
-   */
-  function flatResponseToDSL(flat: Record<string, any>): DiagramDSL {
-    const dsl: DiagramDSL = {
-      type: flat.type as DiagramDSL["type"],
-      givens:      Array.isArray(flat.givens)      ? flat.givens      : [],
-      unknowns:    Array.isArray(flat.unknowns)    ? flat.unknowns    : [],
-      constraints: Array.isArray(flat.constraints) ? flat.constraints : [],
-    };
-
-    // Reassemble named points
-    const points: Record<string, [number, number]> = {};
-    for (const name of ["A", "B", "C", "D", "O", "M"]) {
-      const x = flat[`point_${name}_x`];
-      const y = flat[`point_${name}_y`];
-      if (typeof x === "number" && typeof y === "number" && isFinite(x) && isFinite(y)) {
-        points[name] = [
-          Math.round(x * 100) / 100,
-          Math.round(y * 100) / 100,
-        ];
-      }
-    }
-    if (Object.keys(points).length > 0) dsl.points = points;
-
-    // Triangle
-    if (flat.type === "triangle" && flat.rightAngleAt) {
-      dsl.rightAngleAt = flat.rightAngleAt as "A" | "B" | "C";
-    }
-
-    // Circle
-    if (flat.type === "circle") {
-      if (typeof flat.center_x === "number" && typeof flat.center_y === "number") {
-        dsl.center = [Math.round(flat.center_x * 100) / 100, Math.round(flat.center_y * 100) / 100];
-      }
-      if (typeof flat.radius === "number" && flat.radius > 0) {
-        dsl.radius = Math.round(flat.radius * 100) / 100;
-      }
-    }
-
-    // Parallel lines
-    if (flat.type === "parallel_lines") {
-      if (typeof flat.line1_x1 === "number") {
-        dsl.line1 = [[flat.line1_x1, flat.line1_y1], [flat.line1_x2, flat.line1_y2]];
-        dsl.line2 = [[flat.line2_x1, flat.line2_y1], [flat.line2_x2, flat.line2_y2]];
-        dsl.transversal = [[flat.transversal_x1, flat.transversal_y1], [flat.transversal_x2, flat.transversal_y2]];
-      }
-      if (flat.angleType) dsl.angleType = flat.angleType as DiagramDSL["angleType"];
-    }
-
-    // Labels
-    const labels: Record<string, string> = {};
-    const labelKeys = ["AB", "BC", "CA", "angle_A", "angle_B", "angle_C"];
-    for (const key of labelKeys) {
-      const v = flat[`label_${key}`];
-      if (typeof v === "string" && v.trim()) labels[key] = v.trim();
-    }
-    if (Object.keys(labels).length > 0) dsl.labels = labels;
-
+  function generateDSLFromIntent(intent: QuestionIntent, seed: number): DiagramDSL {
+    // Deterministic, guaranteed-valid geometry — no AI for coordinates.
+    // AI cannot reliably generate exact numeric coordinates; buildDSL does it correctly every time.
+    const dsl = buildDSL(intent, seed);
+    onLog?.(`[DSL] seed=${seed}: built (${dsl.type}, subtype=${intent.triangleSubtype ?? intent.circleSubtype ?? intent.angleType ?? intent.coordSkill ?? "default"})`);
     return dsl;
-  }
-
-  /**
-   * Builds a geometry prompt for the given intent.
-   * If `validationErrors` is provided, they are appended so the AI can self-correct.
-   */
-  function buildDSLPrompt(intent: QuestionIntent, seed: number, validationErrors?: string[]): string {
-    const subtype =
-      intent.diagramType === "triangle"            ? `Triangle subtype: "${intent.triangleSubtype ?? (intent.rightAngle ? "right" : "scalene")}"` :
-      intent.diagramType === "circle"              ? `Circle subtype: "${intent.circleSubtype ?? "central_angle"}"` :
-      intent.diagramType === "coordinate_geometry" ? `Coordinate skill: "${intent.coordSkill ?? "distance"}"` :
-      intent.diagramType === "parallel_lines"      ? `Angle type: "${intent.angleType ?? "alternate"}"` : "";
-
-    const errorSection = validationErrors && validationErrors.length > 0
-      ? `\n════════════════════════════════════
-PREVIOUS ATTEMPT FAILED VALIDATION — FIX THESE ERRORS:
-${validationErrors.map((e) => `  ✗ ${e}`).join("\n")}
-You MUST correct all errors listed above before outputting.\n`
-      : "";
-
-    return `You are a geometry coordinate generator for Cambridge IGCSE exam diagrams.
-
-════════════════════════════════════
-QUESTION INTENT
-
-Skill to test: "${intent.skillTested}"
-Diagram type: "${intent.diagramType}"
-${subtype}
-Value band: "${intent.valueBand}"  (small=2–4 lengths/25–45° angles | medium=4–7/40–60° | large=6–10/55–75°)
-Key given value: ${intent.given}
-Seed for variety: ${seed}  ← vary orientation, position and size based on this
-
-════════════════════════════════════
-YOUR TASK
-
-Output ONE DiagramDSL JSON object for this diagram.
-The diagram must be geometrically valid AND varied (different coordinates per seed).
-
-════════════════════════════════════
-OUTPUT SCHEMA (flat — all number fields are scalars)
-
-{
-  "type": "triangle" | "circle" | "parallel_lines" | "coordinate_geometry",
-  "point_A_x": <number|null>, "point_A_y": <number|null>,
-  "point_B_x": <number|null>, "point_B_y": <number|null>,
-  "point_C_x": <number|null>, "point_C_y": <number|null>,
-  "point_D_x": <number|null>, "point_D_y": <number|null>,
-  "point_O_x": <number|null>, "point_O_y": <number|null>,
-  "point_M_x": <number|null>, "point_M_y": <number|null>,
-  "rightAngleAt": "A"|"B"|"C"|null,
-  "center_x": <number|null>, "center_y": <number|null>, "radius": <number|null>,
-  "line1_x1": <number|null>, "line1_y1": <number|null>,
-  "line1_x2": <number|null>, "line1_y2": <number|null>,
-  "line2_x1": <number|null>, "line2_y1": <number|null>,
-  "line2_x2": <number|null>, "line2_y2": <number|null>,
-  "transversal_x1": <number|null>, "transversal_y1": <number|null>,
-  "transversal_x2": <number|null>, "transversal_y2": <number|null>,
-  "angleType": "corresponding"|"alternate"|"co-interior"|null,
-  "constraints": ["<string>", ...],
-  "givens":      ["<string>", ...],
-  "unknowns":    ["<string>", ...],
-  "label_AB": "<string>|null", "label_BC": "<string>|null", "label_CA": "<string>|null",
-  "label_angle_A": "<string>|null", "label_angle_B": "<string>|null", "label_angle_C": "<string>|null"
-}
-
-════════════════════════════════════
-GEOMETRY RULES — MANDATORY
-
-TRIANGLE:
-• Points A, B, C must form a non-degenerate triangle (no side < 0.5)
-• Triangle inequality: every side < sum of the other two
-• For "right" subtype: build B at origin, A above on y-axis, C to the right on x-axis
-  → B=[bx,by], A=[bx, by+height], C=[bx+base, by] — then set rightAngleAt="B"
-  → Translate the whole triangle by (seed*1.5, seed*0.7) for variety
-• For "isosceles": |AB| = |BC| (within 0.1). Place A at apex, B and C symmetrically.
-• For "obtuse": one interior angle must be > 90°. Place C far along the base to achieve this.
-• For "scalene": all three sides different, no angle near 90°.
-• All coordinates: max 2 decimal places, range [−10, 10].
-• Vary orientation: rotate entire triangle by (seed × 37°) around its centroid.
-• givens: list the TWO sides the student is given (e.g. "AB=5", "BC=3")
-• unknowns: the side or angle to find (e.g. "AC" or "angle_A")
-• label_AB / label_BC etc.: display string shown ON the diagram (e.g. "5 cm" or "?")
-
-CIRCLE:
-• center_x, center_y: vary — do NOT always use (0,0). Add (seed*1.3, seed*0.9).
-• radius: from value band (small→3, medium→5, large→7)
-• ALL circumference points must satisfy: √((px−cx)²+(py−cy)²) = radius ± 8%
-  → Use: px = cx + r·cos(θ°), py = cy + r·sin(θ°) for exact placement
-• "thales": A=diameter end, B=other diameter end, C=any other circumference point (θ≠0°/180°)
-  → unknowns: ["angle_ACB"] (answer is always 90° by Thales)
-• "inscribed_angle": A, B on circle; C on circle NOT on arc AB
-  → central angle AOB = 2 × inscribed angle ACB
-  → givens: ["central_angle=X"] unknowns: ["inscribed_angle"]
-• "central_angle": O at center, A and B on circle
-  → givens: ["radius=r", "angle_AOB=X"] unknowns: ["arc_length"] or ["chord_AB"]
-  → Include point_O_x/y = center_x/center_y
-• "chord_bisector": chord AB, perpendicular from O bisects it
-  → givens: ["radius=r", "half_chord=d"] unknowns: ["distance_from_center"]
-• "tangent_radius": radius OA, tangent line at A perpendicular to OA
-  → givens: ["radius=r", "tangent_length=t"] unknowns: ["distance_from_external_point"]
-• Rotate all circumference points by (seed × 41°) around center for variety.
-• givens: always include "radius=r"
-
-PARALLEL LINES:
-• Build from a direction vector [dx, dy] shared by both lines:
-  direction: dx=cos(lineAngle°), dy=sin(lineAngle°) where lineAngle = seed×20°
-  line1: from [−4, 0] to [4, 0] rotated by lineAngle
-  line2: line1 translated perpendicular by gap 2.5 units
-  → This guarantees exactly parallel lines (cross product = 0)
-• Transversal angle = intent.given degrees from the line direction
-  → transversal direction: dx2=cos(transAngle°), dy2=sin(transAngle°)
-  → transversal must cross BOTH lines within x range [−4, 4]
-• givens: ["angle_at_A=${intent.given}"] unknowns: ["angle_at_B"]
-• angleType: from intent.angleType
-
-COORDINATE GEOMETRY:
-• At least points A and B; integers or 1-decimal values in [−8, 8]
-• "distance": choose A and B so distance is irrational (avoid perfect integers)
-• "midpoint": choose A and B so midpoint has integer coordinates
-• "gradient": choose A and B so gradient is a simple fraction (2/3, −3/4, 2, etc.)
-• "perpendicular_bisector": A and B symmetric about y-axis; unknowns include bisector
-• Translate both points by (seed, seed×2) to avoid always using origin.
-• givens: list coordinates of given points, e.g. "A=(2,1)", "B=(6,5)"
-• unknowns: ["length"] | ["midpoint"] | ["slope"] per coordSkill
-
-════════════════════════════════════
-VARIETY RULES
-
-• seed=${seed}: no two seeds should produce identical coordinates
-• Even seeds: standard orientation; odd seeds: rotated or mirrored figure
-• Never output the canonical "A=[0,0], B=[5,0], C=[0,4]" pattern for every call
-• Vary: vertex positions, circle center location, line angles, point spacing
-
-════════════════════════════════════
-SELF-CHECK before outputting:
-1. Triangle: does it satisfy the triangle inequality?
-2. Circle: does √((px−cx)²+(py−cy)²) ≈ radius for every named point except O?
-3. Parallel lines: are line1 and line2 exactly parallel (same direction vector)?
-4. Are all unknowns absent from the givens list?
-${errorSection}
-Output ONLY the JSON. No explanation. All numbers: max 2 decimal places.`;
-  }
-
-  /**
-   * Step 2 (new): AI generates a DiagramDSL tailored to the question intent.
-   *
-   * Replaces the hardcoded buildDSL() templates with an AI call that reasons
-   * about geometry based on the skill being tested. Retries once with
-   * validation errors. Falls back to buildDSL() as a guaranteed-valid safety net.
-   *
-   * @internal buildDSL() is kept as the fallback — do not remove it.
-   */
-  async function generateDSLFromIntent(intent: QuestionIntent, seed: number): Promise<DiagramDSL> {
-    // Attempt 1 — AI generates coordinates from scratch
-    let lastErrors: string[] = [];
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: buildDSLPrompt(intent, seed) }] }],
-        config: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 1024,
-          temperature: 0.4,
-          responseSchema: dslResponseSchema,
-        },
-      });
-      const usage = getGeminiUsage(response);
-      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
-
-      const flat = safeJsonParse(response.text || "{}");
-      const dsl = flatResponseToDSL(flat);
-      const validation = validateDSL(dsl);
-
-      if (validation.valid) {
-        onLog?.(`[DSL-AI] seed=${seed}: attempt 1 valid (${dsl.type})`);
-        return dsl;
-      }
-      lastErrors = validation.errors;
-      onLog?.(`[DSL-AI] seed=${seed}: attempt 1 invalid — ${validation.errors.join("; ")}`);
-    } catch (err) {
-      lastErrors = [`AI call failed: ${String(err)}`];
-      onLog?.(`[DSL-AI] seed=${seed}: attempt 1 threw — ${String(err)}`);
-    }
-
-    // Attempt 2 — retry, feeding validation errors back so AI can self-correct
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: buildDSLPrompt(intent, seed, lastErrors) }] }],
-        config: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 1024,
-          temperature: 0.2, // lower temperature on retry — prioritise correctness
-          responseSchema: dslResponseSchema,
-        },
-      });
-      const usage = getGeminiUsage(response);
-      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
-
-      const flat = safeJsonParse(response.text || "{}");
-      const dsl = flatResponseToDSL(flat);
-      const validation = validateDSL(dsl);
-
-      if (validation.valid) {
-        onLog?.(`[DSL-AI] seed=${seed}: attempt 2 valid after retry`);
-        return dsl;
-      }
-      onLog?.(`[DSL-AI] seed=${seed}: attempt 2 still invalid (${validation.errors.join("; ")}) — using buildDSL fallback`);
-    } catch (err) {
-      onLog?.(`[DSL-AI] seed=${seed}: attempt 2 threw (${String(err)}) — using buildDSL fallback`);
-    }
-
-    // Fallback — guaranteed valid geometry from deterministic templates
-    onLog?.(`[DSL-AI] seed=${seed}: falling back to buildDSL`);
-    return buildDSL(intent, seed);
   }
 
   // ── Slot normalisation — SEQUENTIAL (rate-limit safe) ───────────────────────
@@ -1461,10 +1267,8 @@ Output ONLY the JSON. No explanation. All numbers: max 2 decimal places.`;
       // Step 1 — Question Intent (AI: topic → skill + diagram type + given value)
       intent = await generateQuestionIntent(s.topic ?? config.topic, i);
 
-      // Step 2 — AI generates DSL from intent (with retry + buildDSL fallback)
-      // Small pause between intent call and DSL call to stay within rate limits
-      await new Promise((r) => setTimeout(r, 200));
-      const dsl = await generateDSLFromIntent(intent, i);
+      // Step 2 — Build DSL deterministically from intent
+      const dsl = generateDSLFromIntent(intent, i);
 
       // Step 3 — Validate (generateDSLFromIntent guarantees validity, but double-check)
       const validation = validateDSL(dsl);

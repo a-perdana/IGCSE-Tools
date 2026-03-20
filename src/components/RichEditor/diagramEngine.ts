@@ -281,7 +281,7 @@ function renderTriangleFromDSL(dsl: DiagramDSL): string | null {
   for (const [key, vtx, p1, p2] of angleArcs) {
     if (unknowns.has(key) || labels[key]) {
       const labelStr = labels[key] ?? "?";
-      const arc = angleArc(vtx, p1, p2, labelStr, 0.32);
+      const arc = angleArc(vtx, p1, p2, labelStr, 0.42);
       if (arc) tikz += `  ${arc}\n`;
     }
   }
@@ -359,7 +359,7 @@ function renderCircleFromDSL(dsl: DiagramDSL): string | null {
 
   % Centre
   \\fill (O) circle (2pt);
-  \\node[below left, outer sep=3pt, font=\\small] at (O) {$${labels["O"] ?? "O"}$};
+  \\node[below left, outer sep=5pt, font=\\small] at (O) {$${labels["O"] ?? "O"}$};
 `;
 
   // Circumference points
