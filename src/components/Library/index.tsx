@@ -3,10 +3,11 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw } from 'lucide-react'
 import type { Assessment, Question, Folder } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
+import { DiagramRenderer } from '../DiagramRenderer'
 
 interface Props {
   assessments: Assessment[]
@@ -31,6 +32,7 @@ interface Props {
   currentUserName: string
   onTogglePublicAssessment: (id: string, isPublic: boolean) => void
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
+  onRegenerateDiagram?: (question: Question) => Promise<void>
 }
 
 
@@ -49,12 +51,15 @@ function QuestionPreviewModal({
   question,
   onClose,
   onUpdate,
+  onRegenerateDiagram,
 }: {
   question: Question
   onClose: () => void
   onUpdate?: (updates: { text: string; answer: string; markScheme: string }) => void
+  onRegenerateDiagram?: (q: Question) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
   const [draft, setDraft] = useState({ text: question.text, answer: question.answer, markScheme: question.markScheme })
 
   return (
@@ -74,6 +79,16 @@ function QuestionPreviewModal({
             )}
           </div>
           <div className="flex items-center gap-1">
+            {onRegenerateDiagram && question.hasDiagram && !editing && (
+              <button
+                onClick={async () => { setRegenerating(true); try { await onRegenerateDiagram(question) } finally { setRegenerating(false) } }}
+                disabled={regenerating}
+                className="p-1 text-stone-400 hover:text-violet-600 disabled:opacity-50"
+                title={question.diagram ? 'Improve Diagram' : 'Generate Diagram'}
+              >
+                <RefreshCw className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} />
+              </button>
+            )}
             {onUpdate && (
               editing ? (
                 <>
@@ -123,6 +138,7 @@ function QuestionPreviewModal({
             </div>
           ) : (
             <>
+              {question.diagram && <DiagramRenderer spec={question.diagram} />}
               <QMarkdown content={question.text} />
               <div className="mt-4 pt-4 border-t border-stone-100">
                 <p className="text-xs font-semibold text-stone-500 mb-1">Answer</p>
@@ -177,6 +193,7 @@ export function Library({
   onUpdateQuestion,
   currentUserId, currentUserName,
   onTogglePublicAssessment, onTogglePublicQuestion,
+  onRegenerateDiagram,
 }: Props) {
   const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
@@ -651,6 +668,10 @@ export function Library({
             await onUpdateQuestion(previewQuestion.id, updates)
             setPreviewQuestion({ ...previewQuestion, ...updates })
           }}
+          onRegenerateDiagram={onRegenerateDiagram ? async (q) => {
+            await onRegenerateDiagram(q)
+            // Refresh the preview with updated question from library
+          } : undefined}
         />
       )}
     </div>

@@ -603,6 +603,14 @@ export default function App() {
             currentUserName={user.displayName ?? user.email ?? 'Unknown'}
             onTogglePublicAssessment={(id, isPublic) => library.togglePublicAssessment(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
             onTogglePublicQuestion={(id, isPublic) => library.togglePublicQuestion(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
+            onRegenerateDiagram={async (q) => {
+              const results = await (await import('./lib/gemini')).regenerateDiagramsForQuestions(
+                [q], q.subject,
+                customModel.trim() || DEFAULT_MODELS['gemini'],
+                apiKeys['gemini'],
+              )
+              if (results.length) await library.updateQuestion(q.id, { diagram: results[0].diagram, hasDiagram: true, diagramMissing: undefined })
+            }}
           />
           </div>
         ) : (
