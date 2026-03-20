@@ -976,15 +976,11 @@ QUESTION REQUIREMENTS (each question):
 TIKZ REQUIREMENTS (each diagram):
 - Write ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}
 - Cambridge exam style: thick lines, filled dots at vertices, clear labels
-- Coordinates in range -3 to 3
-- Vertex labels: \\node[above] at (A) {$A$}; using named coordinates is fine
-- ALL coordinates MUST be non-negative (≥ 0). Place bottom-left at (0,0), use range 0–6. NO negative numbers.
-- Side length labels: compute midpoints as plain numbers e.g. \\node at (3.5, 0.2) {$7$};
-- NEVER use calc interpolation $(A)!0.5!(B)$ — always use explicit numeric midpoint coordinates
-- Angle arcs: \\draw (x,y) ++(startDeg:r) arc[start angle=startDeg, end angle=endDeg, radius=r];
-- Right angles: small square \\draw (B) -- ++(0.3,0) -- ++(0,0.3) -- ++(-0.3,0);
+- Use \\coordinate for named points, calc interpolation $(A)!0.5!(B)$ is allowed
+- Angle arcs: use the 'angles' library with \\pic or \\draw arc syntax
+- Right angles: small square marker
 - Available libraries: calc, arrows.meta, angles, quotes, patterns, positioning
-- Diagram must match question exactly
+- Diagram must match question exactly (same letters, values, geometry)
 
 MARK SCHEME: Cambridge notation (B1, M1, A1).`;
 
@@ -1225,15 +1221,12 @@ ANSWER: ${question.answer}
 
 STRICT REQUIREMENTS — follow exactly:
 1. Output ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}.
-2. Use \\usetikzlibrary{calc} on the line BEFORE \\begin{tikzpicture} if needed.
-3. MAXIMUM 25 lines inside the tikzpicture block.
-4. ALL coordinates MUST be non-negative (≥ 0). Place the bottom-left corner at (0,0) and use range 0–6. NEVER use negative numbers in coordinates.
-5. Use ONLY plain numeric coordinates — NO trig functions (cos/sin). Pre-compute: cos30°=0.866, sin30°=0.5, cos45°=0.707, cos60°=0.5, sin60°=0.866.
-6. NEVER use calc interpolation syntax like $(A)!0.5!(B)$ — compute midpoints manually as plain numbers instead.
-7. Label key points and values using \\node. Mark right angles with a small square.
-8. CRITICAL: every \\draw command MUST end with a semicolon on the same line.
-9. You MUST output the complete block ending with \\end{tikzpicture} — never truncate.
-10. If no diagram is needed, output nothing (empty string).`;
+2. Add \\usetikzlibrary{...} on the line BEFORE \\begin{tikzpicture} if needed.
+3. Use \\coordinate for named points. calc interpolation $(A)!0.5!(B)$ is fully supported.
+4. Label all key points and values. Mark right angles with a small square.
+5. CRITICAL: every \\draw command MUST end with a semicolon on the same line.
+6. You MUST output the complete block ending with \\end{tikzpicture} — never truncate.
+7. If no diagram is needed, output nothing (empty string).`;
 
   try {
     const response = await ai.models.generateContent({
