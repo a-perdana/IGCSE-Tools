@@ -395,7 +395,11 @@ export const updateAssessment = async (
 ): Promise<void> => {
   const docRef = doc(db, 'assessments', id)
   try {
-    await updateDoc(docRef, stripUndefined(updates as Record<string, unknown>) as any)
+    const payload = stripUndefined(updates as Record<string, unknown>)
+    if (Array.isArray(payload.questions)) {
+      payload.questions = (payload.questions as unknown[]).map(q => serializeQuestionDiagram(q))
+    }
+    await updateDoc(docRef, payload as any)
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `assessments/${id}`)
   }
