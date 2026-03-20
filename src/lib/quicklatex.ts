@@ -17,8 +17,14 @@ const cache = new Map<string, RenderResult>();
  * api/latex.ts expects only the tikzpicture block — it adds the preamble itself.
  */
 function extractBlock(code: string): string {
+  // Always extract only the tikzpicture block — strip any \documentclass wrapper
   const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/);
-  if (blockMatch) return blockMatch[0];
+  if (blockMatch) {
+    // Also prepend any \usetikzlibrary lines that appear before the block
+    const libMatches = [...code.matchAll(/\\usetikzlibrary\{[^}]+\}/g)];
+    const libLines = [...new Set(libMatches.map(m => m[0]))].join('\n');
+    return libLines ? `${libLines}\n${blockMatch[0]}` : blockMatch[0];
+  }
   // No block found — wrap bare commands
   return `\\begin{tikzpicture}\n${code.trim()}\n\\end{tikzpicture}`;
 }
@@ -68,8 +74,8 @@ function shiftToPositive(code: string): string {
 
 export async function renderTikz(code: string): Promise<RenderResult> {
   const sanitized = sanitizeTikz(code);
-  const shifted = shiftToPositive(sanitized);
-  const document = extractBlock(shifted);
+  const extracted = extractBlock(sanitized);
+  const document = shiftToPositive(extracted);
 
   const cached = cache.get(document);
   if (cached) return cached;
