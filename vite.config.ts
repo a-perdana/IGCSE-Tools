@@ -27,20 +27,28 @@ function latexDevProxy(): Plugin {
             const { code } = JSON.parse(Buffer.concat(chunks).toString()) as { code?: string }
             if (!code) { res.writeHead(400); res.end('Missing code'); return }
 
-            const codecogsRes = await fetch('https://latex.codecogs.com/png.latex', {
+            // QuickLaTeX mode=1: full \documentclass document support
+            const params = [
+              `formula=${encodeURIComponent(code)}`,
+              `fsize=17px`, `fcolor=000000`, `bcolor=ffffff`,
+              `mode=1`, `out=1`, `errors=1`,
+            ].join('&')
+
+            const qlRes = await fetch('https://quicklatex.com/latex3.f', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': 'igcse-tools/1.0',
-              },
-              body: `latex=${encodeURIComponent(code)}`,
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: params,
             })
+            const text = await qlRes.text()
+            const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean)
+            const urlLine = lines.find((l: string) => l.startsWith('http'))
+            if (!urlLine) { res.writeHead(502); res.end(`QuickLaTeX no URL: ${text}`); return }
+            const imageUrl = urlLine.split(/\s+/)[0]
+            if (imageUrl.includes('/error.png')) { res.writeHead(502); res.end(`QuickLaTeX render error`); return }
 
-            if (!codecogsRes.ok) {
-              res.writeHead(502); res.end(`Codecogs error: HTTP ${codecogsRes.status}`); return
-            }
-
-            const buf = Buffer.from(await codecogsRes.arrayBuffer())
+            const imgRes = await fetch(imageUrl)
+            if (!imgRes.ok) { res.writeHead(502); res.end(`Image fetch failed: ${imgRes.status}`); return }
+            const buf = Buffer.from(await imgRes.arrayBuffer())
             res.writeHead(200, {
               'Content-Type': 'image/png',
               'Access-Control-Allow-Origin': '*',
