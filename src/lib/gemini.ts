@@ -14,9 +14,6 @@ import {
   generateQuestionCode as sharedGenerateQuestionCode,
 } from "./sanitize";
 import { parseJsonWithRecovery } from "./json";
-import { renderDiagramFromDSL } from "../components/RichEditor/diagramEngine";
-import { validateDSL, solveDSL, computeAnswerFromDSL, detectRogueNumbers, generateMarkSchemeFromDSL, checkDiagramDependency } from "./mathEngine";
-import type { DiagramDSL } from "./mathEngine";
 
 function getAI(apiKey?: string) {
   if (!apiKey) {
@@ -100,12 +97,6 @@ export function enforceQuestionQuality(q: QuestionItem): {
     if (!requiresGeometricUse(q)) {
       reasons.push("Diagram is mentioned but not used geometrically.");
     }
-  }
-
-  // 1.5 FAKE DIAGRAM DEPENDENCY
-  // Uses DSL-based check: if all unknown values appear in text, diagram is redundant.
-  if (q.hasDiagram && q.diagramDSL && !checkDiagramDependency(q.text, q.diagramDSL)) {
-    reasons.push("Diagram dependency violated — all unknown values already present in question text.");
   }
 
   // 2. MULTI-STEP CHECK & 6. DIFFICULTY ENFORCER
@@ -761,35 +752,6 @@ interface QuestionSlot {
   questionType: "mcq" | "short_answer" | "structured";
   /** Whether this question needs a diagram */
   hasDiagram: boolean;
-  /** Structured DSL — single source of truth for geometry; replaces diagramData */
-  diagramDSL?: DiagramDSL;
-  /** Question intent generated in Step 1 of the 5-step diagram pipeline */
-  intent?: QuestionIntent;
-}
-
-/**
- * Step 1 output: AI describes WHAT to ask before geometry is decided.
- * This ensures the DSL is generated to fit the question, not vice versa.
- */
-interface QuestionIntent {
-  /** What the student must find (e.g. "missing side AC using Pythagoras") */
-  skillTested: string;
-  /** Most appropriate diagram type for this intent */
-  diagramType: "triangle" | "circle" | "parallel_lines" | "coordinate_geometry";
-  /** Angle type for parallel_lines questions */
-  angleType?: "corresponding" | "alternate" | "co-interior";
-  /** Whether the triangle should be right-angled */
-  rightAngle?: boolean;
-  /** Rough magnitudes for diagram values (not exact — just guides DSL generation) */
-  valueBand: "small" | "medium" | "large";
-  /** A representative given value (angle in degrees, or side length) */
-  given: number;
-  /** Triangle subtype for richer geometry variety */
-  triangleSubtype?: "scalene" | "isosceles" | "right" | "obtuse";
-  /** Circle subtype — which theorem/skill is being tested */
-  circleSubtype?: "inscribed_angle" | "central_angle" | "thales" | "chord_bisector" | "tangent_radius";
-  /** Coordinate geometry specific skill */
-  coordSkill?: "distance" | "midpoint" | "gradient" | "perpendicular_bisector";
 }
 
 export async function generateTest(
@@ -914,386 +876,19 @@ Return EXACTLY ${config.count} slots.`;
     onRetry,
   );
 
-  // ── 5-Step Diagram Pipeline ──────────────────────────────────────────────────
-  //
-  // Step 1 — generateQuestionIntent: AI decides WHAT to ask, not HOW to draw it.
-  // Step 2 — generateDSLFromIntent: AI generates geometry GUIDED by the intent.
-  // Step 3 — validateDSL: hard validation; retries once on failure.
-  // Step 4 — solveDSL: deterministic computation (mathEngine).
-  // Step 5 — writeQuestionFromDSL: AI writes question wording only.
-  //
-  // This pipeline guarantees the diagram fits the question because the DSL
-  // is generated AFTER the question intent is known.
-
-  const intentSchema = {
-    type: Type.OBJECT,
-    properties: {
-      skillTested:     { type: Type.STRING },
-      diagramType:     { type: Type.STRING },
-      angleType:       { type: Type.STRING, nullable: true },
-      rightAngle:      { type: Type.BOOLEAN, nullable: true },
-      valueBand:       { type: Type.STRING },
-      given:           { type: Type.NUMBER },
-      triangleSubtype: { type: Type.STRING, nullable: true },
-      circleSubtype:   { type: Type.STRING, nullable: true },
-      coordSkill:      { type: Type.STRING, nullable: true },
-    },
-    required: ["skillTested", "diagramType", "valueBand", "given"],
-  };
-
-
-  /**
-   * Step 1: AI decides what the question will ask, which diagram type fits best,
-   * and rough value magnitudes. No coordinates here — pure intent.
-   */
-  async function generateQuestionIntent(topic: string, slotIndex: number): Promise<QuestionIntent> {
-    const topicLower = topic.toLowerCase();
-
-    // Infer diagram type from topic keywords as a starting hint
-    let typeHint = "triangle";
-    if (/circle|arc|chord|diameter|radius|tangent|inscribed|semicircle/i.test(topicLower)) {
-      typeHint = "circle";
-    } else if (/parallel|transversal|alternate|corresponding|co.interior|z.angle|f.angle/i.test(topicLower)) {
-      typeHint = "parallel_lines";
-    } else if (/coordinate|gradient|midpoint|distance|locus|line.*equation/i.test(topicLower)) {
-      typeHint = "coordinate_geometry";
-    }
-
-    const intentPrompt = `You are planning a Cambridge IGCSE ${config.subject} question.
-
-Topic: "${topic}"
-Difficulty: ${config.difficulty}
-Suggested diagram type: "${typeHint}"
-
-Your job: describe WHAT the question will ask the student to do.
-
-Rules:
-- skillTested: one concrete skill (e.g. "find missing side using Pythagoras", "calculate inscribed angle using circle theorem", "identify alternate angles between parallel lines")
-- diagramType: choose the most appropriate from: triangle | circle | parallel_lines | coordinate_geometry
-- angleType: only for parallel_lines — one of: corresponding | alternate | co-interior
-- rightAngle: only for triangle — true if the triangle should have a right angle
-- valueBand: "small" (lengths 2–4, angles 30–45°) | "medium" (lengths 4–7, angles 45–65°) | "large" (lengths 6–10, angles 60–75°)
-- given: a single representative numeric value for this diagram (angle in degrees for parallel_lines, side length or radius for triangle/circle, coordinate value for coordinate_geometry). Integer between 2 and 75.
-- triangleSubtype: (triangle only) choose one: "scalene" | "isosceles" | "right" | "obtuse"
-- circleSubtype: (circle only) choose the theorem being tested: "inscribed_angle" | "central_angle" | "thales" | "chord_bisector" | "tangent_radius"
-- coordSkill: (coordinate_geometry only) one of: "distance" | "midpoint" | "gradient" | "perpendicular_bisector"
-
-The diagram type MUST match the skill being tested.
-triangleSubtype, circleSubtype, coordSkill enrich the diagram — always fill the relevant one.`;
-
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: intentPrompt }] }],
-        config: { responseMimeType: "application/json", maxOutputTokens: 512, temperature: 0.5, responseSchema: intentSchema, thinkingConfig: { thinkingBudget: 0 } },
-      });
-      const usage = getGeminiUsage(response);
-      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
-      const parsed = safeJsonParse(response.text || "{}");
-      const validDiagramTypes = ["triangle", "circle", "parallel_lines", "coordinate_geometry"];
-      const validValueBands = ["small", "medium", "large"];
-      const givenVal = typeof parsed.given === "number" && parsed.given >= 2 && parsed.given <= 75 ? parsed.given : null;
-      if (parsed.skillTested && validDiagramTypes.includes(parsed.diagramType) && validValueBands.includes(parsed.valueBand) && givenVal) {
-        onLog?.(`[Intent] Slot ${slotIndex}: ${parsed.diagramType} — "${parsed.skillTested}" (${parsed.valueBand}, given=${givenVal})`);
-        return { ...parsed, given: givenVal } as QuestionIntent;
-      }
-    } catch {
-      /* fall through */
-    }
-
-    // Fallback: sensible intent derived from topic hint
-    onLog?.(`[Intent] Slot ${slotIndex}: using fallback intent (type=${typeHint})`);
-    const fallbackGivens = [35, 50, 65, 45, 55, 40, 60, 70];
-    return {
-      skillTested: `apply ${typeHint.replace("_", " ")} properties to find a missing value`,
-      diagramType: typeHint as QuestionIntent["diagramType"],
-      valueBand: ["small", "medium", "large"][slotIndex % 3] as QuestionIntent["valueBand"],
-      given: fallbackGivens[slotIndex % fallbackGivens.length],
-      ...(typeHint === "parallel_lines" ? { angleType: (["corresponding", "alternate", "co-interior"] as const)[slotIndex % 3] } : {}),
-      ...(typeHint === "triangle" ? { rightAngle: slotIndex % 2 === 0 } : {}),
-    };
-  }
-
-  /**
-   * Step 2: Deterministic DSL builder — no AI call, guaranteed valid geometry.
-   * `seed` varies per slot for diversity (based on slot index).
-   * `intent.given` provides the key numeric value (angle or length) chosen in Step 1.
-   */
-  function buildDSL(intent: QuestionIntent, seed: number): DiagramDSL {
-    const r2 = (n: number) => Math.round(n * 100) / 100;
-    const deg2rad = (d: number) => d * Math.PI / 180;
-    const cos = (d: number) => r2(Math.cos(deg2rad(d)));
-    const sin = (d: number) => r2(Math.sin(deg2rad(d)));
-
-    // ── Parallel lines ──────────────────────────────────────────────────────
-    if (intent.diagramType === "parallel_lines") {
-      const ang = Math.max(30, Math.min(70, intent.given));
-      const angleType = intent.angleType ?? "alternate";
-      // Guarantee true-parallel: both lines share same direction vector
-      // Line angle varies by seed so lines aren't always horizontal
-      const lineAngDeg = [0, 10, 20, 0, 10, 20, 0, 10][seed % 8];
-      const gap = 2.5;
-      // Perpendicular offset direction for line2
-      const perpDeg = lineAngDeg + 90;
-      const L1: [[number, number], [number, number]] = [
-        [r2(-4 * cos(lineAngDeg)), r2(-4 * sin(lineAngDeg))],
-        [r2( 4 * cos(lineAngDeg)), r2( 4 * sin(lineAngDeg))],
-      ];
-      const L2: [[number, number], [number, number]] = [
-        [r2(L1[0][0] + gap * cos(perpDeg)), r2(L1[0][1] + gap * sin(perpDeg))],
-        [r2(L1[1][0] + gap * cos(perpDeg)), r2(L1[1][1] + gap * sin(perpDeg))],
-      ];
-      // Transversal crosses both lines — angle from horizontal = ang
-      const tvOffsets = [-1, 0, 1, -0.5, 0.5, -1, 0, 1];
-      const xOff = tvOffsets[seed % 8];
-      const tvLen = 4;
-      const TV: [[number, number], [number, number]] = [
-        [r2(xOff - tvLen * cos(ang)), r2(-tvLen * sin(ang) - 0.5)],
-        [r2(xOff + tvLen * cos(ang)), r2( tvLen * sin(ang) + gap + 0.5)],
-      ];
-      return {
-        type: "parallel_lines",
-        line1: L1, line2: L2, transversal: TV,
-        angleType,
-        constraints: ["parallel_lines"],
-        givens: [`angle_at_A=${ang}`],
-        unknowns: ["angle_at_B"],
-      };
-    }
-
-    // ── Circle ──────────────────────────────────────────────────────────────
-    if (intent.diagramType === "circle") {
-      const subtype = intent.circleSubtype ?? "thales";
-      // Fixed radius options for clean diagrams; always center at origin for rendering
-      const radii = [4, 5, 4, 5, 4, 5, 4, 5];
-      const rad = radii[seed % 8];
-      // Vary angle of C for diversity
-      const cAngles = [60, 75, 100, 120, 45, 135, 80, 110];
-      const cDeg = cAngles[seed % 8];
-
-      if (subtype === "thales" || subtype === "inscribed_angle") {
-        // Thales: AB is diameter, angle_ACB = 90°
-        const A: [number, number] = [-rad, 0];
-        const B: [number, number] = [ rad, 0];
-        const C: [number, number] = [r2(rad * cos(cDeg)), r2(rad * sin(cDeg))];
-        return {
-          type: "circle", center: [0, 0], radius: rad,
-          points: { A, B, C },
-          constraints: ["AB_is_diameter"],
-          givens: [`radius=${rad}`],
-          unknowns: ["angle_ACB"],
-        };
-      }
-
-      if (subtype === "central_angle") {
-        // Central angle = 2 × inscribed angle
-        const aAngles = [0, 15, 30, 45, 0, 15, 30, 45];
-        const aDeg = aAngles[seed % 8];
-        const centralDeg = Math.max(60, Math.min(120, intent.given));
-        const bDeg = aDeg + centralDeg;
-        // C on major arc — place opposite the chord AB
-        const midArcDeg = aDeg + centralDeg / 2 + 180;
-        const A: [number, number] = [r2(rad * cos(aDeg)), r2(rad * sin(aDeg))];
-        const B: [number, number] = [r2(rad * cos(bDeg)), r2(rad * sin(bDeg))];
-        const C: [number, number] = [r2(rad * cos(midArcDeg)), r2(rad * sin(midArcDeg))];
-        return {
-          type: "circle", center: [0, 0], radius: rad,
-          points: { A, B, C },
-          constraints: ["OA_is_radius", "OB_is_radius"],
-          givens: [`radius=${rad}`, `central_angle=${centralDeg}`],
-          unknowns: ["angle_ACB"],
-        };
-      }
-
-      // Default: thales
-      const A: [number, number] = [-rad, 0];
-      const B: [number, number] = [ rad, 0];
-      const C: [number, number] = [r2(rad * cos(cDeg)), r2(rad * sin(cDeg))];
-      return {
-        type: "circle", center: [0, 0], radius: rad,
-        points: { A, B, C },
-        constraints: ["AB_is_diameter"],
-        givens: [`radius=${rad}`],
-        unknowns: ["angle_ACB"],
-      };
-    }
-
-    // ── Coordinate geometry ─────────────────────────────────────────────────
-    if (intent.diagramType === "coordinate_geometry") {
-      const skill = intent.coordSkill ?? "distance";
-      // Pre-selected pairs chosen for pedagogical clarity
-      const pairs: [[number, number], [number, number]][] = [
-        [[1, 2], [5, 5]],   // distance=5, midpoint=(3,3.5), grad=3/4
-        [[0, 1], [4, 4]],   // distance=5, midpoint=(2,2.5), grad=3/4
-        [[2, 0], [6, 3]],   // distance=5, midpoint=(4,1.5), grad=3/4
-        [[1, 1], [7, 5]],   // distance≈7.2, midpoint=(4,3), grad=2/3
-        [[0, 3], [4, 0]],   // distance=5, midpoint=(2,1.5), grad=-3/4
-        [[2, 1], [8, 5]],   // distance≈7.2, midpoint=(5,3), grad=2/3
-        [[1, 0], [5, 3]],   // distance=5, midpoint=(3,1.5), grad=3/4
-        [[0, 2], [6, 6]],   // distance≈7.2, midpoint=(3,4), grad=2/3
-      ];
-      const [A, B] = pairs[seed % pairs.length];
-      const unknowns = skill === "gradient"             ? ["slope"] :
-                       skill === "midpoint"             ? ["midpoint"] :
-                       skill === "perpendicular_bisector" ? ["midpoint", "slope"] :
-                       ["length"];
-      return {
-        type: "coordinate_geometry",
-        points: { A, B },
-        constraints: [],
-        givens: [`A=(${A[0]},${A[1]})`, `B=(${B[0]},${B[1]})`],
-        unknowns,
-      };
-    }
-
-    // ── Triangle ─────────────────────────────────────────────────────────────
-    const subtype = intent.triangleSubtype ?? (intent.rightAngle ? "right" : "scalene");
-
-    // Helper: format number cleanly for diagram labels (no trailing zeros)
-    const lbl = (n: number) => String(parseFloat(n.toFixed(2)));
-
-    if (subtype === "right") {
-      // Pythagorean triples — integer sides, clean diagrams
-      const triples: [number, number, number][] = [
-        [3, 4, 5], [5, 12, 13], [8, 6, 10], [9, 12, 15],
-        [6, 8, 10], [4, 3, 5],  [12, 5, 13], [8, 15, 17],
-      ];
-      const [leg1, leg2] = triples[seed % triples.length];
-      return {
-        type: "triangle",
-        points: { A: [0, leg1], B: [0, 0], C: [leg2, 0] },
-        rightAngleAt: "B",
-        constraints: ["right_angle_at_B"],
-        givens: [`AB=${leg1}`, `BC=${leg2}`],
-        unknowns: ["AC", "angle_A"],
-        labels: { AB: lbl(leg1), BC: lbl(leg2), CA: "?" },
-      };
-    }
-
-    if (subtype === "isosceles") {
-      // Symmetric apex: A at top, B and C on base
-      const configs: [number, number][] = [
-        [6, 4], [8, 5], [5, 6], [7, 5],
-        [6, 4], [8, 5], [5, 6], [7, 5],
-      ];
-      const [base, height] = configs[seed % 8];
-      const halfBase = base / 2;
-      const leg = r2(Math.sqrt(halfBase ** 2 + height ** 2));
-      return {
-        type: "triangle",
-        points: { A: [halfBase, height], B: [0, 0], C: [base, 0] },
-        constraints: ["AB=AC"],
-        givens: [`BC=${base}`, `AB=${lbl(leg)}`],
-        unknowns: ["angle_A", "angle_B"],
-        labels: { BC: lbl(base), AB: lbl(leg) },
-      };
-    }
-
-    if (subtype === "obtuse") {
-      const configs: [[number, number], [number, number], [number, number]][] = [
-        [[0, 0], [7, 0], [2, 3]],
-        [[0, 0], [8, 0], [1, 4]],
-        [[0, 0], [6, 0], [1, 3]],
-        [[0, 0], [9, 0], [2, 4]],
-        [[0, 0], [7, 0], [1, 3]],
-        [[0, 0], [8, 0], [3, 5]],
-        [[0, 0], [6, 0], [2, 3]],
-        [[0, 0], [9, 0], [1, 4]],
-      ];
-      const [A, B, C] = configs[seed % configs.length];
-      const AB = r2(Math.sqrt((B[0]-A[0])**2 + (B[1]-A[1])**2));
-      const BC = r2(Math.sqrt((C[0]-B[0])**2 + (C[1]-B[1])**2));
-      return {
-        type: "triangle",
-        points: { A, B, C },
-        constraints: [],
-        givens: [`AB=${AB}`, `BC=${BC}`],
-        unknowns: ["angle_A", "angle_C"],
-        labels: { AB: lbl(AB), BC: lbl(BC) },
-      };
-    }
-
-    // Scalene (default)
-    const scaleneConfigs: [[number, number], [number, number], [number, number]][] = [
-      [[0, 0], [6, 0], [2, 4]],
-      [[0, 0], [7, 0], [3, 5]],
-      [[0, 0], [5, 0], [1, 4]],
-      [[0, 0], [8, 0], [3, 4]],
-      [[0, 0], [6, 0], [4, 5]],
-      [[0, 0], [7, 0], [2, 5]],
-      [[0, 0], [5, 0], [3, 4]],
-      [[0, 0], [8, 0], [5, 6]],
-    ];
-    const [sA, sB, sC] = scaleneConfigs[seed % scaleneConfigs.length];
-    const sAB = r2(Math.sqrt((sB[0]-sA[0])**2 + (sB[1]-sA[1])**2));
-    const sBC = r2(Math.sqrt((sC[0]-sB[0])**2 + (sC[1]-sB[1])**2));
-    return {
-      type: "triangle",
-      points: { A: sA, B: sB, C: sC },
-      constraints: [],
-      givens: [`AB=${sAB}`, `BC=${sBC}`],
-      unknowns: ["angle_A", "angle_C"],
-      labels: { AB: lbl(sAB), BC: lbl(sBC) },
-    };
-  }
-
-
-  // ── Step 2: Deterministic DSL builder ───────────────────────────────────────
-  // AI cannot reliably generate exact numeric coordinates.
-  // buildDSL() produces geometrically valid, varied geometry from the QuestionIntent.
-  // ────────────────────────────────────────────────────────────────────────────
-
-  function generateDSLFromIntent(intent: QuestionIntent, seed: number): DiagramDSL {
-    // Deterministic, guaranteed-valid geometry — no AI for coordinates.
-    // AI cannot reliably generate exact numeric coordinates; buildDSL does it correctly every time.
-    const dsl = buildDSL(intent, seed);
-    onLog?.(`[DSL] seed=${seed}: built (${dsl.type}, subtype=${intent.triangleSubtype ?? intent.circleSubtype ?? intent.angleType ?? intent.coordSkill ?? "default"})`);
-    return dsl;
-  }
-
-  // ── Slot normalisation — SEQUENTIAL (rate-limit safe) ───────────────────────
-  // For each slot: if hasDiagram, run the 5-step pipeline.
-  // Non-diagram slots pass through immediately.
+  // ── Slot normalisation ────────────────────────────────────────────────────────
 
   const validTypes = ["mcq", "short_answer", "structured"];
   const slots: QuestionSlot[] = [];
 
   for (let i = 0; i < Math.min(rawSlots.length, config.count); i++) {
     const s = rawSlots[i];
-    let diagramDSL: DiagramDSL | undefined;
-    let intent: QuestionIntent | undefined;
-
-    if (s.hasDiagram) {
-      // Step 1 — Question Intent (AI: topic → skill + diagram type + given value)
-      intent = await generateQuestionIntent(s.topic ?? config.topic, i);
-
-      // Step 2 — Build DSL deterministically from intent
-      const dsl = generateDSLFromIntent(intent, i);
-
-      // Step 3 — Validate (generateDSLFromIntent guarantees validity, but double-check)
-      const validation = validateDSL(dsl);
-      if (validation.valid) {
-        diagramDSL = dsl;
-        onLog?.(`[Slot ${i}] hasDiagram=true — DSL ready (${dsl.type}, given=${intent.given})`);
-      } else {
-        onLog?.(`[Slot ${i}] generateDSLFromIntent returned invalid DSL (${validation.errors.join("; ")}) — no diagram`);
-      }
-    }
-
     slots.push({
       index: i,
       topic: s.topic ?? config.topic,
-      questionType: (validTypes.includes(s.questionType)
-        ? s.questionType
-        : cleanType === "mixed"
-          ? "short_answer"
-          : cleanType) as QuestionSlot["questionType"],
-      hasDiagram: Boolean(s.hasDiagram) && !!diagramDSL,
-      diagramDSL,
-      intent,
+      questionType: (validTypes.includes(s.questionType) ? s.questionType : cleanType === "mixed" ? "short_answer" : cleanType) as QuestionSlot["questionType"],
+      hasDiagram: Boolean(s.hasDiagram),
     });
-
-    // Rate-limit protection between slots
     if (i < config.count - 1) await new Promise((r) => setTimeout(r, 300));
   }
 
@@ -1330,132 +925,76 @@ ASSESSMENT OBJECTIVES:
     required: ["text", "answer", "markScheme", "marks", "commandWord", "type", "hasDiagram", "options"],
   };
 
+  const tikzQuestionSchema = {
+    type: Type.OBJECT,
+    properties: {
+      text: { type: Type.STRING },
+      tikzCode: { type: Type.STRING },
+      answer: { type: Type.STRING },
+      markScheme: { type: Type.STRING },
+      marks: { type: Type.NUMBER },
+      commandWord: { type: Type.STRING },
+      type: { type: Type.STRING },
+      hasDiagram: { type: Type.BOOLEAN },
+      syllabusObjective: { type: Type.STRING, nullable: true },
+      assessmentObjective: { type: Type.STRING, nullable: true },
+      difficultyStars: { type: Type.NUMBER, nullable: true },
+      options: { type: Type.ARRAY, items: { type: Type.STRING } },
+    },
+    required: ["text", "tikzCode", "answer", "markScheme", "marks", "commandWord", "type", "hasDiagram", "options"],
+  };
+
   /**
-   * Step 5: Writes ONE question using a focused DSL-first prompt.
-   * Intent from Step 1 is included so the wording aligns with the intended skill.
+   * Writes ONE diagram question AND generates the TikZ code for it in a single Gemini call.
    */
-  async function writeQuestionFromDSL(slot: QuestionSlot, sol: ReturnType<typeof solveDSL>): Promise<any> {
-    const dsl = slot.diagramDSL!;
-    const intent = slot.intent;
+  async function writeQuestionWithTikz(slot: QuestionSlot): Promise<any> {
+    const prompt = `You are a Cambridge IGCSE ${config.subject} examiner AND a LaTeX/TikZ expert.
 
-    // Build human-readable given/unknown blocks
-    // NOTE: Do NOT include raw point coordinates or line vectors — the AI will
-    // extract numbers from them and write them into the question text as rogue values.
-    const givenLines = (dsl.givens ?? []).map((g) => `  ${g}`);
-    if (dsl.radius !== undefined) givenLines.push(`  radius = ${dsl.radius}`);
-    // For parallel lines, only include the given angle (already in dsl.givens)
-    // For labels (side lengths), include those too
-    Object.entries(dsl.labels ?? {}).forEach(([k, v]) => {
-      if (v && v !== "?") givenLines.push(`  ${k} = ${v}`);
-    });
+Your task: Write ONE exam question that requires a geometric diagram, AND write the TikZ code for that diagram.
 
-    const unknownLines = (dsl.unknowns ?? []).map((u) => {
-      const v = sol.values[u];
-      return `  ${u}${v !== undefined ? ` = ${Array.isArray(v) ? `(${v[0]}, ${v[1]})` : v} ← STUDENT FINDS THIS` : ""}`;
-    });
-
-    const prompt = `You are a Cambridge IGCSE ${config.subject} question writer.
-
-You are given a DiagramDSL and a question intent. Your ONLY job is to write the question wording.
-
-════════════════════════════════════
-QUESTION INTENT (what this question must test)
-
-Skill: ${intent?.skillTested ?? slot.topic}
-Diagram type: ${dsl.type}
-
-════════════════════════════════════
-INPUT DSL
-
-${JSON.stringify(dsl, null, 2)}
-
-════════════════════════════════════
-COMPUTED VALUES (from mathEngine — do NOT output these)
-
-GIVEN VALUES (you MAY reference these in the question text):
-${givenLines.join("\n") || "  (none)"}
-
-UNKNOWN VALUES (student must find — NEVER write in question text):
-${unknownLines.join("\n") || "  (none)"}
-
-════════════════════════════════════
-CONTEXT
-
-- Subject: ${config.subject}
+QUESTION REQUIREMENTS:
 - Topic: ${slot.topic}
-- Question type: ${slot.questionType}
+- Type: ${slot.questionType}
 - ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
 - Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
-${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
-
-════════════════════════════════════
-CRITICAL RULES — READ BEFORE WRITING
-
-⛔ You MUST use ONLY the values provided in the DSL above.
-- DO NOT introduce new numbers
-- DO NOT change given values
-- DO NOT invent angles, lengths, or coordinates
-
-All numerical values in the question text MUST come from GIVEN VALUES above.
-If you introduce ANY new number → the answer is INVALID.
-
-The diagram MUST be REQUIRED to solve the question.
-Do NOT reveal all values in text.
-At least one value must be obtained ONLY from the diagram.
-
-════════════════════════════════════
-STRICT RULES
-
-❌ NOT allowed:
-- Invent any number not in GIVEN VALUES above
-- Write the UNKNOWN VALUES in the question text
-- Ignore the diagram
-- Single-step questions
-
-✅ REQUIRED:
-- Reference the diagram (points by letter: A, B, C, O)
-- Require the diagram to solve (at least one value only visible in diagram)
-- Multi-step reasoning (≥ 2 steps)
+- Must require the diagram to solve
 - Cambridge command word appropriate for difficulty
+- Multi-step reasoning (≥ 2 steps)
+- LaTeX: all math in $...$
 
-════════════════════════════════════
-MARK SCHEME FORMAT
+TIKZ DIAGRAM REQUIREMENTS:
+- Write a complete \\begin{tikzpicture}...\\end{tikzpicture} block
+- Clean Cambridge exam style: thick lines, filled dots at key points, clear labels
+- Labels: single letters (A, B, C, O) at vertices, side lengths/angles where given
+- Scale: use coordinates in range -3 to 3 so the diagram is readable
+- Vertex labels: place them OUTSIDE the shape, offset away from the interior
+  - Use explicit coordinates: e.g. \\node at (x+0.3, y+0.3) {$A$};
+  - Do NOT use \\node[anchor] at (named_coord) — use explicit numeric coords only
+- Side length labels: place at midpoint of each side, offset outward from centroid
+- Angle arcs: use \\draw (vx,vy) ++(start:r) arc[start angle=start, end angle=end, radius=r];
+- Right angles: draw a small square marker
+- Do NOT use \\coordinate named references in \\node commands
+- Do NOT use tikzlibrary 'angles' or 'quotes'
+- Available libraries: calc, arrows.meta only
+- The diagram must match the question exactly (same letters, same given values)
 
-Use Cambridge notation:
-- B1: independent fact/formula
-- M1: method step (awarded even if arithmetic slip follows)
-- A1: correct answer with unit
+${config.syllabusContext ? `Syllabus focus: ${config.syllabusContext}` : ""}
 
-════════════════════════════════════
-STRUCTURED QUESTIONS (if type=structured):
-- 2–4 sentence stem, then **(a)**, **(b)** sub-parts each with **[n]** marks
-- Each sub-part uses a different command word
+MARK SCHEME: Use Cambridge notation (B1, M1, A1).
 
-MCQ (if type=mcq):
-- 4 options in "options" array (no letter prefix)
-- "answer" = "A", "B", "C", or "D" only
-- All distractors must be plausible misconceptions
-
-════════════════════════════════════
-SELF-CHECK (mandatory before output):
-1. Every number in question text is in GIVEN VALUES → if not, remove it
-2. Diagram is required → at least one value only from diagram
-3. Labels are single letters only: A, B, C, O (no "OABC", no merged text)
-4. Question needs ≥ 2 reasoning steps
-
-════════════════════════════════════
-ANSWER FIELD:
-- MCQ: single letter "A"/"B"/"C"/"D"
-- All others: brief METHOD description only — no numbers
-  (e.g. "Apply Pythagoras' theorem, then use angle sum of triangle")
-  The system computes the numeric answer from the DSL automatically.
-
-LaTeX: ALL math in $...$. Never plain-text math.
-syllabusObjective: "REF – statement" format, one sentence.
-assessmentObjective: "AO1" | "AO2" | "AO3"
-difficultyStars: 1 | 2 | 3
-marks: MCQ=1, short_answer=1–3, structured=sum of sub-parts
-hasDiagram: true`;
+Return JSON with these fields:
+- text: question wording (string)
+- tikzCode: the \\begin{tikzpicture}...\\end{tikzpicture} block only (string)
+- answer: brief method description (non-MCQ) or letter A/B/C/D (MCQ)
+- markScheme: full mark scheme with B1/M1/A1 marks
+- marks: total marks (number)
+- commandWord: Cambridge command word
+- type: "${slot.questionType}"
+- hasDiagram: true
+- syllabusObjective: "REF – statement" format
+- assessmentObjective: "AO1" | "AO2" | "AO3"
+- difficultyStars: 1 | 2 | 3
+- options: [] (empty unless MCQ)`;
 
     return withRetry(async () => {
       const response = await ai.models.generateContent({
@@ -1464,8 +1003,8 @@ hasDiagram: true`;
         config: {
           responseMimeType: "application/json",
           maxOutputTokens: 8192,
-          temperature: 0.6,
-          responseSchema: questionSchema,
+          temperature: 0.7,
+          responseSchema: tikzQuestionSchema,
           systemInstruction: phase2SystemInstruction,
         },
       });
@@ -1473,17 +1012,17 @@ hasDiagram: true`;
       if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
       const finishReason = (response as any)?.candidates?.[0]?.finishReason;
       if (finishReason === "MAX_TOKENS") {
-        throw { type: "invalid_response", retryable: true, message: `DSL question hit token limit. Retrying…` };
+        throw { type: "invalid_response", retryable: true, message: `TikZ question hit token limit. Retrying…` };
       }
       const parsed = safeJsonParse(response.text || "{}");
       if (!parsed.text) throw { type: "invalid_response", retryable: true, message: "Empty question text returned." };
+      onLog?.(`[Phase 2] Q${slot.index + 1}: TikZ generated (${parsed.tikzCode?.length ?? 0} chars)`);
       return parsed;
     }, 3, onRetry);
   }
 
   /**
-   * Writes all non-diagram questions (or diagram-less slots) in a single batch call.
-   * This mirrors the original Phase 2 approach but only for non-DSL slots.
+   * Writes all non-diagram questions in a single batch call.
    */
   async function writeQuestionsWithoutDSL(batchSlots: QuestionSlot[]): Promise<any[]> {
     if (batchSlots.length === 0) return [];
@@ -1548,148 +1087,44 @@ RULES:
     }, 3, onRetry);
   }
 
-  // ── Phase 2: Write questions (per-slot for DSL, batch for non-DSL) ───────────
+  // ── Phase 2: Write questions (TikZ for diagram slots, batch for non-diagram) ──
 
   onLog?.("Phase 2: writing questions…");
 
-  // Separate DSL slots from non-DSL slots
-  const dslSlots    = slots.filter((s) => s.hasDiagram && s.diagramDSL);
-  const nonDslSlots = slots.filter((s) => !s.hasDiagram || !s.diagramDSL);
+  const dslSlots    = slots.filter((s) => s.hasDiagram);
+  const nonDslSlots = slots.filter((s) => !s.hasDiagram);
 
-  // Write DSL questions SEQUENTIALLY — one focused call per question.
-  // Sequential execution prevents rate limit bursts and keeps each prompt minimal.
   const rawQuestionsMap: Record<number, any> = {};
   for (let di = 0; di < dslSlots.length; di++) {
     const slot = dslSlots[di];
-    const sol = solveDSL(slot.diagramDSL!);
-    onLog?.(`[Phase 2] Q${slot.index + 1}: writing DSL question (${slot.diagramDSL!.type})`);
-    const q = await writeQuestionFromDSL(slot, sol);
+    onLog?.(`[Phase 2] Q${slot.index + 1}: writing question + TikZ (${slot.topic})`);
+    const q = await writeQuestionWithTikz(slot);
     rawQuestionsMap[slot.index] = q;
-    // Rate limit protection between questions
     if (di < dslSlots.length - 1) await new Promise((r) => setTimeout(r, 500));
   }
 
-  // Write non-DSL questions in one batch (no diagram = no heavy DSL context)
   const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
   nonDslSlots.forEach((slot, batchIdx) => { rawQuestionsMap[slot.index] = nonDslResults[batchIdx]; });
 
   const rawQuestions = { questions: slots.map((s) => rawQuestionsMap[s.index]).filter(Boolean) };
 
-  // Stitch: sanitize questions and attach DSL from Phase 1
-  let questions: QuestionItem[] = await Promise.all((rawQuestions.questions ?? []).map(async (q: any, i: number) => {
+  // Stitch: sanitize questions and attach TikZ diagram if present
+  let questions: QuestionItem[] = (rawQuestions.questions ?? []).map((q: any, i: number) => {
     const sanitized = sanitizeQuestion(q);
     const slot = slots[i];
-    // CRITICAL: hasDiagram is only true if a valid DSL exists.
-    // If the slot lost its DSL (all retries failed), force hasDiagram=false on the question too.
-    const hasDiagram = (slot?.hasDiagram || sanitized.hasDiagram) && !!slot?.diagramDSL;
-    const dsl = slot?.diagramDSL;
-
-    // ── HARD DIAGRAM REQUIREMENT ─────────────────────────────────────────────
-    // If the question claims hasDiagram but has no valid DSL, regenerate it as
-    // a non-diagram question. A diagram-based question without a diagram is NEVER allowed.
-    if ((slot?.hasDiagram || sanitized.hasDiagram) && !dsl) {
-      onLog?.(`[REJECT] Q${i + 1}: hasDiagram=true but no valid DSL — regenerating as non-diagram question`);
-      const fallback = await regenerateSingleQuestion(
-        { ...sanitized, hasDiagram: false, id: crypto.randomUUID(), code: "" } as QuestionItem,
-        ["DiagramDSL is missing or invalid. Generate this as a non-diagram question instead. Do NOT set hasDiagram=true."],
-        { ...config, topic: slot?.topic ?? config.topic },
-        ai,
-        model,
-      );
-      if (fallback) {
-        onLog?.(`[FALLBACK] Q${i + 1}: replaced with non-diagram question`);
-        return fallback;
-      }
-      // If even fallback fails, force hasDiagram=false on the original
-      onLog?.(`[FALLBACK] Q${i + 1}: regeneration failed — stripping hasDiagram`);
-      return {
-        ...sanitized,
-        hasDiagram: false,
-        id: crypto.randomUUID(),
-        code: sharedGenerateQuestionCode(config.subject, {
-          text: sanitized.text,
-          syllabusObjective: sanitized.syllabusObjective,
-        }),
-      } as QuestionItem;
-    }
-
-    // ── MATH ENGINE ENFORCEMENT ──────────────────────────────────────────────
-    // For non-MCQ with a DSL: answer and markScheme are ALWAYS from mathEngine.
-    // AI-generated values are discarded entirely.
-    let enforcedAnswer = sanitized.answer;
-    let enforcedMarkScheme = sanitized.markScheme;
-
-    if (dsl && sanitized.type !== "mcq") {
-      const computedAns = computeAnswerFromDSL(dsl);
-      if (computedAns) {
-        enforcedAnswer = computedAns;
-        onLog?.(`[Enforce] Q${i + 1}: answer set from mathEngine → ${computedAns}`);
-      }
-      const computedMS = generateMarkSchemeFromDSL(dsl);
-      if (computedMS) {
-        enforcedMarkScheme = computedMS;
-        onLog?.(`[Enforce] Q${i + 1}: markScheme set from mathEngine (${computedMS.split("\n").length} lines)`);
-      }
-    }
-
-    // ── ROGUE NUMBER HARD REJECTION ──────────────────────────────────────────
-    // MCQ questions are exempt: distractor options will naturally contain numbers
-    // not in the DSL — that's intentional. Only check free-response questions.
-    if (dsl && sanitized.type !== "mcq") {
-      const rogues = detectRogueNumbers(sanitized.text, dsl);
-      if (rogues.length > 0) {
-        onLog?.(`[REJECT] Q${i + 1}: rogue numbers in text: ${rogues.join(", ")} — flagged`);
-        (sanitized as any).diagramMissing = true;
-        (sanitized as any).rogueNumbers = rogues;
-      }
-
-      // ── DIAGRAM DEPENDENCY HARD CHECK ─────────────────────────────────────
-      // At least one unknown value must be absent from the question text.
-      // If all unknowns appear in the text, the diagram is not actually required.
-      if (hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) {
-        onLog?.(`[REJECT] Q${i + 1}: diagram dependency violated — all unknown values present in text`);
-        (sanitized as any).diagramMissing = true;
-      }
-    }
+    const hasDiagram = (slot?.hasDiagram || sanitized.hasDiagram) && !!q.tikzCode;
 
     return {
       ...sanitized,
-      answer: enforcedAnswer,
-      markScheme: enforcedMarkScheme,
       hasDiagram,
-      ...(dsl ? { diagramDSL: dsl } : {}),
+      ...(hasDiagram && q.tikzCode ? { diagram: { diagramType: "tikz" as const, code: q.tikzCode } } : {}),
       id: crypto.randomUUID(),
       code: sharedGenerateQuestionCode(config.subject, {
         text: sanitized.text,
         syllabusObjective: sanitized.syllabusObjective,
       }),
-    };
-  }));
-
-  // ── Phase 3: Generate TikZ diagrams for questions that need them ─────────
-  const diagramQuestions = questions.filter((q) => q.hasDiagram);
-  if (diagramQuestions.length > 0) {
-    onLog?.(`Phase 3: rendering ${diagramQuestions.length} diagrams…`);
-    await Promise.all(
-      questions.map(async (q) => {
-        if (q.hasDiagram && q.diagramDSL) {
-          // Deterministic render only — no AI fallback (core principle)
-          const qIdx = questions.indexOf(q) + 1;
-          const dsl = q.diagramDSL;
-          onLog?.(`[Phase 3] Q${qIdx}: DSL type=${dsl.type} labels=${JSON.stringify(dsl.labels ?? {})} unknowns=${JSON.stringify(dsl.unknowns ?? [])}`);
-          const tikzCode = renderDiagramFromDSL(dsl);
-          if (tikzCode) {
-            q.diagram = { diagramType: "tikz", code: tikzCode };
-            onLog?.(`[Phase 3] Q${qIdx}: TikZ generated (${tikzCode.length} chars)`);
-          } else {
-            // DSL render failed → mark diagram missing, log for debugging
-            q.diagramMissing = true;
-            onLog?.(`[Phase 3] Q${qIdx}: DSL render failed — diagram marked missing`);
-          }
-        }
-      }),
-    );
-  }
+    } as QuestionItem;
+  });
 
   // Phase 4: Mandatory Critique & Refine (Diagram Dependency & Quality)
   if (questions.length > 0) {
@@ -1862,48 +1297,17 @@ async function regenerateSingleQuestion(
     if (!parsed.text) return null;
 
     const sanitized = sanitizeQuestion(parsed);
-    const dsl = original.diagramDSL;
 
-    // Re-enforce answer and markScheme from mathEngine — AI regeneration is wording-only
-    let enforcedAnswer = sanitized.answer;
-    let enforcedMarkScheme = sanitized.markScheme;
-    if (dsl && sanitized.type !== "mcq") {
-      const computedAns = computeAnswerFromDSL(dsl);
-      if (computedAns) enforcedAnswer = computedAns;
-      const computedMS = generateMarkSchemeFromDSL(dsl);
-      if (computedMS) enforcedMarkScheme = computedMS;
-    }
-
-    // Rogue number + diagram dependency checks on regenerated text
-    let diagramMissing = false;
-    if (dsl) {
-      const rogues = detectRogueNumbers(sanitized.text, dsl);
-      if (rogues.length > 0) diagramMissing = true;
-      if (original.hasDiagram && !checkDiagramDependency(sanitized.text, dsl)) diagramMissing = true;
-    }
-
-    const updated: QuestionItem = {
+    return {
       ...sanitized,
-      answer: enforcedAnswer,
-      markScheme: enforcedMarkScheme,
+      answer: sanitized.answer,
+      markScheme: sanitized.markScheme,
       id: original.id,
       code: original.code,
-      diagram: undefined,
-      ...(dsl ? { diagramDSL: dsl } : {}),
+      // Preserve existing diagram — regeneration only rewrites text/markScheme
+      diagram: original.diagram,
       hasDiagram: original.hasDiagram,
-      ...(diagramMissing ? { diagramMissing } : {}),
     };
-
-    if (original.hasDiagram && original.diagramDSL) {
-      // Deterministic render only — no AI fallback
-      const tikzCode = renderDiagramFromDSL(original.diagramDSL);
-      if (tikzCode) {
-        updated.diagram = { diagramType: "tikz", code: tikzCode };
-      } else {
-        updated.diagramMissing = true;
-      }
-    }
-    return updated;
   } catch (e) {
     console.warn("Regeneration failed:", e);
     return null;
@@ -2031,40 +1435,19 @@ TASK:
     onRetry,
   );
   return (raw.questions ?? []).map((q, i) => {
-    const sanitized = sanitizeQuestion(q);
     const existing = questions[i];
-    const dsl = existing?.diagramDSL;
 
-    // DSL-based diagram questions: preserve the original question text/answer/markScheme.
-    // The critique AI does not know the DSL constraints and will introduce rogue numbers
-    // or break diagram dependency if allowed to rewrite diagram question text.
-    if (dsl && existing) {
-      return {
-        ...existing,
-        // Re-enforce computed values in case critique touched them
-        answer: computeAnswerFromDSL(dsl) ?? existing.answer,
-        markScheme: generateMarkSchemeFromDSL(dsl) ?? existing.markScheme,
-      };
+    // Diagram questions: preserve as-is — critique AI doesn't know the diagram
+    // contents and will break the question if allowed to rewrite it.
+    if (existing?.hasDiagram && existing?.diagram) {
+      return { ...existing };
     }
 
-    // Always re-enforce answer and markScheme from mathEngine — critique may rewrite
-    // text/markScheme, but computed values are the single source of truth.
-    let enforcedAnswer = sanitized.answer;
-    let enforcedMarkScheme = sanitized.markScheme;
-    if (dsl && sanitized.type !== "mcq") {
-      const computedAns = computeAnswerFromDSL(dsl);
-      if (computedAns) enforcedAnswer = computedAns;
-      const computedMS = generateMarkSchemeFromDSL(dsl);
-      if (computedMS) enforcedMarkScheme = computedMS;
-    }
-
+    const sanitized = sanitizeQuestion(q);
     return {
       ...sanitized,
-      answer: enforcedAnswer,
-      markScheme: enforcedMarkScheme,
       diagram: existing?.diagram,
       hasDiagram: existing?.hasDiagram ?? sanitized.hasDiagram,
-      ...(dsl ? { diagramDSL: dsl } : {}),
       id: existing?.id ?? crypto.randomUUID(),
       code:
         existing?.code ??
