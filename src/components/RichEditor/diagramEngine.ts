@@ -228,25 +228,35 @@ function renderTriangleFromDSL(dsl: DiagramDSL): string | null {
   const gy = (A[1] + B[1] + C[1]) / 3;
   const g: Point = [gx, gy];
 
-  const dirA = getLabelAnchor(A[0] - gx, A[1] - gy);
-  const dirB = getLabelAnchor(B[0] - gx, B[1] - gy);
-  const dirC = getLabelAnchor(C[0] - gx, C[1] - gy);
+  // Compute explicit label position: vertex + offset away from centroid
+  const VLABEL_DIST = 0.38; // distance to push vertex label outside
+  function vertexLabelPos(vtx: Point): Point {
+    const dx = vtx[0] - gx, dy = vtx[1] - gy;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return [f2n(vtx[0] + (dx / len) * VLABEL_DIST), f2n(vtx[1] + (dy / len) * VLABEL_DIST)];
+  }
+  const posA = vertexLabelPos(A);
+  const posB = vertexLabelPos(B);
+  const posC = vertexLabelPos(C);
 
+  // Triangle edges — use explicit coords, no named coords for draw
   let tikz = `
-  \\coordinate (A) at (${f(A[0])},${f(A[1])});
-  \\coordinate (B) at (${f(B[0])},${f(B[1])});
-  \\coordinate (C) at (${f(C[0])},${f(C[1])});
-
   % Triangle edges
-  \\draw[thick] (A) -- (B) -- (C) -- cycle;
+  \\draw[thick] (${f(A[0])},${f(A[1])}) -- (${f(B[0])},${f(B[1])}) -- (${f(C[0])},${f(C[1])}) -- cycle;
 
-  % Vertex labels — placed outside triangle
-  \\node[${dirA}, outer sep=4pt] at (A) {$${lA}$};
-  \\node[${dirB}, outer sep=4pt] at (B) {$${lB}$};
-  \\node[${dirC}, outer sep=4pt] at (C) {$${lC}$};
+  % Vertex dots
+  \\fill (${f(A[0])},${f(A[1])}) circle (1.5pt);
+  \\fill (${f(B[0])},${f(B[1])}) circle (1.5pt);
+  \\fill (${f(C[0])},${f(C[1])}) circle (1.5pt);
+
+  % Vertex labels — explicit offset positions, no named coords
+  \\node at (${f(posA[0])},${f(posA[1])}) {$${lA}$};
+  \\node at (${f(posB[0])},${f(posB[1])}) {$${lB}$};
+  \\node at (${f(posC[0])},${f(posC[1])}) {$${lC}$};
 `;
 
   // Side-length labels from DSL labels (AB, BC, CA)
+  const SLABEL_DIST = 0.32;
   const sideMap: [string, Point, Point][] = [
     ["AB", A, B],
     ["BC", B, C],
@@ -255,8 +265,12 @@ function renderTriangleFromDSL(dsl: DiagramDSL): string | null {
   for (const [key, p1, p2] of sideMap) {
     if (labels[key]) {
       const mid: Point = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-      const dir = sideOutDir(mid, g);
-      tikz += `  \\node[${dir}, outer sep=3pt, font=\\small] at (${f(mid[0])},${f(mid[1])}) {$${labels[key]}$};\n`;
+      // Push label away from centroid
+      const dx = mid[0] - gx, dy = mid[1] - gy;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const lx = f2n(mid[0] + (dx / len) * SLABEL_DIST);
+      const ly = f2n(mid[1] + (dy / len) * SLABEL_DIST);
+      tikz += `  \\node[font=\\small] at (${f(lx)},${f(ly)}) {$${labels[key]}$};\n`;
     }
   }
 
@@ -290,26 +304,17 @@ function renderTriangleFromDSL(dsl: DiagramDSL): string | null {
   const constraints = dsl.constraints ?? [];
   const drawAltitude = constraints.some((c) => /altitude|BD_perp|perpendicular.*AB|height/i.test(c));
   if (drawAltitude && sol.triangle.D) {
-    // Re-normalise D using same transform
     const rawD = sol.triangle.D as Point;
     const { pts: dPts } = normalisedPoints({ ...rawPts, D: rawD }, 2.4);
     const D = dPts["D"];
     tikz += `
   % Altitude
-  \\coordinate (D) at (${f(D[0])},${f(D[1])});
-  \\draw[thin, dashed] (C) -- (D);
+  \\draw[thin, dashed] (${f(C[0])},${f(C[1])}) -- (${f(D[0])},${f(D[1])});
   ${rightAngleSquare(D, A, C)}
-  \\fill (D) circle (1.5pt);
-  \\node[below, outer sep=3pt, font=\\small] at (D) {$D$};
+  \\fill (${f(D[0])},${f(D[1])}) circle (1.5pt);
+  \\node[below, font=\\small] at (${f(D[0])},${f2n(D[1] - 0.25)}) {$D$};
 `;
   }
-
-  // Vertex dots — filled for key points
-  tikz += `
-  \\fill (A) circle (1.5pt);
-  \\fill (B) circle (1.5pt);
-  \\fill (C) circle (1.5pt);
-`;
 
   return wrapTikz(tikz);
 }
@@ -351,36 +356,40 @@ function renderCircleFromDSL(dsl: DiagramDSL): string | null {
   const labels = rawLabels;
   const scaledR = targetR;
 
+  // Label offset for circumference points (push outward from O)
+  const CLABEL_DIST = scaledR + 0.35;
+  function circLabelPos(pt: Point): Point {
+    const len = Math.sqrt(pt[0] * pt[0] + pt[1] * pt[1]) || 1;
+    return [f2n((pt[0] / len) * CLABEL_DIST), f2n((pt[1] / len) * CLABEL_DIST)];
+  }
+
   let tikz = `
-  \\coordinate (O) at (0,0);
-
   % Circle
-  \\draw[thick] (O) circle (${f(scaledR)});
+  \\draw[thick] (0,0) circle (${f(scaledR)});
 
-  % Centre
-  \\fill (O) circle (2pt);
-  \\node[below left, outer sep=5pt, font=\\small] at (O) {$${labels["O"] ?? "O"}$};
+  % Centre dot + label
+  \\fill (0,0) circle (2pt);
+  \\node[font=\\small] at (-0.28,-0.28) {$${labels["O"] ?? "O"}$};
 `;
 
-  // Circumference points
+  // Circumference points — explicit coords only
   for (const [name, pt] of Object.entries(pts)) {
     if (name === "O") continue;
-    const dir = getLabelAnchor(pt[0], pt[1]); // from O outward
-    tikz += `  \\coordinate (${name}) at (${f(pt[0])},${f(pt[1])});\n`;
-    tikz += `  \\fill (${name}) circle (1.5pt);\n`;
-    tikz += `  \\node[${dir}, outer sep=4pt, font=\\small] at (${name}) {$${labels[name] ?? name}$};\n`;
+    const lpos = circLabelPos(pt);
+    tikz += `  \\fill (${f(pt[0])},${f(pt[1])}) circle (1.5pt);\n`;
+    tikz += `  \\node[font=\\small] at (${f(lpos[0])},${f(lpos[1])}) {$${labels[name] ?? name}$};\n`;
   }
 
   const A = pts["A"], B = pts["B"], C = pts["C"];
 
   // Chord AB (thicker — key line)
   if (A && B) {
-    tikz += `\n  % Chord AB\n  \\draw[thick] (A) -- (B);\n`;
+    tikz += `\n  % Chord AB\n  \\draw[thick] (${f(A[0])},${f(A[1])}) -- (${f(B[0])},${f(B[1])});\n`;
   }
 
   // Triangle ACB for inscribed angle questions
   if (A && B && C) {
-    tikz += `\n  % Inscribed triangle\n  \\draw[thick] (A) -- (C) -- (B);\n`;
+    tikz += `\n  % Inscribed triangle\n  \\draw[thick] (${f(A[0])},${f(A[1])}) -- (${f(C[0])},${f(C[1])}) -- (${f(B[0])},${f(B[1])});\n`;
     if (sol.circle.isDiameter) {
       // Right angle at C (Thales)
       tikz += `  ${rightAngleSquare(C, A, B)}\n`;
@@ -390,9 +399,9 @@ function renderCircleFromDSL(dsl: DiagramDSL): string | null {
   // Radii — only draw when constraint explicitly requests them
   const constraints = dsl.constraints ?? [];
   for (const c of constraints) {
-    if (/\bOA\b|radius.*A/i.test(c) && A) tikz += `  \\draw[thin] (O) -- (A);\n`;
-    if (/\bOB\b|radius.*B/i.test(c) && B) tikz += `  \\draw[thin] (O) -- (B);\n`;
-    if (/\bOC\b|radius.*C/i.test(c) && C) tikz += `  \\draw[thin] (O) -- (C);\n`;
+    if (/\bOA\b|radius.*A/i.test(c) && A) tikz += `  \\draw[thin] (0,0) -- (${f(A[0])},${f(A[1])});\n`;
+    if (/\bOB\b|radius.*B/i.test(c) && B) tikz += `  \\draw[thin] (0,0) -- (${f(B[0])},${f(B[1])});\n`;
+    if (/\bOC\b|radius.*C/i.test(c) && C) tikz += `  \\draw[thin] (0,0) -- (${f(C[0])},${f(C[1])});\n`;
   }
 
   // Angle arc at C if it's an unknown (inscribed angle)
@@ -506,10 +515,10 @@ function renderParallelLinesFromDSL(dsl: DiagramDSL): string | null {
 
   % Intersection points
   \\fill (${f(I1[0])},${f(I1[1])}) circle (1.5pt);
-  \\node[above right, outer sep=3pt, font=\\small] at (${f(I1[0])},${f(I1[1])}) {$${labelI1}$};
+  \\node[font=\\small] at (${f(f2n(I1[0] + 0.28))},${f(f2n(I1[1] + 0.24))}) {$${labelI1}$};
 
   \\fill (${f(I2[0])},${f(I2[1])}) circle (1.5pt);
-  \\node[below right, outer sep=3pt, font=\\small] at (${f(I2[0])},${f(I2[1])}) {$${labelI2}$};
+  \\node[font=\\small] at (${f(f2n(I2[0] + 0.28))},${f(f2n(I2[1] - 0.24))}) {$${labelI2}$};
 `;
 
   // Arc showing GIVEN angle at I1 — always the upper intersection
@@ -643,7 +652,7 @@ function renderCoordGeomFromDSL(dsl: DiagramDSL): string | null {
  */
 function wrapTikz(content: string): string {
   return `\\documentclass[tikz,border=8mm]{standalone}
-\\usetikzlibrary{calc,arrows.meta,angles,quotes}
+\\usetikzlibrary{calc,arrows.meta}
 \\begin{document}
 \\begin{tikzpicture}[font=\\small, line cap=round, line join=round]
 ${content}
