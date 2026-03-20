@@ -13,32 +13,14 @@ interface RenderResult {
 const cache = new Map<string, RenderResult>();
 
 /**
- * Wraps a tikzpicture block into a full standalone LaTeX document.
- * If the input is already a full \documentclass document, returns it as-is.
+ * Extracts the tikzpicture block from any input (snippet, full doc, or bare commands).
+ * api/latex.ts expects only the tikzpicture block — it adds the preamble itself.
  */
-function buildDocument(code: string): string {
-  const trimmed = code.trim();
-  if (trimmed.startsWith("\\documentclass")) return trimmed;
-
-  // Extract tikzpicture block if wrapped in something else
-  const blockMatch = trimmed.match(
-    /\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/,
-  );
-  const tikzBlock = blockMatch ? blockMatch[0] : `\\begin{tikzpicture}\n${trimmed}\n\\end{tikzpicture}`;
-
-  // Extract any \usetikzlibrary calls
-  const libMatches = [...trimmed.matchAll(/\\usetikzlibrary\{([^}]+)\}/g)];
-  const libs = [...new Set(
-    libMatches.flatMap(m => m[1].split(",").map(s => s.trim()).filter(Boolean))
-  )];
-  const libLine = libs.length > 0 ? `\\usetikzlibrary{${libs.join(",")}}` : "";
-
-  return `\\documentclass[tikz,border=8mm]{standalone}
-\\usepackage{tikz}
-${libLine}
-\\begin{document}
-${tikzBlock}
-\\end{document}`;
+function extractBlock(code: string): string {
+  const blockMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/);
+  if (blockMatch) return blockMatch[0];
+  // No block found — wrap bare commands
+  return `\\begin{tikzpicture}\n${code.trim()}\n\\end{tikzpicture}`;
 }
 
 /**
@@ -62,7 +44,7 @@ function sanitizeTikz(code: string): string {
  */
 export async function renderTikz(code: string): Promise<RenderResult> {
   const sanitized = sanitizeTikz(code);
-  const document = buildDocument(sanitized);
+  const document = extractBlock(sanitized);
 
   const cached = cache.get(document);
   if (cached) return cached;
