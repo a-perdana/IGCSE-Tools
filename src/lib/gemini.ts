@@ -1011,7 +1011,8 @@ ASSESSMENT OBJECTIVES:
     const slotDescriptions = tikzSlots
       .map((s) => {
         const template = buildSlotTemplate(s.topic, true);
-        return `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"${template ? `\n${template}` : ""}`;
+        const catHint = categoryRules(s.topic);
+        return `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"${catHint ? `\n${catHint}` : ""}${template ? `\n${template}` : ""}`;
       })
       .join("\n\n");
 
@@ -1260,6 +1261,79 @@ RULES:
   return questions;
 }
 
+/** Returns category-specific geometry rules based on question content */
+function categoryRules(questionText: string): string {
+  const t = questionText.toLowerCase();
+
+  if (/parallel|transversal|alternate|co-interior|corresponding/.test(t)) {
+    return `
+CATEGORY: Parallel Lines & Transversal
+- Draw two horizontal parallel lines with arrows at both ends (use \\draw[<->]).
+- Draw one transversal crossing both lines at a non-right angle (e.g. 55°–75° tilt).
+- Place the stated angle arc at the CORRECT vertex. Never place it at a different intersection.
+- Alternate interior angles: on OPPOSITE sides of the transversal, between the parallels.
+- Co-interior angles: on the SAME side of the transversal, between the parallels.
+- Corresponding angles: on the SAME side, one above/one below — mark them with matching arcs (both \\pic or both drawn the same way).
+- Label each intersection with a letter. Label the transversal and both parallel lines.
+- Example for 130° at top intersection: \\pic["$130^\\circ$", draw, angle radius=0.8cm] {angle = B--A--C};`;
+  }
+
+  if (/isosceles|equilateral|triangle|angle [A-Z]{2,3}|\\triangle/.test(t)) {
+    return `
+CATEGORY: Triangle / Polygon Angles
+- Draw the triangle with vertices at explicit numeric coordinates — compute them from the stated angles using trigonometry yourself.
+- For isosceles triangles: the two equal sides must be visually equal. Place the apex at the top.
+- Arc for each angle must sweep the INTERIOR angle at that vertex: start from one side, sweep to the other, sweeping INWARD not outward.
+- A 50° angle at a vertex: arc sweeps 50°. A 130° angle at a vertex: arc sweeps 130° (obtuse).
+- If the triangle sits between two parallel lines, draw those lines as horizontal arrows.
+- Label every vertex. Label every stated angle with its degree value.`;
+  }
+
+  if (/circle|tangent|chord|arc|sector|segment|radius|diameter|circumference|subtend/.test(t)) {
+    return `
+CATEGORY: Circle Theorems
+- Draw the circle with \\draw (center) circle (radius); — radius should be 1.8–2.2cm for readability.
+- Mark the centre O with a filled dot: \\fill (O) circle (2pt);
+- Tangent at point B: draw a straight line through B perpendicular to OB. The radius OB meets the tangent at exactly 90° — mark this with a square right-angle marker.
+- For "tangent from external point": draw the external point, two tangent lines touching the circle, and any radii to the tangent points.
+- Angle at centre = 2 × angle at circumference (on same arc) — draw both clearly.
+- Do NOT draw a small circle at a label point unless the question describes a small separate circle there.
+- Arcs for angles: use \\pic syntax at the correct vertex with the correct sweep direction.`;
+  }
+
+  if (/net|cube|cuboid|fold|face|surface area/.test(t)) {
+    return `
+CATEGORY: 3D Net / Solid
+- Draw each face as an explicit rectangle/square at exact grid coordinates — do NOT use filled gray rectangles.
+- For a cube net: 6 squares each of the same side length. Use one of the 11 valid net layouts.
+- Cross-shaped net (valid): one vertical column of 4 squares, two squares on either side of the second square.
+- T-shaped net (valid): similar arrangement.
+- Draw all squares with \\draw[thick] as outlines only (no fill, or very light gray fill).
+- Label each face A, B, C, D as required by the question.
+- Grid unit: use 1cm per face unit. Ensure all squares share edges correctly.`;
+  }
+
+  if (/bearing|north|compass|scale drawing/.test(t)) {
+    return `
+CATEGORY: Bearings / Scale Drawing
+- Draw a North arrow (\\draw[->]) pointing straight up from the reference point.
+- Bearing angles are measured CLOCKWISE from North. A bearing of 070° → arc from North arrow, sweeping 70° clockwise.
+- Label the bearing angle with its 3-digit value (e.g. 070°).
+- Draw the path/direction line from the reference point at the correct bearing.`;
+  }
+
+  if (/vector|displacement|resultant/.test(t)) {
+    return `
+CATEGORY: Vectors
+- Draw vectors as arrows: \\draw[->, thick] (start) -- (end);
+- Label vectors with bold letters or overrightarrow notation in the question labels.
+- For resultant: draw the triangle of vectors (head-to-tail arrangement).
+- Parallelogram law: draw two vectors from same origin, complete the parallelogram, diagonal = resultant.`;
+  }
+
+  return "";
+}
+
 /** Generates complete LaTeX/TikZ code for a single question */
 async function generateTikzCode(
   question: { text: string; answer: string; diagramType?: string; diagramData?: any },
@@ -1291,10 +1365,13 @@ PROOFREAD FOR:
 `
       : "";
 
+  const catRules = categoryRules(question.text);
+
   const prompt = `Generate a concise, exam-quality LaTeX/TikZ diagram for this ${subject} question.
 ${improvementBlock}${diagramSpecBlock}
 QUESTION: ${question.text}
 ANSWER: ${question.answer}
+${catRules}
 
 STRICT REQUIREMENTS — follow exactly:
 1. Output ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}.

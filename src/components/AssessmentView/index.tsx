@@ -666,6 +666,17 @@ export function AssessmentView({
                           </span>
                         )}
                         <button
+                          onClick={() => {
+                            setEditingQId(q.id)
+                            setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.code ?? '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.minHeight ?? 0 })
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-stone-100 text-stone-600 hover:bg-stone-200"
+                          title="Edit TikZ code directly"
+                        >
+                          <Code2 className="w-3 h-3" />
+                          Edit Diagram
+                        </button>
+                        <button
                           onClick={() => { void handleRegenerateDiagram(q) }}
                           disabled={repairingIds.has(q.id)}
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs disabled:opacity-60 ${
