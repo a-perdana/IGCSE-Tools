@@ -1039,8 +1039,10 @@ TIKZ REQUIREMENTS (each diagram):
 - Write ONLY the \\begin{tikzpicture}...\\end{tikzpicture} block — NO \\documentclass, NO \\usepackage, NO \\begin{document}
 - Cambridge exam style: thick lines, filled dots at vertices, clear labels
 - Use \\coordinate for named points, calc interpolation $(A)!0.5!(B)$ is allowed
-- Angle arcs: use the 'angles' library with \\pic syntax. CRITICAL: use "angle radius" and "angle eccentricity" (with a SPACE, NOT underscore) e.g. pic["$70^\\circ$", draw, angle radius=0.7cm, angle eccentricity=1.3]
-- Right angles: small square marker
+- Angle arcs: use the 'angles' library with \\pic syntax. Use "angle radius" and "angle eccentricity" (SPACE, NOT underscore).
+- \\pic SYNTAX — CRITICAL: \\pic["label", draw, angle radius=0.8cm] {angle = A--B--C} where A, B, C are ALL \\coordinate names. NEVER use calc expressions like $(R)+(1,0)$ inside \\pic args — this crashes pdflatex. Define a helper coord instead: \\coordinate (Rright) at ($(R)+(1,0)$); then \\pic{angle = Rright--R--S}.
+- Right angles: small square marker (\\draw (0.2,0) -- (0.2,0.2) -- (0,0.2);)
+- NO % comment lines — omit all comments from the TikZ code
 - Available libraries: calc, arrows.meta, angles, quotes, patterns, positioning
 - Diagram must match question exactly (same letters, values, geometry)
 - If a Reference Diagram (TikZ) is provided in the slot TEMPLATE, reuse its structure — change only numeric values and labels.
@@ -1393,8 +1395,15 @@ GEOMETRIC ACCURACY (verify before outputting):
 
 KEEP IT SIMPLE:
 - Use hardcoded numeric coordinates — do NOT use \\pgfmathsetmacro or \\pgfmathparse for coordinate calculations. Compute values yourself and write them as literals (e.g. "at (1.46, 3)" not "at (\\xS, 3)").
-- Maximum 25 lines inside tikzpicture. Omit comments. No \\def or \\newcommand.
-- Simple is more reliable: fewer commands = fewer compile errors.`;
+- Maximum 25 lines inside tikzpicture. NO % comment lines at all. No \\def or \\newcommand.
+- Simple is more reliable: fewer commands = fewer compile errors.
+
+\\pic ANGLE SYNTAX — CRITICAL:
+- \\pic requires THREE named \\coordinate names: \\pic["label", draw, ...] {angle = A--B--C}
+- NEVER use calc expressions inside \\pic args: \\pic{angle = $(R)+(1,0)$--R--S} is INVALID and will crash.
+- To mark an angle relative to a horizontal direction, define a helper coord first:
+  \\coordinate (Rright) at ($(R)+(1,0)$);
+  \\pic["$70^\\circ$", draw, angle radius=0.8cm] {angle = Rright--R--S};`;
 
   try {
     const response = await ai.models.generateContent({
