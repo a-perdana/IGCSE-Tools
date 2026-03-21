@@ -1424,6 +1424,13 @@ KEEP IT SIMPLE:
     const clean = fencedMatch ? fencedMatch[1].trim() : text?.replace(/^```(latex|tex)?/i, "").replace(/```$/, "").trim();
 
     onLog?.(`[TikZ] generated ${clean?.length ?? 0} chars`);
+
+    // If output is truncated (missing \end{tikzpicture}), retry without previousCode
+    if (clean && !/\\end\{tikzpicture\}/.test(clean) && previousCode) {
+      onLog?.(`[TikZ] output truncated — retrying fresh without previousCode`);
+      return generateTikzCode(question, subject, model, ai, onLog);
+    }
+
     return clean || null;
   } catch (err) {
     onLog?.(`[TikZ] generation error: ${err}`);
