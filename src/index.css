@@ -6,6 +6,11 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   @apply bg-stone-50 text-stone-900 font-sans;
 }
