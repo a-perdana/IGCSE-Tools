@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import type { TikzSpec } from '../../lib/types'
 import { renderTikz } from '../../lib/quicklatex'
 
-export function DiagramRenderer({ spec }: { spec: TikzSpec | undefined | null }) {
+export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | undefined | null; onError?: (error: string) => void }) {
   const [state, setState] = useState<{ url?: string; error?: string; loading: boolean }>({ loading: false })
 
   useEffect(() => {
@@ -11,7 +11,7 @@ export function DiagramRenderer({ spec }: { spec: TikzSpec | undefined | null })
     setState({ loading: true })
     renderTikz(spec.code)
       .then(result => { if (!cancelled) setState({ url: result.url, loading: false }) })
-      .catch(err => { if (!cancelled) setState({ error: String(err), loading: false }) })
+      .catch(err => { if (!cancelled) { const msg = String(err); setState({ error: msg, loading: false }); onError?.(msg) } })
     return () => { cancelled = true }
   }, [spec?.code])
 

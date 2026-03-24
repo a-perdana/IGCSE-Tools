@@ -715,17 +715,20 @@ export async function regenerateDiagramsForQuestions(
   apiKey?: string,
   _onUsage?: UsageCallback,
   onLog?: (msg: string) => void,
+  renderErrors?: Record<string, string>,
 ): Promise<Array<{ id: string; diagram: TikzSpec }>> {
   const ai = getAI(apiKey);
   const results = await Promise.all(
     questions.map(async (q) => {
+      const renderError = renderErrors?.[q.id];
       const tikzCode = await generateTikzCode(
         q,
         subject,
         model,
         ai,
         onLog,
-        q.diagram?.code,
+        renderError ? q.diagram?.code : q.diagram?.code,
+        renderError,
       );
       if (tikzCode) {
         return {
@@ -1368,8 +1371,18 @@ async function generateTikzCode(
   ai: ReturnType<typeof getAI>,
   onLog?: (msg: string) => void,
   previousCode?: string,
+  renderError?: string,
 ): Promise<string | null> {
-  const improvementBlock = previousCode
+  const errorBlock = renderError
+    ? `
+PREVIOUS VERSION FAILED TO COMPILE — this is the pdflatex error:
+${renderError}
+
+The code above produced this error. You MUST rewrite the diagram from scratch — do NOT reuse the broken code. Study the error to understand what went wrong, then write a completely fresh, correct TikZ block.
+`
+    : "";
+
+  const improvementBlock = previousCode && !renderError
     ? `
 PREVIOUS VERSION (proofread and fix this diagram):
 ${previousCode}
@@ -1395,7 +1408,7 @@ PROOFREAD FOR:
   const catRules = categoryRules(question.text);
 
   const prompt = `Generate a concise, exam-quality LaTeX/TikZ diagram for this ${subject} question.
-${improvementBlock}${diagramSpecBlock}
+${errorBlock}${improvementBlock}${diagramSpecBlock}
 QUESTION: ${question.text}
 ANSWER: ${question.answer}
 ${catRules}
@@ -1422,6 +1435,13 @@ KEEP IT SIMPLE:
 - Use hardcoded numeric coordinates — do NOT use \\pgfmathsetmacro or \\pgfmathparse for coordinate calculations. Compute values yourself and write them as literals (e.g. "at (1.46, 3)" not "at (\\xS, 3)").
 - Maximum 25 lines inside tikzpicture. NO % comment lines at all. No \\def or \\newcommand.
 - Simple is more reliable: fewer commands = fewer compile errors.
+
+NODE PLACEMENT — CRITICAL:
+- NEVER use \\node[...] at (A) -- (B) {...}; — this is INVALID syntax and will crash pdflatex.
+- To label the midpoint of a line segment, compute the midpoint coordinate yourself and place a node there:
+  \\coordinate (MAB) at ($(A)!0.5!(B)$); \\node[above, sloped] at (MAB) {label};
+- Alternatively, use a \\draw path with an inline node: \\draw (A) -- node[above, sloped] {label} (B);
+  (inline node on a draw path is valid — standalone \\node at path is NOT).
 
 \\pic ANGLE SYNTAX — CRITICAL:
 - \\pic requires THREE named \\coordinate names: \\pic["label", draw, ...] {angle = A--B--C}

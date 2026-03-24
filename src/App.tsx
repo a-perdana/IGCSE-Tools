@@ -374,7 +374,7 @@ export default function App() {
     })
   }, [generation])
 
-  const handleRegenerateDiagrams = useCallback(async (questions: QuestionItem[]) => {
+  const handleRegenerateDiagrams = useCallback(async (questions: QuestionItem[], renderErrors?: Record<string, string>) => {
     if (!questions.length) return
     // Diagram generation always uses Gemini regardless of the selected provider
     const geminiKey = apiKeys['gemini']
@@ -391,6 +391,9 @@ export default function App() {
         assessment.subject,
         customModel.trim() || DEFAULT_MODELS['gemini'],
         geminiKey,
+        undefined,
+        undefined,
+        renderErrors,
       )
       if (!regenerated.length) {
         notify('Diagram regenerate could not produce a valid diagram for this question.', 'error')

@@ -31,7 +31,7 @@ interface Props {
   bankQuestions?: Question[]
   onAddQuestions?: (questions: QuestionItem[]) => void
   onUpdateQuestion?: (questionId: string, updates: Partial<QuestionItem>) => void
-  onRegenerateDiagrams?: (questions: QuestionItem[]) => Promise<void>
+  onRegenerateDiagrams?: (questions: QuestionItem[], renderErrors?: Record<string, string>) => Promise<void>
   onRepairQuestion?: (question: QuestionItem) => Promise<Partial<QuestionItem> | null>
 }
 
@@ -264,6 +264,7 @@ export function AssessmentView({
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
   const [repairingIds, setRepairingIds] = useState<Set<string>>(new Set())
   const [repairingTextIds, setRepairingTextIds] = useState<Set<string>>(new Set())
+  const [diagramErrors, setDiagramErrors] = useState<Record<string, string>>({})
   const [questionPage, setQuestionPage] = useState(1)
 
   const renderedQuestions = assessment ? assessment.questions.map(repairQuestionItem) : []
@@ -365,7 +366,10 @@ export function AssessmentView({
     if (onRegenerateDiagrams) {
       setRepairingIds(prev => new Set(prev).add(q.id))
       try {
-        await onRegenerateDiagrams([q])
+        const errorsForQ = diagramErrors[q.id] ? { [q.id]: diagramErrors[q.id] } : undefined
+        await onRegenerateDiagrams([q], errorsForQ)
+        // Clear the error once regeneration is attempted
+        if (diagramErrors[q.id]) setDiagramErrors(prev => { const next = { ...prev }; delete next[q.id]; return next })
       } finally {
         setRepairingIds(prev => {
           const next = new Set(prev)
@@ -691,7 +695,7 @@ export function AssessmentView({
                         </button>
                       </div>
                     )}
-                    <DiagramRenderer spec={q.diagram} />
+                    <DiagramRenderer spec={q.diagram} onError={err => setDiagramErrors(prev => ({ ...prev, [q.id]: err }))} />
                     <QuestionMarkdown content={q.text} />
                     {onRepairQuestion && onUpdateQuestion && !studentMode && (
                       <div className="mt-1 flex justify-end">
