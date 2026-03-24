@@ -210,6 +210,7 @@ export function Library({
   const [isDeleting, setIsDeleting] = useState(false)
   const [subjectFilter, setSubjectFilter] = useState<string>('')
   const [questionSearch, setQuestionSearch] = useState('')
+  const [assessmentSearch, setAssessmentSearch] = useState('')
   const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
 
@@ -227,9 +228,17 @@ export function Library({
     return Array.from(set).sort()
   }, [assessments, questions])
 
-  const filteredAssessments = subjectFilter
-    ? assessments.filter(a => a.subject === subjectFilter)
-    : assessments
+  const filteredAssessments = useMemo(() => {
+    let as = subjectFilter ? assessments.filter(a => a.subject === subjectFilter) : assessments
+    if (assessmentSearch.trim()) {
+      const s = assessmentSearch.trim().toLowerCase()
+      as = as.filter(a =>
+        (a.code && a.code.toLowerCase().includes(s)) ||
+        a.topic.toLowerCase().includes(s)
+      )
+    }
+    return as
+  }, [assessments, subjectFilter, assessmentSearch])
 
   const filteredQuestions = useMemo(() => {
     let qs = subjectFilter ? questions.filter(q => q.subject === subjectFilter) : questions
@@ -389,6 +398,15 @@ export function Library({
           >
             Questions ({filteredQuestions.length})
           </button>
+          {bankView === 'assessments' && (
+            <input
+              type="text"
+              value={assessmentSearch}
+              onChange={e => { setAssessmentSearch(e.target.value); setAssessmentPage(1) }}
+              placeholder="Search by code or topic…"
+              className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+            />
+          )}
           {bankView === 'questions' && (
             <input
               type="text"
@@ -471,9 +489,13 @@ export function Library({
                         </div>
                       ) : (
                         <button onClick={() => onSelect(a)} className="text-left">
+                          {a.code && (
+                            <div className="font-mono text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit mb-1">
+                              {a.code}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-stone-800">{a.topic}</span>
-                            {a.code && <span className="text-xs font-mono bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded">{a.code}</span>}
                             {a.userId === currentUserId && (
                               <button
                                 onClick={e => { e.stopPropagation(); onTogglePublicAssessment(a.id, !a.isPublic) }}
@@ -520,7 +542,7 @@ export function Library({
               )})}
               {filteredAssessments.length === 0 && !loading && (
                 <div className="text-stone-400 text-sm text-center py-8">
-                  {subjectFilter ? `No ${subjectFilter} assessments found.` : 'No assessments saved yet.'}
+                  {assessmentSearch.trim() ? `No assessments matching "${assessmentSearch.trim()}".` : subjectFilter ? `No ${subjectFilter} assessments found.` : 'No assessments saved yet.'}
                 </div>
               )}
               {filteredAssessments.length > 0 && totalAssessmentPages > 1 && (
