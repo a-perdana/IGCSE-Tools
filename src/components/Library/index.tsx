@@ -209,6 +209,7 @@ export function Library({
   const [confirmDelete, setConfirmDelete] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [subjectFilter, setSubjectFilter] = useState<string>('')
+  const [questionSearch, setQuestionSearch] = useState('')
   const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
 
@@ -230,9 +231,17 @@ export function Library({
     ? assessments.filter(a => a.subject === subjectFilter)
     : assessments
 
-  const filteredQuestions = subjectFilter
-    ? questions.filter(q => q.subject === subjectFilter)
-    : questions
+  const filteredQuestions = useMemo(() => {
+    let qs = subjectFilter ? questions.filter(q => q.subject === subjectFilter) : questions
+    if (questionSearch.trim()) {
+      const s = questionSearch.trim().toLowerCase()
+      qs = qs.filter(q =>
+        (q.code && q.code.toLowerCase().includes(s)) ||
+        q.text.toLowerCase().includes(s)
+      )
+    }
+    return qs
+  }, [questions, subjectFilter, questionSearch])
 
   const totalAssessmentPages = Math.max(1, Math.ceil(filteredAssessments.length / ASSESSMENTS_PER_PAGE))
   const safeAssessmentPage = Math.min(assessmentPage, totalAssessmentPages)
@@ -380,6 +389,15 @@ export function Library({
           >
             Questions ({filteredQuestions.length})
           </button>
+          {bankView === 'questions' && (
+            <input
+              type="text"
+              value={questionSearch}
+              onChange={e => { setQuestionSearch(e.target.value); setQuestionPage(1) }}
+              placeholder="Search by code or text…"
+              className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+            />
+          )}
           <select
             value={subjectFilter}
             onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
@@ -557,6 +575,11 @@ export function Library({
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
+                      {q.code && (
+                        <div className="font-mono text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit mb-1">
+                          {q.code}
+                        </div>
+                      )}
                       <div className="text-xs text-stone-700 truncate">
                         {q.text
                         .replace(/```svg[\s\S]*?```/g, '[diagram]')
@@ -579,7 +602,6 @@ export function Library({
                             {'★'.repeat(q.difficultyStars)}{'☆'.repeat(3 - q.difficultyStars)}
                           </span>
                         )}
-                        {q.code && <span className="font-mono bg-stone-100 px-1 rounded text-stone-500">{q.code}</span>}
                         {q.userId !== currentUserId && q.isPublic && q.preparedBy && (
                           <span className="ml-1 text-emerald-600">by {q.preparedBy}</span>
                         )}
@@ -625,7 +647,7 @@ export function Library({
               })}
               {filteredQuestions.length === 0 && !loading && (
                 <div className="text-stone-400 text-sm text-center py-8">
-                  {subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
+                  {questionSearch.trim() ? `No questions matching "${questionSearch.trim()}".` : subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
                 </div>
               )}
               {filteredQuestions.length > 0 && totalQuestionPages > 1 && (
