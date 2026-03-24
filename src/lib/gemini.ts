@@ -828,7 +828,7 @@ export async function generateTest(
       lines.push(`Reference Diagram (TikZ — reuse structure, change values only):\n\`\`\`tikz\n${item.tikzCode}\n\`\`\``);
     }
     lines.push(
-      `INSTRUCTION: Mirror this question's structure exactly — same number of sub-parts, same command word, same mark total (${item.marks} marks). Change ONLY: numbers, measurements, context, variable names. Do NOT copy the question verbatim.`,
+      `INSTRUCTION: Study WHY this past paper question is at its difficulty level — identify the cognitive demand (multi-step reasoning, unfamiliar context, data interpretation, synthesis across concepts). Replicate that same cognitive demand in a NEW question: same number of sub-parts, same command word, same mark total (${item.marks} marks), same difficulty pattern. Change ONLY the specific topic/numbers/context. Do NOT copy verbatim. Do NOT simplify the reasoning chain.`,
     );
     return lines.join("\n");
   }
@@ -1028,9 +1028,12 @@ ${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
 QUESTION SLOTS (each slot may include a TEMPLATE from a real past paper):
 ${slotDescriptions}
 
+PAST PAPER USAGE — CRITICAL:
+If past papers are provided above, extract their COGNITIVE DEMAND pattern: how many reasoning steps are required, how unfamiliar context is introduced, how diagram values feed into multi-step solutions. Replicate this level of demand — do NOT produce simpler questions because they are easier to write.
+
 QUESTION REQUIREMENTS (each question):
-- If a TEMPLATE is provided for the slot, mirror its structure exactly (sub-parts, command word, mark total). Change only numbers, measurements, context.
-- If no TEMPLATE, create an original Cambridge-style question.
+- If a TEMPLATE is provided for the slot, replicate its cognitive demand exactly (same sub-parts, command word, mark total, reasoning complexity). Change only numbers, measurements, context. Do NOT simplify.
+- If no TEMPLATE, create an original Cambridge-style question at the configured difficulty level.
 - Must require the diagram to solve
 - LaTeX: all math in $...$
 - MCQ: 4 options array, answer = "A"/"B"/"C"/"D"
@@ -1124,9 +1127,16 @@ ${subjectRules ? `${subjectRules}\n` : ""}${MARK_SCHEME_FORMAT}
 QUESTION SLOTS (write EXACTLY ${batchSlots.length} questions in this order):
 ${batchDescriptions}
 
+PAST PAPER USAGE — CRITICAL:
+If past papers are provided above, study them to extract:
+- The COGNITIVE DEMAND pattern (how many reasoning steps, what kind of synthesis)
+- The QUESTION FRAMING style (how unfamiliar context is introduced, how data is presented)
+- The MARK SCHEME granularity (how many distinct marking points per mark)
+Replicate this level of cognitive demand in your questions. Do NOT produce simpler questions just because they are easier to write.
+
 RULES:
-1. If a slot has a TEMPLATE, mirror its structure exactly (same sub-parts, command word, mark total). Change only numbers, measurements, and context. Do NOT copy verbatim.
-2. If no TEMPLATE, write an original Cambridge-style question.
+1. If a slot has a TEMPLATE, mirror its cognitive demand exactly (same sub-parts, command word, mark total, reasoning complexity). Change only numbers, measurements, and context. Do NOT copy verbatim. Do NOT simplify.
+2. If no TEMPLATE, write an original Cambridge-style question matching the difficulty standard above.
 3. MCQ: 4 options (no letter prefix); answer = "A"/"B"/"C"/"D".
 4. Short answer: 1–3 marks, no sub-parts.
 5. Structured: stem + (a),(b),(c) sub-parts with [n] marks each.
@@ -1215,6 +1225,7 @@ RULES:
       ai,
       onRetry,
       onUsage,
+      config.difficulty,
     );
   }
 
@@ -1302,7 +1313,18 @@ CATEGORY: Circle Theorems
 - For "tangent from external point": draw the external point, two tangent lines touching the circle, and any radii to the tangent points.
 - Angle at centre = 2 × angle at circumference (on same arc) — draw both clearly.
 - Do NOT draw a small circle at a label point unless the question describes a small separate circle there.
-- Arcs for angles: use \\pic syntax at the correct vertex with the correct sweep direction.`;
+
+ANGLE ARC RULES — follow exactly:
+- ALWAYS use \\pic to draw angle arcs. NEVER use \\draw arc[start angle=..., end angle=...] to mark an angle — this almost always places the arc at the wrong position or sweeps the wrong direction.
+- \\pic syntax: \\pic["$X^\\circ$", draw, angle radius=0.5cm] {angle = P--V--Q};
+  where V is the VERTEX of the angle, P and Q are points on the two rays forming the angle.
+- The arc sweeps from ray VP to ray VQ going counterclockwise. \\pic automatically sweeps the SMALLER (interior) angle.
+- For angle OAB (vertex A, rays toward O and toward B): \\pic["$28^\\circ$", draw, angle radius=0.5cm] {angle = O--A--B};
+- For angle OBC at tangent point B (the 90° right angle): use a square marker, NOT \\pic.
+- If the arc must sweep from a direction without a named point (e.g. from the tangent line extension), define a helper \\coordinate first:
+  \\coordinate (Cext) at ($(B)!-1!(A)$); — this is the extension of AB beyond B
+  then: \\pic["$X^\\circ$", draw, angle radius=0.5cm] {angle = Cext--B--O};
+- Verify: the three points P--V--Q in \\pic must be \\coordinate names, NEVER inline expressions.`;
   }
 
   if (/net|cube|cuboid|fold|face|surface area/.test(t)) {
@@ -1353,10 +1375,11 @@ PREVIOUS VERSION (proofread and fix this diagram):
 ${previousCode}
 
 PROOFREAD FOR:
-- Geometric accuracy: do the angle arcs match the values stated in the question? e.g. if the question says 70°, the arc must sweep exactly 70° (acute). If an arc looks obtuse but should be acute, fix the start/end angles.
+- Geometric accuracy: do the angle arcs match the values stated in the question? e.g. if the question says 70°, the arc must sweep exactly 70° (acute). If an arc looks obtuse but should be acute, fix the arc.
 - Parallel line diagrams: are arcs on the correct side of the transversal for the angle type (alternate/co-interior/corresponding)?
 - Right angles: should use a square marker, not an arc.
 - Missing labels, incorrect coordinates, or proportions that don't match the question.
+- CRITICAL: any \\draw arc[start angle=..., end angle=...] used to mark an angle MUST be replaced with \\pic["$X^\\circ$", draw, angle radius=0.5cm] {angle = P--V--Q} — raw arc commands almost always sweep the wrong direction. Define helper \\coordinate points if needed.
 - Keep total line count inside tikzpicture ≤ 30.
 `
     : "";
@@ -1511,6 +1534,7 @@ async function critiqueAndRefine(
   ai: ReturnType<typeof getAI>,
   onRetry?: (attempt: number) => void,
   onUsage?: UsageCallback,
+  difficulty?: string,
 ): Promise<QuestionItem[]> {
   const questionsText = questions
     .map((q, i) => {
@@ -1521,39 +1545,55 @@ async function critiqueAndRefine(
     })
     .join("\n\n---\n\n");
 
-  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a strict quality audit for ${subject}.
-
-REQUIRED STANDARD: Cambridge IGCSE
+  const difficultyStandard =
+    difficulty === "Easy"
+      ? `REQUIRED STANDARD: Easy (Cambridge IGCSE Grade C–E level)
+- Target: 80–90% of students should answer correctly
+- Acceptable command words: State, Name, Define, List, Identify, Calculate (1-step)
+- Single concept, direct recall, familiar contexts — this is appropriate for this difficulty
+- DO NOT rewrite easy questions to make them harder — only fix genuine errors (wrong answer, broken diagram dependency, factual mistake)`
+      : difficulty === "Medium"
+      ? `REQUIRED STANDARD: Medium (Cambridge IGCSE Grade A–C level)
+- Target: 40–60% of students should answer correctly
+- Command words: Describe, Explain, Calculate (2–3 steps), Show, Determine
+- Must apply knowledge to a scenario — not pure recall, but not requiring novel synthesis
+- Rewrite ONLY if the question is genuinely too easy (pure recall, 1-step) or has a broken diagram`
+      : `REQUIRED STANDARD: Challenging (Cambridge IGCSE A* discriminator)
 - Target: Only 10–20% of students answer fully correctly
 - Command words: Evaluate, Deduce, Predict, Suggest, Discuss, Justify — NEVER State/Name/Define
 - Must require 3+ distinct cognitive steps or multi-stage synthesis
 - Content must be in UNFAMILIAR context — novel scenario, never a textbook example
-- Mark schemes must have 4+ distinct marking points for 4+ mark questions
+- Mark schemes must have 4+ distinct marking points for 4+ mark questions`;
 
-REWRITE ANY QUESTION THAT:
-- does not require diagram
-- duplicates diagram values in text
-- can be solved in 1 step
-- looks like textbook
-- lacks reasoning chain
-- a student can answer from memory alone
-
-CRITICAL DIAGRAM CHECK:
-- If a question has a diagram, is the diagram ESSENTIAL?
-- If the question can be solved without looking at the diagram, it is BROKEN. Rewrite it so the diagram contains vital info (e.g. lengths, angles, relationships) not in the text.
-
-REWRITE if:
-- diagram is not essential
-- values are duplicated in text
-- question is solvable in one step
-- question looks like textbook
-
-REWRITE ANY QUESTION THAT:
+  const rewriteConditions =
+    difficulty === "Easy"
+      ? `REWRITE ONLY IF:
+- The answer in the mark scheme is factually wrong
+- A diagram is present but completely irrelevant to the question
+- The question accidentally requires university-level knowledge`
+      : difficulty === "Medium"
+      ? `REWRITE IF:
+- Question is pure recall (no application to a scenario)
+- Can be solved in a single arithmetic step with no reasoning
+- Diagram (if present) is not used in solving the question
+- Mark scheme is missing key steps for a multi-step question`
+      : `REWRITE ANY QUESTION THAT:
 - Can be solved in 1 step
 - Does not require diagram (if present)
 - Looks like a textbook example ("Find x")
 - Uses predictable patterns
 - Is too easy for A* candidates
+- a student can answer from memory alone`;
+
+  const prompt = `You are a Cambridge IGCSE Chief Examiner conducting a quality audit for ${subject}.
+
+${difficultyStandard}
+
+${rewriteConditions}
+
+CRITICAL DIAGRAM CHECK (applies to ALL difficulty levels):
+- If a question has a diagram, is the diagram ESSENTIAL to solve it?
+- If the question can be solved without looking at the diagram, rewrite it so the diagram contains vital info (e.g. lengths, angles, relationships) not stated in the text.
 
 QUESTIONS TO AUDIT:
 ${questionsText}
