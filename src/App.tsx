@@ -280,7 +280,7 @@ export default function App() {
     }
   }, [config.subject, config.useDiagramPool, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!currentApiKey) {
       notify('No API key set. Open API Settings and add your key to get started.', 'error')
       setApiSettingsOpen(true)
@@ -288,8 +288,20 @@ export default function App() {
     }
     setView('main')
     const effectiveModel = customModel.trim() || config.model
-    generation.generate({ ...config, provider, model: effectiveModel, syllabusContext, diagramPool: config.useDiagramPool ? diagramPool : undefined } as any, resources.knowledgeBase, resources.getBase64)
-  }, [config, provider, customModel, syllabusContext, currentApiKey, resources.knowledgeBase, resources.getBase64, generation, notify])
+
+    // If diagram pool is enabled, ensure it's loaded before generating
+    let pool = diagramPool
+    if (config.useDiagramPool && pool.length === 0) {
+      try {
+        pool = await getDiagramPool(config.subject)
+        setDiagramPool(pool)
+      } catch (e) {
+        console.error('Failed to load diagram pool:', e)
+      }
+    }
+
+    generation.generate({ ...config, provider, model: effectiveModel, syllabusContext, diagramPool: config.useDiagramPool ? pool : undefined } as any, resources.knowledgeBase, resources.getBase64)
+  }, [config, provider, customModel, syllabusContext, currentApiKey, resources.knowledgeBase, resources.getBase64, generation, notify, diagramPool])
 
   // Smart save: update if already in Firestore, else create new
   const handleSave = useCallback(async () => {
