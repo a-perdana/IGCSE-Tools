@@ -58,6 +58,33 @@
         { "fieldPath": "folderId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "importedQuestions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rawCode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "importedQuestions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rawCode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "importedQuestions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "order": "ASCENDING" },
+        { "fieldPath": "topic", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rawCode", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
