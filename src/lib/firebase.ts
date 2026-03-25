@@ -593,6 +593,49 @@ export const getDiagramPool = async (subject?: string): Promise<DiagramPoolEntry
   }
 }
 
+/** Update editable fields on a diagram pool entry. */
+export const updateDiagramPoolEntry = async (
+  id: string,
+  updates: Partial<Pick<DiagramPoolEntry, 'description' | 'category' | 'tags' | 'topics' | 'subject'>>
+): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'diagramPool', id), stripUndefined(updates as Record<string, unknown>) as any)
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `diagramPool/${id}`)
+  }
+}
+
+/** Add a new diagram pool entry (for manually uploaded diagrams). */
+export const addDiagramPoolEntry = async (
+  entry: Omit<DiagramPoolEntry, 'id' | 'createdAt'>
+): Promise<string> => {
+  const col = collection(db, 'diagramPool')
+  const docRef = await addDoc(col, { ...stripUndefined(entry as Record<string, unknown>), createdAt: serverTimestamp() })
+  return docRef.id
+}
+
+/** Delete a diagram pool entry from Firestore (does not delete Storage file). */
+export const deleteDiagramPoolEntry = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'diagramPool', id))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `diagramPool/${id}`)
+  }
+}
+
+/** Upload a diagram image to Storage and return its public URL + storage path. */
+export const uploadDiagramImage = async (
+  file: File,
+  subject: string,
+): Promise<{ imageURL: string; storagePath: string; imageName: string }> => {
+  const imageName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+  const path = `diagrams/${subject.toLowerCase()}/${imageName}`
+  const ref = storageRef(storage, path)
+  await uploadBytes(ref, file)
+  const imageURL = await getDownloadURL(ref)
+  return { imageURL, storagePath: path, imageName }
+}
+
 /** GDPR: delete all Firestore data owned by a user, then delete their Auth account.
  *  Iterates in batches of 400 to stay under the 500-op batch limit. */
 export const deleteUserData = async (): Promise<void> => {

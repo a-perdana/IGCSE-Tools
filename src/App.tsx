@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2 } from 'lucide-react'
-import type { AIError, ImportedQuestion, DiagramPoolEntry } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool } from './lib/firebase'
+import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -15,6 +15,7 @@ import { useApiSettings } from './hooks/useApiSettings'
 import { Sidebar } from './components/Sidebar'
 import { AssessmentView } from './components/AssessmentView'
 import { Library as LibraryView } from './components/Library'
+import { DiagramLibrary } from './components/DiagramLibrary'
 import { Notifications } from './components/Notifications'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
@@ -235,7 +236,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
-  const [view, setView] = useState<'main' | 'library'>('main')
+  const [view, setView] = useState<'main' | 'library' | 'diagrams'>('main')
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
   const [studentMode, setStudentMode] = useState(false)
@@ -383,6 +384,55 @@ export default function App() {
     await updateImportedQuestion(uid, updates)
     setImportedQuestions(prev => prev.map(q => q.uid === uid ? { ...q, ...updates } : q))
   }, [])
+
+  const handleLoadDiagramPool = useCallback(async (subject?: string) => {
+    const pool = await getDiagramPool(subject)
+    setDiagramPool(pool)
+  }, [])
+
+  const handleUpdateDiagramEntry = useCallback(async (id: string, updates: Partial<DiagramPoolEntry>) => {
+    await updateDiagramPoolEntry(id, updates)
+    setDiagramPool(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e))
+  }, [])
+
+  const handleDeleteDiagramEntry = useCallback(async (id: string) => {
+    await deleteDiagramPoolEntry(id)
+    setDiagramPool(prev => prev.filter(e => e.id !== id))
+  }, [])
+
+  const handleUploadDiagram = useCallback(async (
+    file: File,
+    subject: string,
+    meta: { description: string; category: DiagramCategory; topics: string[]; tags: string[] }
+  ) => {
+    const { imageURL, storagePath, imageName } = await uploadDiagramImage(file, subject)
+    const id = await addDiagramPoolEntry({
+      imageName,
+      storagePath,
+      imageURL,
+      subject,
+      topics: meta.topics,
+      tags: meta.tags,
+      description: meta.description,
+      category: meta.category,
+      usedInQuestionUids: [],
+    })
+    const newEntry: DiagramPoolEntry = {
+      id,
+      imageName,
+      storagePath,
+      imageURL,
+      subject,
+      topics: meta.topics,
+      tags: meta.tags,
+      description: meta.description,
+      category: meta.category,
+      usedInQuestionUids: [],
+      createdAt: null as any,
+    }
+    setDiagramPool(prev => [newEntry, ...prev])
+    notify('Diagram uploaded successfully', 'success')
+  }, [notify])
 
   const handleCreateAssessmentFromQuestions = useCallback((questions: Question[]) => {
     const assessment: Assessment = {
@@ -617,6 +667,13 @@ export default function App() {
               <LibraryIcon className="w-3.5 h-3.5" />
               Library
             </button>
+            <button
+              onClick={() => setView(v => v === 'diagrams' ? 'main' : 'diagrams')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium ${view === 'diagrams' ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Diagrams
+            </button>
             <span className="text-xs text-stone-500">{user.displayName}</span>
             <button
               onClick={() => setShowDeleteModal(true)}
@@ -648,7 +705,18 @@ export default function App() {
         )}
 
         {/* Main content */}
-        {view === 'library' ? (
+        {view === 'diagrams' ? (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <DiagramLibrary
+              entries={diagramPool}
+              loading={false}
+              onLoad={handleLoadDiagramPool}
+              onUpdate={handleUpdateDiagramEntry}
+              onDelete={handleDeleteDiagramEntry}
+              onUpload={handleUploadDiagram}
+            />
+          </div>
+        ) : view === 'library' ? (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <LibraryView
             assessments={library.assessments}

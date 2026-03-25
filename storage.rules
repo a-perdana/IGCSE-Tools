@@ -6,11 +6,11 @@ service firebase.storage {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Diagram pool — images uploaded by Admin SDK import script.
-    // All authenticated users can read; no client-side writes.
+    // Diagram pool — imported by Admin SDK or uploaded via the Diagram Library UI.
+    // All authenticated users can read and write.
     match /diagrams/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if false;
+      allow write: if request.auth != null;
     }
   }
 }
