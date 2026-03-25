@@ -138,6 +138,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # **bold** → bold
     text = re.sub(r'\*(.+?)\*', r'\1', text)       # *italic* → italic
     text = IMAGE_RE.sub('[DIAGRAM]', text)          # image refs → placeholder
+    text = re.sub(r'\s*>?\s*(?:height|width)="[^"]+"\s*\}?\s*', ' ', text)  # pandoc img attrs
     text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)  # blockquote >
     text = re.sub(r'\{[^}]+\}', '', text)          # {.mark} remnants
     text = re.sub(r'\s{2,}', ' ', text)            # collapse spaces
