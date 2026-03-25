@@ -9,3 +9,4 @@ coverage/
 .worktrees/
 scripts/import/*-sa.json
 scripts/import/*.json
+latex-renderer/
