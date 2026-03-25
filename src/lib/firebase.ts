@@ -581,9 +581,11 @@ export const getImportedTopics = async (subject: string): Promise<string[]> => {
 export const getDiagramPool = async (subject?: string): Promise<DiagramPoolEntry[]> => {
   if (!auth.currentUser) return []
   const col = collection(db, 'diagramPool')
+  // Note: docs written by build_diagram_pool.py use 'updatedAt' not 'createdAt',
+  // so we avoid orderBy to prevent Firestore filtering out docs without 'createdAt'.
   const q = subject
-    ? query(col, where('subject', '==', subject), orderBy('createdAt', 'desc'))
-    : query(col, orderBy('createdAt', 'desc'))
+    ? query(col, where('subject', '==', subject))
+    : query(col)
   try {
     const snap = await getDocs(q)
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as DiagramPoolEntry))
