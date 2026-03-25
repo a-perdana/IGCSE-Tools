@@ -6,6 +6,8 @@ import type {
   GenerationConfig,
   GeminiError,
   TikzSpec,
+  DiagramPoolEntry,
+  RasterSpec,
 } from "./types";
 import type { Reference, PastPaperItem } from "./ai";
 import type { UsageCallback } from "./ai";
@@ -761,7 +763,7 @@ interface QuestionSlot {
 }
 
 export async function generateTest(
-  config: GenerationConfig & { references?: Reference[]; apiKey?: string },
+  config: GenerationConfig & { references?: Reference[]; apiKey?: string; diagramPool?: DiagramPoolEntry[] },
   onRetry?: (attempt: number) => void,
   onUsage?: UsageCallback,
   onLog?: (msg: string) => void,
@@ -803,6 +805,27 @@ export async function generateTest(
     if (tagsLower.some((t) => t === norm)) score += 4;
     score += keywords.filter((k) => tagsLower.some((t) => t.includes(k))).length;
     score += keywords.filter((k) => questionLower.includes(k)).length * 0.5;
+    return score;
+  }
+
+  /** Score a diagram pool entry against a slot topic. */
+  function scoreDiagramEntryForTopic(entry: DiagramPoolEntry, slotTopic: string): number {
+    const norm = slotTopic.toLowerCase().trim();
+    const keywords = norm.split(/[\s,/]+/).filter((k) => k.length > 2);
+    let score = 0;
+    entry.topics.forEach((t) => {
+      const tl = t.toLowerCase();
+      if (tl === norm) score += 8;
+      else if (tl.includes(norm) || norm.includes(tl)) score += 4;
+      else if (keywords.some((k) => tl.includes(k))) score += 2;
+    });
+    entry.tags.forEach((tag) => {
+      if (keywords.some((k) => tag.toLowerCase().includes(k))) score += 1;
+    });
+    if (entry.description) {
+      const dl = entry.description.toLowerCase();
+      score += keywords.filter((k) => dl.includes(k)).length * 0.5;
+    }
     return score;
   }
 
@@ -1105,6 +1128,83 @@ MARK SCHEME: Cambridge notation (B1, M1, A1).`;
   }
 
   /**
+   * Writes diagram questions that reference real past-paper images from the diagram pool.
+   * The AI sees the image URL + description and writes a question around it.
+   */
+  async function writeQuestionsWithRasterDiagram(
+    rasterSlots: QuestionSlot[],
+    pickedEntries: DiagramPoolEntry[],
+  ): Promise<any[]> {
+    if (rasterSlots.length === 0) return [];
+
+    const slotDescriptions = rasterSlots
+      .map((s, i) => {
+        const entry = pickedEntries[i];
+        const template = buildSlotTemplate(s.topic, true);
+        return [
+          `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"`,
+          `USE THIS REAL DIAGRAM IMAGE: ${entry.imageURL}`,
+          `The image shows: ${entry.description || entry.topics.join(", ")} (topics: ${entry.topics.join(", ")})`,
+          `Write a question that directly interprets or analyses this specific diagram.`,
+          template ? `\n${template}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n\n");
+
+    const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment using REAL past-paper diagrams.
+
+CONFIGURATION:
+- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
+- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
+${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
+
+QUESTION SLOTS (each includes a real diagram image):
+${slotDescriptions}
+
+RULES:
+1. Each question MUST directly reference and require interpretation of the provided diagram image.
+2. Phrase the question as if the student is looking at the diagram (e.g. "The diagram shows...", "Using the diagram...").
+3. MCQ: 4 options (no letter prefix); answer = "A"/"B"/"C"/"D".
+4. LaTeX: all math in $...$. syllabusObjective: "REF – statement" format.
+5. assessmentObjective: "AO1" | "AO2" | "AO3". difficultyStars: 1|2|3.
+6. hasDiagram: true for all these questions.
+7. answer field: MCQ = letter; others = method description only.
+8. Do NOT describe or recreate the diagram in TikZ — the image is already provided.`;
+
+    return withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model,
+        contents: { parts: [...allRefParts, { text: prompt }] },
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 32768,
+          temperature: 0.75,
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: { questions: { type: Type.ARRAY, items: questionSchema } },
+            required: ["questions"],
+          },
+          systemInstruction: phase2SystemInstruction,
+        },
+      });
+      const usage = getGeminiUsage(response);
+      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
+      const finishReason = (response as any)?.candidates?.[0]?.finishReason;
+      onLog?.(`[Phase 2 RasterDiagram batch] length=${response.text?.length ?? 0} finishReason=${finishReason}`);
+      if (finishReason === "MAX_TOKENS") {
+        throw { type: "invalid_response", retryable: true, message: `Raster diagram batch hit token limit. Retrying…` };
+      }
+      const parsed = safeJsonParse(response.text || "{}");
+      if (!parsed.questions || parsed.questions.length < rasterSlots.length) {
+        throw { type: "invalid_response", retryable: true, message: `Raster diagram batch returned ${parsed.questions?.length ?? 0} questions, expected ${rasterSlots.length}.` };
+      }
+      return parsed.questions;
+    }, 3, onRetry);
+  }
+
+  /**
    * Writes all non-diagram questions in a single batch call.
    */
   async function writeQuestionsWithoutDSL(batchSlots: QuestionSlot[]): Promise<any[]> {
@@ -1189,11 +1289,28 @@ RULES:
 
   const rawQuestionsMap: Record<number, any> = {};
 
-  // Diagram questions — single batch call (all slots together)
+  // Diagram questions — use diagram pool (raster) or generate TikZ
+  const poolEntries = config.diagramPool ?? [];
+  const useDiagramPool = config.useDiagramPool && poolEntries.length > 0;
+
   if (dslSlots.length > 0) {
-    onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) + TikZ…`);
-    const tikzResults = await writeQuestionsWithTikz(dslSlots);
-    dslSlots.forEach((slot, i) => { rawQuestionsMap[slot.index] = tikzResults[i]; });
+    if (useDiagramPool) {
+      onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) using diagram pool (${poolEntries.length} images)…`);
+      const pickedEntries = dslSlots.map((slot) => {
+        const scored = poolEntries
+          .map((e) => ({ e, score: scoreDiagramEntryForTopic(e, slot.topic) }))
+          .sort((a, b) => b.score - a.score);
+        return scored[0]?.e ?? poolEntries[Math.floor(Math.random() * poolEntries.length)];
+      });
+      const rasterResults = await writeQuestionsWithRasterDiagram(dslSlots, pickedEntries);
+      dslSlots.forEach((slot, i) => {
+        rawQuestionsMap[slot.index] = { ...rasterResults[i], _poolEntry: pickedEntries[i] };
+      });
+    } else {
+      onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) + TikZ…`);
+      const tikzResults = await writeQuestionsWithTikz(dslSlots);
+      dslSlots.forEach((slot, i) => { rawQuestionsMap[slot.index] = tikzResults[i]; });
+    }
   }
 
   const nonDslResults = await writeQuestionsWithoutDSL(nonDslSlots);
@@ -1201,16 +1318,24 @@ RULES:
 
   const rawQuestions = { questions: slots.map((s) => rawQuestionsMap[s.index]).filter(Boolean) };
 
-  // Stitch: sanitize questions and attach TikZ diagram if present
+  // Stitch: sanitize questions and attach diagram (TikZ or raster pool image)
   let questions: QuestionItem[] = (rawQuestions.questions ?? []).map((q: any, i: number) => {
     const sanitized = sanitizeQuestion(q);
     const slot = slots[i];
-    const hasDiagram = (slot?.hasDiagram || sanitized.hasDiagram) && !!q.tikzCode;
+    const hasTikz = (slot?.hasDiagram || sanitized.hasDiagram) && !!q.tikzCode;
+    const hasRaster = (slot?.hasDiagram || sanitized.hasDiagram) && !!q._poolEntry;
+    const hasDiagram = hasTikz || hasRaster;
+
+    const diagram: TikzSpec | RasterSpec | undefined = hasTikz
+      ? { diagramType: "tikz" as const, code: q.tikzCode }
+      : hasRaster
+        ? { diagramType: "raster" as const, url: (q._poolEntry as DiagramPoolEntry).imageURL, maxWidth: 480 }
+        : undefined;
 
     return {
       ...sanitized,
       hasDiagram,
-      ...(hasDiagram && q.tikzCode ? { diagram: { diagramType: "tikz" as const, code: q.tikzCode } } : {}),
+      ...(diagram ? { diagram } : {}),
       id: crypto.randomUUID(),
       code: sharedGenerateQuestionCode(config.subject, {
         text: sanitized.text,

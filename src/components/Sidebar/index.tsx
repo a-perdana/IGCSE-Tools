@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react'
 import {
   BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
-  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File, Globe, Lock,
+  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File, Globe, Lock, Image,
 } from 'lucide-react'
 import type { GenerationConfig, Resource, ResourceType } from '../../lib/types'
 import type { AIProvider } from '../../lib/providers'
@@ -48,6 +48,7 @@ interface Props {
   onCustomModelChange: (v: string) => void
   apiSettingsOpen?: boolean
   onApiSettingsOpenChange?: (open: boolean) => void
+  diagramPoolCount?: number
 }
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
@@ -76,6 +77,7 @@ export function Sidebar({
   studentMode, onStudentModeToggle, syllabusContext, onSyllabusContextChange,
   provider, onProviderChange, apiKeys, onApiKeyChange, customModel, onCustomModelChange,
   apiSettingsOpen, onApiSettingsOpenChange,
+  diagramPoolCount,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -260,6 +262,25 @@ export function Sidebar({
           />
           <label htmlFor="calc" className="text-xs text-stone-600 flex items-center gap-1">
             <Calculator className="w-3.5 h-3.5" /> Calculator Allowed
+          </label>
+        </div>
+
+        {/* Diagram Pool */}
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="diagramPool"
+            checked={config.useDiagramPool ?? false}
+            onChange={e => onConfigChange({ useDiagramPool: e.target.checked })}
+            className="accent-emerald-600"
+          />
+          <label htmlFor="diagramPool" className="text-xs text-stone-600 flex items-center gap-1.5">
+            <BookOpen className="w-3.5 h-3.5" /> Use Diagram Pool
+            {diagramPoolCount != null && diagramPoolCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700">
+                {diagramPoolCount}
+              </span>
+            )}
           </label>
         </div>
 

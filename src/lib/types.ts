@@ -104,6 +104,7 @@ export interface GenerationConfig {
   model: string;
   syllabusContext?: string;
   provider?: AIProvider;
+  useDiagramPool?: boolean;
 }
 
 export interface AnalyzeFileResult {

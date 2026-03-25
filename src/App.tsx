@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2 } from 'lucide-react'
-import type { AIError, ImportedQuestion } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions } from './lib/firebase'
+import type { AIError, ImportedQuestion, DiagramPoolEntry } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -245,6 +245,7 @@ export default function App() {
   const [showNewAssessmentModal, setShowNewAssessmentModal] = useState(false)
   const [importedQuestions, setImportedQuestions] = useState<ImportedQuestion[]>([])
   const [importedLoading, setImportedLoading] = useState(false)
+  const [diagramPool, setDiagramPool] = useState<DiagramPoolEntry[]>([])
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -273,6 +274,12 @@ export default function App() {
     if (user && view === 'library') library.loadAll(selectedFolderId ?? undefined)
   }, [view, selectedFolderId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (user && config.useDiagramPool) {
+      getDiagramPool(config.subject).then(setDiagramPool).catch(console.error)
+    }
+  }, [config.subject, config.useDiagramPool, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleGenerate = useCallback(() => {
     if (!currentApiKey) {
       notify('No API key set. Open API Settings and add your key to get started.', 'error')
@@ -281,7 +288,7 @@ export default function App() {
     }
     setView('main')
     const effectiveModel = customModel.trim() || config.model
-    generation.generate({ ...config, provider, model: effectiveModel, syllabusContext }, resources.knowledgeBase, resources.getBase64)
+    generation.generate({ ...config, provider, model: effectiveModel, syllabusContext, diagramPool: config.useDiagramPool ? diagramPool : undefined } as any, resources.knowledgeBase, resources.getBase64)
   }, [config, provider, customModel, syllabusContext, currentApiKey, resources.knowledgeBase, resources.getBase64, generation, notify])
 
   // Smart save: update if already in Firestore, else create new
@@ -359,6 +366,11 @@ export default function App() {
       setImportedLoading(false)
     }
   }, [user, importedLoading])
+
+  const handleUpdateImported = useCallback(async (uid: string, updates: Partial<ImportedQuestion>) => {
+    await updateImportedQuestion(uid, updates)
+    setImportedQuestions(prev => prev.map(q => q.uid === uid ? { ...q, ...updates } : q))
+  }, [])
 
   const handleCreateAssessmentFromQuestions = useCallback((questions: Question[]) => {
     const assessment: Assessment = {
@@ -568,6 +580,7 @@ export default function App() {
         onCustomModelChange={setCustomModel}
         apiSettingsOpen={apiSettingsOpen}
         onApiSettingsOpenChange={setApiSettingsOpen}
+        diagramPoolCount={diagramPool.length}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -651,6 +664,7 @@ export default function App() {
             importedQuestions={importedQuestions}
             importedLoading={importedLoading}
             onLoadImported={handleLoadImported}
+            onUpdateImported={handleUpdateImported}
             onRegenerateDiagram={async (q) => {
               const results = await (await import('./lib/gemini')).regenerateDiagramsForQuestions(
                 [q], q.subject,

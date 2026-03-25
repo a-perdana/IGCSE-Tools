@@ -85,6 +85,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "rawCode", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "diagramPool",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry } from './types'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
@@ -550,6 +550,19 @@ export const getImportedQuestions = async (opts: {
   }
 }
 
+/** Update editorial fields on an imported question (topic, subtopic, questionText, options, correctAnswer, type). */
+export const updateImportedQuestion = async (
+  uid: string,
+  updates: Partial<Pick<ImportedQuestion, 'questionText' | 'options' | 'correctAnswer' | 'topic' | 'subtopic' | 'type'>>
+): Promise<void> => {
+  const docRef = doc(db, 'importedQuestions', uid)
+  try {
+    await updateDoc(docRef, stripUndefined(updates as Record<string, unknown>) as any)
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `importedQuestions/${uid}`)
+  }
+}
+
 /** Return the distinct list of topics present in importedQuestions for a given subject. */
 export const getImportedTopics = async (subject: string): Promise<string[]> => {
   if (!auth.currentUser) return []
@@ -560,6 +573,22 @@ export const getImportedTopics = async (subject: string): Promise<string[]> => {
     const topics = new Set(snap.docs.map(d => d.data().topic as string).filter(Boolean))
     return [...topics].sort()
   } catch {
+    return []
+  }
+}
+
+/** Fetch diagram pool entries, optionally filtered by subject. */
+export const getDiagramPool = async (subject?: string): Promise<DiagramPoolEntry[]> => {
+  if (!auth.currentUser) return []
+  const col = collection(db, 'diagramPool')
+  const q = subject
+    ? query(col, where('subject', '==', subject), orderBy('createdAt', 'desc'))
+    : query(col, orderBy('createdAt', 'desc'))
+  try {
+    const snap = await getDocs(q)
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as DiagramPoolEntry))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'diagramPool')
     return []
   }
 }

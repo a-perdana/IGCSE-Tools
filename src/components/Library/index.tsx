@@ -37,6 +37,7 @@ interface Props {
   importedQuestions?: ImportedQuestion[]
   importedLoading?: boolean
   onLoadImported?: () => void
+  onUpdateImported?: (uid: string, updates: Partial<ImportedQuestion>) => Promise<void>
 }
 
 // ─── Helper: ImportedQuestion → QuestionItem ─────────────────────────────────
@@ -79,14 +80,24 @@ function importedToQuestionItem(iq: ImportedQuestion): Question {
   }
 }
 
-// ─── ImportedQuestion preview modal ──────────────────────────────────────────
+// ─── ImportedQuestion preview + edit modal ───────────────────────────────────
+
+type ImportedDraft = {
+  questionText: string
+  options: [string, string, string, string]
+  correctAnswer: string | null
+  topic: string
+  subtopic: string
+}
 
 function ImportedPreviewModal({
   question,
   onClose,
+  onUpdate,
 }: {
   question: ImportedQuestion
   onClose: () => void
+  onUpdate?: (uid: string, updates: Partial<ImportedQuestion>) => Promise<void>
 }) {
   const letterLabels = ['A', 'B', 'C', 'D']
   const rasterSpec: RasterSpec | undefined =
@@ -94,10 +105,58 @@ function ImportedPreviewModal({
       ? { diagramType: 'raster', url: question.imageURL, maxWidth: 520 }
       : undefined
 
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<ImportedDraft>({
+    questionText: question.questionText,
+    options: [
+      question.options[0] ?? '',
+      question.options[1] ?? '',
+      question.options[2] ?? '',
+      question.options[3] ?? '',
+    ],
+    correctAnswer: question.correctAnswer,
+    topic: question.topic,
+    subtopic: question.subtopic ?? '',
+  })
+
+  const handleSave = async () => {
+    if (!onUpdate) return
+    setSaving(true)
+    try {
+      await onUpdate(question.uid, {
+        questionText: draft.questionText,
+        options: draft.options,
+        correctAnswer: draft.correctAnswer || null,
+        topic: draft.topic,
+        subtopic: draft.subtopic || null,
+      })
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setDraft({
+      questionText: question.questionText,
+      options: [
+        question.options[0] ?? '',
+        question.options[1] ?? '',
+        question.options[2] ?? '',
+        question.options[3] ?? '',
+      ],
+      correctAnswer: question.correctAnswer,
+      topic: question.topic,
+      subtopic: question.subtopic ?? '',
+    })
+    setEditing(false)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4"
+        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col mx-4"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -106,9 +165,25 @@ function ImportedPreviewModal({
             <span className="font-mono text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
               {question.rawCode}
             </span>
-            <span className="text-xs text-stone-500">{question.topic}</span>
-            {question.subtopic && (
-              <span className="text-xs text-stone-400">· {question.subtopic}</span>
+            {editing ? (
+              <input
+                value={draft.topic}
+                onChange={e => setDraft(d => ({ ...d, topic: e.target.value }))}
+                className="text-xs border border-stone-300 rounded px-1.5 py-0.5 w-40"
+                placeholder="Topic"
+              />
+            ) : (
+              <span className="text-xs text-stone-500">{question.topic}</span>
+            )}
+            {editing ? (
+              <input
+                value={draft.subtopic}
+                onChange={e => setDraft(d => ({ ...d, subtopic: e.target.value }))}
+                className="text-xs border border-stone-300 rounded px-1.5 py-0.5 w-32"
+                placeholder="Subtopic (optional)"
+              />
+            ) : (
+              question.subtopic && <span className="text-xs text-stone-400">· {question.subtopic}</span>
             )}
             <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">MCQ</span>
             {question.hasImage && (
@@ -117,32 +192,128 @@ function ImportedPreviewModal({
               </span>
             )}
           </div>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {onUpdate && (
+              editing ? (
+                <>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-1"
+                  >
+                    {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="p-1 text-stone-400 hover:text-emerald-600"
+                  title="Edit question"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )
+            )}
+            <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
         <div className="overflow-y-auto p-4 text-sm space-y-3">
           {rasterSpec && <DiagramRenderer spec={rasterSpec} />}
-          <p className="text-stone-800 leading-relaxed">{question.questionText}</p>
-          {question.options.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              {question.options.map((opt, i) => (
-                opt ? (
-                  <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-50 border border-stone-200">
-                    <span className="font-semibold text-stone-600 shrink-0 w-5">{letterLabels[i]}</span>
-                    <span className="text-stone-700">{opt}</span>
-                  </div>
-                ) : null
-              ))}
+
+          {editing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Question Text</label>
+                <textarea
+                  value={draft.questionText}
+                  onChange={e => setDraft(d => ({ ...d, questionText: e.target.value }))}
+                  rows={4}
+                  className="w-full text-xs border border-stone-300 rounded-lg px-2.5 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Options</label>
+                <div className="space-y-1.5">
+                  {(['A', 'B', 'C', 'D'] as const).map((letter, i) => (
+                    <div key={letter} className="flex items-center gap-2">
+                      <span className="font-semibold text-stone-500 w-4 text-xs shrink-0">{letter}</span>
+                      <input
+                        value={draft.options[i]}
+                        onChange={e => {
+                          const opts = [...draft.options] as [string, string, string, string]
+                          opts[i] = e.target.value
+                          setDraft(d => ({ ...d, options: opts }))
+                        }}
+                        className="flex-1 text-xs border border-stone-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Correct Answer</label>
+                <div className="flex gap-2">
+                  {['A', 'B', 'C', 'D', 'None'].map(opt => (
+                    <button
+                      key={opt}
+                      onClick={() => setDraft(d => ({ ...d, correctAnswer: opt === 'None' ? null : opt }))}
+                      className={`px-3 py-1 text-xs rounded-lg font-medium border transition-colors ${
+                        (opt === 'None' ? !draft.correctAnswer : draft.correctAnswer === opt)
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white text-stone-600 border-stone-300 hover:border-emerald-400'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
-          {question.correctAnswer && (
-            <div className="mt-3 pt-3 border-t border-stone-100">
-              <span className="text-xs font-semibold text-stone-500">Answer: </span>
-              <span className="text-xs font-bold text-emerald-700">{question.correctAnswer}</span>
-            </div>
+          ) : (
+            <>
+              <p className="text-stone-800 leading-relaxed">{question.questionText}</p>
+              {question.options.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {question.options.map((opt, i) => (
+                    opt ? (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${
+                          question.correctAnswer === letterLabels[i]
+                            ? 'bg-emerald-50 border-emerald-300'
+                            : 'bg-stone-50 border-stone-200'
+                        }`}
+                      >
+                        <span className={`font-semibold shrink-0 w-5 ${
+                          question.correctAnswer === letterLabels[i] ? 'text-emerald-700' : 'text-stone-600'
+                        }`}>{letterLabels[i]}</span>
+                        <span className="text-stone-700">{opt}</span>
+                        {question.correctAnswer === letterLabels[i] && (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 ml-auto shrink-0 mt-0.5" />
+                        )}
+                      </div>
+                    ) : null
+                  ))}
+                </div>
+              )}
+              {question.correctAnswer && (
+                <div className="mt-3 pt-3 border-t border-stone-100">
+                  <span className="text-xs font-semibold text-stone-500">Answer: </span>
+                  <span className="text-xs font-bold text-emerald-700">{question.correctAnswer}</span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -312,6 +483,7 @@ export function Library({
   importedQuestions = [],
   importedLoading = false,
   onLoadImported,
+  onUpdateImported,
 }: Props) {
   const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
@@ -346,6 +518,13 @@ export function Library({
     const updated = questions.find(q => q.id === previewQuestion.id)
     if (updated && updated !== previewQuestion) setPreviewQuestion(updated)
   }, [questions, previewQuestion])
+
+  // Keep previewImported in sync after onUpdateImported patches the importedQuestions array
+  useEffect(() => {
+    if (!previewImported) return
+    const updated = importedQuestions.find(q => q.uid === previewImported.uid)
+    if (updated && updated !== previewImported) setPreviewImported(updated)
+  }, [importedQuestions, previewImported])
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>()
@@ -1052,6 +1231,7 @@ export function Library({
         <ImportedPreviewModal
           question={previewImported}
           onClose={() => setPreviewImported(null)}
+          onUpdate={onUpdateImported}
         />
       )}
 

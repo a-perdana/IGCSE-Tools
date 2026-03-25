@@ -169,11 +169,16 @@ service cloud.firestore {
     }
 
     // ── Imported past-paper questions ────────────────────────────────────────
-    // Written exclusively by Firebase Admin SDK (upload script).
-    // All authenticated users can read; no client-side writes allowed.
+    // Written by Firebase Admin SDK (upload script).
+    // Authenticated users can read and update a limited set of editorial fields.
+    function isValidImportedQuestionUpdate() {
+      let allowed = ['questionText', 'options', 'correctAnswer', 'topic', 'subtopic', 'type'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
     match /importedQuestions/{qId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow update: if isAuthenticated() && isValidImportedQuestionUpdate();
+      allow create, delete: if false;
     }
 
     // ── Diagram pool ─────────────────────────────────────────────────────────
