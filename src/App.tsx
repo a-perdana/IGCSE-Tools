@@ -247,6 +247,7 @@ export default function App() {
   const [importedQuestions, setImportedQuestions] = useState<ImportedQuestion[]>([])
   const [importedLoading, setImportedLoading] = useState(false)
   const [diagramPool, setDiagramPool] = useState<DiagramPoolEntry[]>([])
+  const [diagramPoolLoading, setDiagramPoolLoading] = useState(false)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -386,8 +387,13 @@ export default function App() {
   }, [])
 
   const handleLoadDiagramPool = useCallback(async (subject?: string) => {
-    const pool = await getDiagramPool(subject)
-    setDiagramPool(pool)
+    setDiagramPoolLoading(true)
+    try {
+      const pool = await getDiagramPool(subject)
+      setDiagramPool(pool)
+    } finally {
+      setDiagramPoolLoading(false)
+    }
   }, [])
 
   const handleUpdateDiagramEntry = useCallback(async (id: string, updates: Partial<DiagramPoolEntry>) => {
@@ -709,7 +715,7 @@ export default function App() {
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <DiagramLibrary
               entries={diagramPool}
-              loading={false}
+              loading={diagramPoolLoading}
               onLoad={handleLoadDiagramPool}
               onUpdate={handleUpdateDiagramEntry}
               onDelete={handleDeleteDiagramEntry}

@@ -286,15 +286,20 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
   const [showUpload, setShowUpload] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const loaded = entries.length > 0 || loading
+  const hasLoaded = useRef(false)
 
-  // Load on mount
+  // Load on mount (once)
   useEffect(() => {
-    if (!loaded) onLoad()
+    if (!hasLoaded.current) {
+      hasLoaded.current = true
+      onLoad()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload when subject filter changes
+  // Reload when subject filter changes (skip initial mount)
+  const isFirstSubjectChange = useRef(true)
   useEffect(() => {
+    if (isFirstSubjectChange.current) { isFirstSubjectChange.current = false; return }
     onLoad(subjectFilter || undefined)
     setPage(1)
   }, [subjectFilter]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -381,15 +386,13 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
             <Loader2 className="w-5 h-5 animate-spin" /> Loading diagrams…
           </div>
         )}
-        {!loading && !loaded && (
+        {!loading && entries.length === 0 && filtered.length === 0 && (
           <div className="flex flex-col items-center gap-3 py-16 text-stone-400">
             <ImageIcon className="w-10 h-10" />
-            <button onClick={() => onLoad()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700">
-              Load Diagram Library
-            </button>
+            <p className="text-xs">No diagrams in pool yet.</p>
           </div>
         )}
-        {!loading && loaded && filtered.length === 0 && (
+        {!loading && entries.length > 0 && filtered.length === 0 && (
           <div className="text-center text-stone-400 text-sm py-16">
             {search || categoryFilter ? 'No diagrams match your filters.' : 'No diagrams in pool yet.'}
           </div>

@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
@@ -153,10 +153,45 @@ function ImportedPreviewModal({
     setEditing(false)
   }
 
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+
+  const insertFormat = (prefix: string, suffix: string = prefix) => {
+    const el = textareaRef.current
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const val = draft.questionText
+    const selected = val.slice(start, end)
+    const replacement = selected ? `${prefix}${selected}${suffix}` : `${prefix}${suffix}`
+    const newVal = val.slice(0, start) + replacement + val.slice(end)
+    setDraft(d => ({ ...d, questionText: newVal }))
+    requestAnimationFrame(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = start + replacement.length
+    })
+  }
+
+  const insertBullet = () => {
+    const el = textareaRef.current
+    if (!el) return
+    const val = draft.questionText
+    const pos = el.selectionStart
+    const before = val.slice(0, pos)
+    const after = val.slice(pos)
+    const atLineStart = before.endsWith('\n') || before === ''
+    const insertion = atLineStart ? '• ' : '\n• '
+    const newVal = before + insertion + after
+    setDraft(d => ({ ...d, questionText: newVal }))
+    requestAnimationFrame(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = pos + insertion.length
+    })
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col mx-4"
+        className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col mx-4"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -235,12 +270,53 @@ function ImportedPreviewModal({
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-stone-600 mb-1 block">Question Text</label>
-                <textarea
-                  value={draft.questionText}
-                  onChange={e => setDraft(d => ({ ...d, questionText: e.target.value }))}
-                  rows={4}
-                  className="w-full text-xs border border-stone-300 rounded-lg px-2.5 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                />
+                <div className="border border-stone-300 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-emerald-400">
+                  {/* Formatting toolbar */}
+                  <div className="flex items-center gap-0.5 px-2 py-1 border-b border-stone-200 bg-stone-50">
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); insertFormat('**') }}
+                      className="p-1.5 rounded text-stone-500 hover:text-stone-800 hover:bg-stone-200 transition-colors"
+                      title="Bold"
+                    >
+                      <Bold className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); insertFormat('*') }}
+                      className="p-1.5 rounded text-stone-500 hover:text-stone-800 hover:bg-stone-200 transition-colors"
+                      title="Italic"
+                    >
+                      <Italic className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-px h-4 bg-stone-300 mx-0.5" />
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); insertBullet() }}
+                      className="p-1.5 rounded text-stone-500 hover:text-stone-800 hover:bg-stone-200 transition-colors"
+                      title="Bullet point"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-px h-4 bg-stone-300 mx-0.5" />
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); insertFormat('\n\n', '') }}
+                      className="p-1.5 rounded text-stone-500 hover:text-stone-800 hover:bg-stone-200 transition-colors text-[10px] font-mono leading-none"
+                      title="New paragraph"
+                    >
+                      ¶
+                    </button>
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    value={draft.questionText}
+                    onChange={e => setDraft(d => ({ ...d, questionText: e.target.value }))}
+                    rows={8}
+                    className="w-full text-xs px-2.5 py-2 resize-y focus:outline-none bg-white"
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  />
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-stone-600 mb-1 block">Options</label>
