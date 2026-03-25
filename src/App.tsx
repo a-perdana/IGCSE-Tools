@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2 } from 'lucide-react'
-import type { AIError } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData } from './lib/firebase'
+import type { AIError, ImportedQuestion } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -243,6 +243,8 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false)
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
   const [showNewAssessmentModal, setShowNewAssessmentModal] = useState(false)
+  const [importedQuestions, setImportedQuestions] = useState<ImportedQuestion[]>([])
+  const [importedLoading, setImportedLoading] = useState(false)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -344,6 +346,19 @@ export default function App() {
       questions: [...assessment.questions, ...questions],
     })
   }, [generation])
+
+  const handleLoadImported = useCallback(async () => {
+    if (!user || importedLoading) return
+    setImportedLoading(true)
+    try {
+      const qs = await getImportedQuestions()
+      setImportedQuestions(qs)
+    } catch (e) {
+      console.error('Failed to load imported questions:', e)
+    } finally {
+      setImportedLoading(false)
+    }
+  }, [user, importedLoading])
 
   const handleCreateAssessmentFromQuestions = useCallback((questions: Question[]) => {
     const assessment: Assessment = {
@@ -633,6 +648,9 @@ export default function App() {
             currentUserName={user.displayName ?? user.email ?? 'Unknown'}
             onTogglePublicAssessment={(id, isPublic) => library.togglePublicAssessment(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
             onTogglePublicQuestion={(id, isPublic) => library.togglePublicQuestion(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
+            importedQuestions={importedQuestions}
+            importedLoading={importedLoading}
+            onLoadImported={handleLoadImported}
             onRegenerateDiagram={async (q) => {
               const results = await (await import('./lib/gemini')).regenerateDiagramsForQuestions(
                 [q], q.subject,

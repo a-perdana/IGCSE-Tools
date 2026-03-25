@@ -167,5 +167,21 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId);
     }
+
+    // ── Imported past-paper questions ────────────────────────────────────────
+    // Written exclusively by Firebase Admin SDK (upload script).
+    // All authenticated users can read; no client-side writes allowed.
+    match /importedQuestions/{qId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ── Diagram pool ─────────────────────────────────────────────────────────
+    // Metadata for diagrams extracted from imported questions.
+    // Written by Admin SDK; readable by all authenticated users.
+    match /diagramPool/{dId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
   }
 }

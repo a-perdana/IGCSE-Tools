@@ -10,6 +10,13 @@ export interface TikzSpec {
   minHeight?: number  // px, default 0
 }
 
+/** Raster image diagram — used for imported past-paper question images. */
+export interface RasterSpec {
+  diagramType: 'raster'
+  url: string
+  maxWidth?: number   // px, default 480
+}
+
 export interface QuestionItem {
   id: string;
   text: string;
@@ -19,7 +26,7 @@ export interface QuestionItem {
   commandWord: string;
   type: "mcq" | "short_answer" | "structured";
   hasDiagram: boolean;
-  diagram?: TikzSpec;
+  diagram?: TikzSpec | RasterSpec;
   /** Structured diagram DSL — single source of truth for all geometry */
   diagramDSL?: DiagramDSL;
   /** @deprecated Use diagramDSL instead */
@@ -133,6 +140,62 @@ export interface Notification {
   message: string;
   type: "success" | "error" | "info";
   dismissAt: number;
+}
+
+// ─── Imported past-paper questions ───────────────────────────────────────────
+// Written by the Admin SDK import script; read-only for app users.
+
+export interface ImportedQuestion {
+  uid: string;                          // "biol_0001"
+  source: 'imported';
+  subjectCode: string;                  // "0610"
+  subject: string;                      // "Biology"
+  rawCode: string;                      // "0610/12/F/M/2024-1"
+  paperCode: string;                    // "0610/12/F/M/2024"
+  paper: '1' | '2' | 'specimen' | '';
+  session: string;                      // "F/M" | "O/N" | "M/J"
+  year: string;                         // "2024"
+  questionNumber: number | null;
+  topic: string;
+  subtopic: string | null;
+  type: 'mcq';
+  questionText: string;
+  options: string[];                    // [textA, textB, textC, textD]
+  correctAnswer: string | null;         // null — not available in source
+  hasImage: boolean;
+  imageName: string | null;
+  allImageNames: string[];
+  imageStoragePath: string | null;
+  imageURL: string | null;
+  status: 'active' | 'archived';
+  isPublic: true;
+  createdAt: Timestamp;
+  importedAt: Timestamp;
+}
+
+// ─── Diagram pool ─────────────────────────────────────────────────────────────
+// Diagrams extracted from imported questions, available for reuse during
+// AI question generation.
+
+export type DiagramCategory =
+  | 'diagram'    // scientific / schematic diagram
+  | 'table'      // data table rendered as image
+  | 'photo'      // photograph of organism / specimen
+  | 'graph'      // graph / chart
+  | 'other';
+
+export interface DiagramPoolEntry {
+  id: string;
+  imageName: string;              // original filename, e.g. "image141.png"
+  storagePath: string;            // "diagrams/biology/image141.png"
+  imageURL: string;               // Firebase Storage public URL
+  subject: string;                // "Biology"
+  topics: string[];               // associated syllabus topics
+  tags: string[];                 // free-form tags
+  description: string;            // short human-readable description
+  category: DiagramCategory;
+  usedInQuestionUids: string[];   // ImportedQuestion.uid references
+  createdAt: Timestamp;
 }
 
 export interface SyllabusCache {

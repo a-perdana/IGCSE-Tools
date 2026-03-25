@@ -3,8 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw } from 'lucide-react'
-import type { Assessment, Question, Folder } from '../../lib/types'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen } from 'lucide-react'
+import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { DiagramRenderer } from '../DiagramRenderer'
@@ -33,6 +33,121 @@ interface Props {
   onTogglePublicAssessment: (id: string, isPublic: boolean) => void
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
   onRegenerateDiagram?: (question: Question) => Promise<void>
+  // ── Past Papers (imported questions) ───────────────────────────────────────
+  importedQuestions?: ImportedQuestion[]
+  importedLoading?: boolean
+  onLoadImported?: () => void
+}
+
+// ─── Helper: ImportedQuestion → QuestionItem ─────────────────────────────────
+
+function importedToQuestionItem(iq: ImportedQuestion): Question {
+  const letterLabels = ['A', 'B', 'C', 'D']
+  const optionsText = iq.options
+    .map((o, i) => `**${letterLabels[i]}** ${o}`)
+    .filter(Boolean)
+    .join('\n\n')
+
+  const fullText = optionsText
+    ? `${iq.questionText}\n\n${optionsText}`
+    : iq.questionText
+
+  const diagram: RasterSpec | undefined =
+    iq.hasImage && iq.imageURL
+      ? { diagramType: 'raster', url: iq.imageURL, maxWidth: 480 }
+      : undefined
+
+  return {
+    id: iq.uid,
+    text: fullText,
+    answer: '',
+    markScheme: '',
+    marks: 1,
+    commandWord: 'State',
+    type: 'mcq',
+    hasDiagram: iq.hasImage && !!iq.imageURL,
+    diagram,
+    options: iq.options,
+    code: iq.rawCode,
+    // Required Question fields
+    subject: iq.subject,
+    topic: iq.topic,
+    difficulty: 'Medium',
+    userId: '__imported__',
+    createdAt: iq.createdAt,
+    isPublic: true,
+  }
+}
+
+// ─── ImportedQuestion preview modal ──────────────────────────────────────────
+
+function ImportedPreviewModal({
+  question,
+  onClose,
+}: {
+  question: ImportedQuestion
+  onClose: () => void
+}) {
+  const letterLabels = ['A', 'B', 'C', 'D']
+  const rasterSpec: RasterSpec | undefined =
+    question.hasImage && question.imageURL
+      ? { diagramType: 'raster', url: question.imageURL, maxWidth: 520 }
+      : undefined
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+              {question.rawCode}
+            </span>
+            <span className="text-xs text-stone-500">{question.topic}</span>
+            {question.subtopic && (
+              <span className="text-xs text-stone-400">· {question.subtopic}</span>
+            )}
+            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">MCQ</span>
+            {question.hasImage && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200">
+                📷 diagram
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto p-4 text-sm space-y-3">
+          {rasterSpec && <DiagramRenderer spec={rasterSpec} />}
+          <p className="text-stone-800 leading-relaxed">{question.questionText}</p>
+          {question.options.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {question.options.map((opt, i) => (
+                opt ? (
+                  <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-50 border border-stone-200">
+                    <span className="font-semibold text-stone-600 shrink-0 w-5">{letterLabels[i]}</span>
+                    <span className="text-stone-700">{opt}</span>
+                  </div>
+                ) : null
+              ))}
+            </div>
+          )}
+          {question.correctAnswer && (
+            <div className="mt-3 pt-3 border-t border-stone-100">
+              <span className="text-xs font-semibold text-stone-500">Answer: </span>
+              <span className="text-xs font-bold text-emerald-700">{question.correctAnswer}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 
@@ -194,10 +309,14 @@ export function Library({
   currentUserId, currentUserName,
   onTogglePublicAssessment, onTogglePublicQuestion,
   onRegenerateDiagram,
+  importedQuestions = [],
+  importedLoading = false,
+  onLoadImported,
 }: Props) {
   const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
-  const [bankView, setBankView] = useState<'assessments' | 'questions'>('assessments')
+  const IMPORTED_PER_PAGE = 25
+  const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('assessments')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -213,6 +332,13 @@ export function Library({
   const [assessmentSearch, setAssessmentSearch] = useState('')
   const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
+  // ── Past Papers state ───────────────────────────────────────────────────
+  const [importedTopicFilter, setImportedTopicFilter] = useState<string>('')
+  const [importedSearch, setImportedSearch] = useState('')
+  const [importedPage, setImportedPage] = useState(1)
+  const [importedSelectedIds, setImportedSelectedIds] = useState<Set<string>>(new Set())
+  const [previewImported, setPreviewImported] = useState<ImportedQuestion | null>(null)
+  const importedLoaded = importedQuestions.length > 0 || importedLoading
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   useEffect(() => {
@@ -251,6 +377,33 @@ export function Library({
     }
     return qs
   }, [questions, subjectFilter, questionSearch])
+
+  // ── Imported questions derived state ─────────────────────────────────────
+  const importedTopics = useMemo(() => {
+    const set = new Set<string>()
+    importedQuestions.forEach(q => { if (q.topic) set.add(q.topic) })
+    return [...set].sort()
+  }, [importedQuestions])
+
+  const filteredImported = useMemo(() => {
+    let qs = importedTopicFilter
+      ? importedQuestions.filter(q => q.topic === importedTopicFilter)
+      : importedQuestions
+    if (importedSearch.trim()) {
+      const s = importedSearch.trim().toLowerCase()
+      qs = qs.filter(q =>
+        q.rawCode.toLowerCase().includes(s) ||
+        q.questionText.toLowerCase().includes(s) ||
+        (q.topic && q.topic.toLowerCase().includes(s))
+      )
+    }
+    return qs
+  }, [importedQuestions, importedTopicFilter, importedSearch])
+
+  const totalImportedPages = Math.max(1, Math.ceil(filteredImported.length / IMPORTED_PER_PAGE))
+  const safeImportedPage = Math.min(importedPage, totalImportedPages)
+  const importedStart = (safeImportedPage - 1) * IMPORTED_PER_PAGE
+  const pagedImported = filteredImported.slice(importedStart, importedStart + IMPORTED_PER_PAGE)
 
   const totalAssessmentPages = Math.max(1, Math.ceil(filteredAssessments.length / ASSESSMENTS_PER_PAGE))
   const safeAssessmentPage = Math.min(assessmentPage, totalAssessmentPages)
@@ -398,6 +551,18 @@ export function Library({
           >
             Questions ({filteredQuestions.length})
           </button>
+          <button
+            onClick={() => {
+              setBankView('pastpapers')
+              setSelectedIds(new Set())
+              setImportedSelectedIds(new Set())
+              if (!importedLoaded) onLoadImported?.()
+            }}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 ${bankView === 'pastpapers' ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Past Papers {importedQuestions.length > 0 ? `(${filteredImported.length})` : ''}
+          </button>
           {bankView === 'assessments' && (
             <input
               type="text"
@@ -416,6 +581,25 @@ export function Library({
               className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
           )}
+          {bankView === 'pastpapers' && (
+            <>
+              <select
+                value={importedTopicFilter}
+                onChange={e => { setImportedTopicFilter(e.target.value); setImportedPage(1) }}
+                className="text-xs border border-amber-300 rounded-lg px-2 py-1.5 bg-white text-stone-600 max-w-[200px]"
+              >
+                <option value="">All topics</option>
+                {importedTopics.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input
+                type="text"
+                value={importedSearch}
+                onChange={e => { setImportedSearch(e.target.value); setImportedPage(1) }}
+                placeholder="Search code or text…"
+                className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-44 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              />
+            </>
+          )}
           <select
             value={subjectFilter}
             onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
@@ -425,6 +609,54 @@ export function Library({
             {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+
+        {/* Past papers selection action bar */}
+        {bankView === 'pastpapers' && importedSelectedIds.size > 0 && (
+          <div className="mx-4 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-amber-800">{importedSelectedIds.size} selected</span>
+            <button
+              onClick={() => {
+                const selected = importedQuestions.filter(q => importedSelectedIds.has(q.uid))
+                onCreateAssessmentFromQuestions(selected.map(importedToQuestionItem))
+                setImportedSelectedIds(new Set())
+              }}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700"
+            >
+              <FilePlus className="w-3.5 h-3.5" /> New Assessment
+            </button>
+            <div className="flex items-center gap-1">
+              <select
+                value={addToAssessmentId}
+                onChange={e => setAddToAssessmentId(e.target.value)}
+                className="text-xs border border-amber-300 rounded px-2 py-1 bg-white text-stone-700"
+              >
+                <option value="">Add to assessment...</option>
+                {assessments.map(a => (
+                  <option key={a.id} value={a.id}>{a.subject} — {a.topic}</option>
+                ))}
+              </select>
+              {addToAssessmentId && (
+                <button
+                  onClick={() => {
+                    const selected = importedQuestions.filter(q => importedSelectedIds.has(q.uid))
+                    onAddQuestionsToAssessment(addToAssessmentId, selected.map(importedToQuestionItem))
+                    setImportedSelectedIds(new Set())
+                    setAddToAssessmentId('')
+                  }}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 bg-stone-700 text-white rounded-lg font-medium hover:bg-stone-800"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" /> Add
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setImportedSelectedIds(new Set())}
+              className="ml-auto text-xs text-stone-400 hover:text-stone-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Selection action bar */}
         {bankView === 'questions' && selectedIds.size > 0 && (
@@ -697,6 +929,111 @@ export function Library({
               )}
             </div>
           )}
+          {/* ── Past Papers tab ─────────────────────────────────────────────── */}
+          {bankView === 'pastpapers' && (
+            <div className="grid grid-cols-1 gap-2">
+              {importedLoading && (
+                <div className="flex items-center gap-2 text-stone-400 text-sm py-8 justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading past paper questions…
+                </div>
+              )}
+              {!importedLoading && !importedLoaded && (
+                <div className="text-stone-400 text-sm text-center py-8">
+                  <button
+                    onClick={() => onLoadImported?.()}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+                  >
+                    Load Past Paper Questions
+                  </button>
+                </div>
+              )}
+              {pagedImported.map(q => {
+                const isSelected = importedSelectedIds.has(q.uid)
+                return (
+                  <div
+                    key={q.uid}
+                    className={`border rounded-lg p-2.5 flex gap-2 items-start cursor-pointer transition-all group
+                      ${isSelected
+                        ? 'border-amber-400 bg-amber-50 shadow-sm'
+                        : 'border-stone-200 bg-white hover:border-amber-300 hover:shadow-sm hover:bg-amber-50/30'
+                      }`}
+                    onClick={() => setImportedSelectedIds(prev => {
+                      const next = new Set(prev)
+                      next.has(q.uid) ? next.delete(q.uid) : next.add(q.uid)
+                      return next
+                    })}
+                  >
+                    {/* Checkbox */}
+                    <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors
+                      ${isSelected ? 'border-amber-500 bg-amber-500' : 'border-stone-300 group-hover:border-amber-400'}`}
+                    >
+                      {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                        <span className="font-mono text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                          {q.rawCode}
+                        </span>
+                        {q.hasImage && (
+                          <span className="text-[10px] text-amber-500">📷</span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">MCQ</span>
+                      </div>
+                      <div className="text-xs text-stone-700 truncate">
+                        {q.questionText.substring(0, 130)}{q.questionText.length > 130 ? '…' : ''}
+                      </div>
+                      <div className="text-[10px] text-stone-400 mt-0.5">
+                        {q.topic}{q.subtopic ? ` · ${q.subtopic}` : ''} · Paper {q.paper || '?'} · {q.session} {q.year}
+                      </div>
+                    </div>
+
+                    {/* Preview button */}
+                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setPreviewImported(q)}
+                        className="p-1 text-stone-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Preview"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+              {filteredImported.length === 0 && importedLoaded && !importedLoading && (
+                <div className="text-stone-400 text-sm text-center py-8">
+                  {importedSearch.trim() || importedTopicFilter
+                    ? 'No questions match your filters.'
+                    : 'No past paper questions imported yet.'}
+                </div>
+              )}
+              {filteredImported.length > 0 && totalImportedPages > 1 && (
+                <div className="flex items-center justify-between mt-2 px-1">
+                  <span className="text-xs text-stone-500">
+                    Page {safeImportedPage} / {totalImportedPages} · {filteredImported.length} questions
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setImportedPage(p => Math.max(1, p - 1))}
+                      disabled={safeImportedPage === 1}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => setImportedPage(p => Math.min(totalImportedPages, p + 1))}
+                      disabled={safeImportedPage === totalImportedPages}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -707,6 +1044,14 @@ export function Library({
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDelete(null)}
           isDeleting={isDeleting}
+        />
+      )}
+
+      {/* Imported Question Preview Modal */}
+      {previewImported && (
+        <ImportedPreviewModal
+          question={previewImported}
+          onClose={() => setPreviewImported(null)}
         />
       )}
 

@@ -625,7 +625,7 @@ export function AssessmentView({
                       )}
                       {onUpdateQuestion && !studentMode && (
                         <button
-                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.code ?? '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.minHeight ?? 0 }) }}
+                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0 }) }}
                           className="ml-1 opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 transition-opacity"
                           title="Edit question"
                         >
@@ -672,7 +672,7 @@ export function AssessmentView({
                         <button
                           onClick={() => {
                             setEditingQId(q.id)
-                            setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.code ?? '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.minHeight ?? 0 })
+                            setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0 })
                           }}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-stone-100 text-stone-600 hover:bg-stone-200"
                           title="Edit TikZ code directly"

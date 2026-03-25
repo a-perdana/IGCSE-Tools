@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 .worktrees/
+scripts/import/*-sa.json
+scripts/import/*.json

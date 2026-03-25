@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/maliu/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/df234ea1-eb37-48eb-b4b2-37661552f8bd/2b384af7-9ec0-49ea-b1f4-87859e7178d4/skills/docx/**)",
+      "Bash(pandoc --track-changes=all \"C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Biology Questions.docx\" -o output.md)",
+      "Bash(python \"C:\\\\Users\\\\maliu\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\df234ea1-eb37-48eb-b4b2-37661552f8bd\\\\2b384af7-9ec0-49ea-b1f4-87859e7178d4\\\\skills\\\\docx\\\\scripts\\\\office\\\\unpack.py\" \"C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Biology Questions.docx\" \"C:\\\\Users\\\\maliu\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\df234ea1-eb37-48eb-b4b2-37661552f8bd\\\\2b384af7-9ec0-49ea-b1f4-87859e7178d4\\\\skills\\\\docx\\\\unpacked\")",
+      "Read(//c/tmp/**)",
+      "Bash(cp 'C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Biology Questions.docx' igcse.zip)",
+      "Bash(unzip -o igcse.zip -d igcse_extracted)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npm run:*)",
+      "Bash(python parse_biology_docx.py \"C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Biology Questions.docx\")",
+      "Bash(python:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(find /c/Users/maliu/Desktop/ -name *.json)",
+      "Bash(firebase projects:list)",
+      "Bash(gcloud auth:*)",
+      "Bash(gcloud config:*)",
+      "Bash(gcloud iam:*)",
+      "Bash(firebase deploy:*)"
+    ]
+  }
+}

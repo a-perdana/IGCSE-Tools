@@ -727,7 +727,7 @@ export async function regenerateDiagramsForQuestions(
         model,
         ai,
         onLog,
-        renderError ? q.diagram?.code : q.diagram?.code,
+        renderError ? (q.diagram?.diagramType === 'tikz' ? q.diagram.code : undefined) : (q.diagram?.diagramType === 'tikz' ? q.diagram.code : undefined),
         renderError,
       );
       if (tikzCode) {

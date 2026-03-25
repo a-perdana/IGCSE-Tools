@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion } from './types'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
@@ -510,6 +510,57 @@ export const togglePublicQuestion = async (id: string, isPublic: boolean, prepar
     await updateDoc(docRef, { isPublic, preparedBy: isPublic ? preparedBy : deleteField() })
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `questions/${id}`)
+  }
+}
+
+// ─── Imported questions ───────────────────────────────────────────────────────
+
+/** Fetch all active imported questions, optionally filtered by topic and/or subject. */
+export const getImportedQuestions = async (opts: {
+  subject?: string
+  topic?: string
+} = {}): Promise<ImportedQuestion[]> => {
+  if (!auth.currentUser) return []
+  const col = collection(db, 'importedQuestions')
+
+  let q
+  if (opts.subject && opts.topic) {
+    q = query(col,
+      where('subject', '==', opts.subject),
+      where('topic', '==', opts.topic),
+      where('status', '==', 'active'),
+      orderBy('rawCode', 'asc')
+    )
+  } else if (opts.subject) {
+    q = query(col,
+      where('subject', '==', opts.subject),
+      where('status', '==', 'active'),
+      orderBy('rawCode', 'asc')
+    )
+  } else {
+    q = query(col, where('status', '==', 'active'), orderBy('rawCode', 'asc'))
+  }
+
+  try {
+    const snap = await getDocs(q)
+    return snap.docs.map(d => (d.data() as ImportedQuestion))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'importedQuestions')
+    return []
+  }
+}
+
+/** Return the distinct list of topics present in importedQuestions for a given subject. */
+export const getImportedTopics = async (subject: string): Promise<string[]> => {
+  if (!auth.currentUser) return []
+  const col = collection(db, 'importedQuestions')
+  const q = query(col, where('subject', '==', subject), where('status', '==', 'active'))
+  try {
+    const snap = await getDocs(q)
+    const topics = new Set(snap.docs.map(d => d.data().topic as string).filter(Boolean))
+    return [...topics].sort()
+  } catch {
+    return []
   }
 }
 

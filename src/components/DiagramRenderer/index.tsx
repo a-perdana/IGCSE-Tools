@@ -1,22 +1,49 @@
 import React, { useEffect, useState } from 'react'
-import type { TikzSpec } from '../../lib/types'
+import type { TikzSpec, RasterSpec } from '../../lib/types'
 import { renderTikz } from '../../lib/quicklatex'
 
-export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | undefined | null; onError?: (error: string) => void }) {
+export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | RasterSpec | undefined | null; onError?: (error: string) => void }) {
   const [state, setState] = useState<{ url?: string; error?: string; loading: boolean }>({ loading: false })
 
+  const tikzSpec = spec?.diagramType === 'tikz' ? spec as TikzSpec : null
+
   useEffect(() => {
-    if (!spec?.code) { setState({ loading: false }); return }
+    if (!tikzSpec?.code) { setState({ loading: false }); return }
     let cancelled = false
     setState({ loading: true })
-    renderTikz(spec.code)
+    renderTikz(tikzSpec.code)
       .then(result => { if (!cancelled) setState({ url: result.url, loading: false }) })
       .catch(err => { if (!cancelled) { const msg = String(err); setState({ error: msg, loading: false }); onError?.(msg) } })
     return () => { cancelled = true }
-  }, [spec?.code])
+  }, [tikzSpec?.code])
 
   if (!spec) return null
 
+  // ── Raster image (imported past-paper diagram) ────────────────────────────
+  if (spec.diagramType === 'raster') {
+    const raster = spec as RasterSpec
+    return (
+      <div className="my-3 border-t-2 border-b-2 border-amber-100 py-3 bg-amber-50/30 rounded-sm">
+        <p className="text-xs font-semibold text-amber-400 mb-2 flex items-center gap-1.5 px-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-300 inline-block" />
+          Diagram
+        </p>
+        <div className="px-1">
+          <img
+            src={raster.url}
+            alt="diagram"
+            style={{
+              maxWidth: raster.maxWidth ? `${raster.maxWidth}px` : '640px',
+              display: 'block',
+              margin: '0 auto',
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // ── TikZ diagram ──────────────────────────────────────────────────────────
   return (
     <div className="my-3 border-t-2 border-b-2 border-violet-100 py-3 bg-violet-50/30 rounded-sm">
       <p className="text-xs font-semibold text-violet-400 mb-2 flex items-center gap-1.5 px-1">
@@ -38,7 +65,7 @@ export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | undefined 
             <summary className="cursor-pointer font-semibold">Render error — click to see details</summary>
             <p className="font-mono whitespace-pre-wrap mt-1">{state.error}</p>
             <p className="mt-2 font-semibold text-stone-500">TikZ source:</p>
-            <pre className="font-mono text-stone-400 whitespace-pre-wrap text-[10px] mt-1 max-h-40 overflow-y-auto">{spec.code}</pre>
+            <pre className="font-mono text-stone-400 whitespace-pre-wrap text-[10px] mt-1 max-h-40 overflow-y-auto">{tikzSpec?.code}</pre>
           </details>
         )}
         {state.url && (
@@ -46,7 +73,7 @@ export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | undefined 
             src={state.url}
             alt="diagram"
             style={{
-              maxWidth: spec.maxWidth ? `${spec.maxWidth}px` : '640px',
+              maxWidth: tikzSpec?.maxWidth ? `${tikzSpec.maxWidth}px` : '640px',
               display: 'block',
               margin: '0 auto',
             }}
