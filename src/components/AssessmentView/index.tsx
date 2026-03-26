@@ -3,13 +3,14 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2, RefreshCw, Eye, Code2, Wrench } from 'lucide-react'
-import type { Assessment, Question, QuestionItem } from '../../lib/types'
+import { Download, Copy, Save, Edit3, BookmarkPlus, X, Plus, Check, Pencil, ChevronUp, ChevronDown, Calendar, Loader2, RefreshCw, Eye, Code2, Wrench, ImageIcon, Search } from 'lucide-react'
+import type { Assessment, Question, QuestionItem, DiagramPoolEntry } from '../../lib/types'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { repairQuestionItem } from '../../lib/sanitize'
+import { getDiagramPool } from '../../lib/firebase'
 
 interface Props {
   assessment: Assessment | null
@@ -244,6 +245,98 @@ function TikzEditor({
   )
 }
 
+function DiagramGalleryPicker({
+  subject,
+  onSelect,
+  onClose,
+}: {
+  subject: string
+  onSelect: (entry: DiagramPoolEntry) => void
+  onClose: () => void
+}) {
+  const [entries, setEntries] = useState<DiagramPoolEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    getDiagramPool(subject || undefined).then(data => {
+      setEntries(data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [subject])
+
+  const filtered = entries.filter(e => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    return (
+      e.description.toLowerCase().includes(q) ||
+      e.tags.some(t => t.toLowerCase().includes(q)) ||
+      e.topics.some(t => t.toLowerCase().includes(q)) ||
+      e.subject.toLowerCase().includes(q)
+    )
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200">
+          <span className="text-sm font-semibold text-stone-800">Select from Diagram Gallery</span>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="px-4 py-2 border-b border-stone-100">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+            <input
+              type="text"
+              placeholder="Search by description, topic, or tag…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3">
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-stone-400" />
+            </div>
+          )}
+          {!loading && filtered.length === 0 && (
+            <p className="text-sm text-stone-400 text-center py-10">No diagrams found{search ? ' for this search' : ''}.</p>
+          )}
+          {!loading && filtered.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {filtered.map(entry => (
+                <button
+                  key={entry.id}
+                  onClick={() => onSelect(entry)}
+                  className="flex flex-col items-start rounded-lg border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors overflow-hidden text-left group"
+                >
+                  <div className="w-full bg-stone-50 flex items-center justify-center" style={{ minHeight: 120 }}>
+                    <img
+                      src={entry.imageURL}
+                      alt={entry.description}
+                      className="max-h-[140px] max-w-full object-contain p-2"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="px-2.5 py-2 w-full">
+                    <p className="text-xs text-stone-700 font-medium line-clamp-2 leading-snug">{entry.description || entry.imageName}</p>
+                    {entry.topics.length > 0 && (
+                      <p className="text-xs text-stone-400 mt-0.5 truncate">{entry.topics.slice(0, 2).join(' · ')}</p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AssessmentView({
   assessment, analysisText, isEditing, studentMode,
   isGenerating, generationLog,
@@ -258,7 +351,7 @@ export function AssessmentView({
   const [editContent, setEditContent] = useState('')
   const [showPicker, setShowPicker] = useState(false)
   const [editingQId, setEditingQId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState<{ text: string; answer: string; markScheme: string; tikzCode: string; maxWidth: number; minHeight: number }>({ text: '', answer: '', markScheme: '', tikzCode: '', maxWidth: 480, minHeight: 0 })
+  const [editDraft, setEditDraft] = useState<{ text: string; answer: string; markScheme: string; tikzCode: string; maxWidth: number; minHeight: number; rasterUrl: string; rasterMaxWidth: number }>({ text: '', answer: '', markScheme: '', tikzCode: '', maxWidth: 480, minHeight: 0, rasterUrl: '', rasterMaxWidth: 480 })
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
@@ -266,6 +359,8 @@ export function AssessmentView({
   const [repairingTextIds, setRepairingTextIds] = useState<Set<string>>(new Set())
   const [diagramErrors, setDiagramErrors] = useState<Record<string, string>>({})
   const [questionPage, setQuestionPage] = useState(1)
+  const [diagramEditTab, setDiagramEditTab] = useState<'tikz' | 'gallery'>('tikz')
+  const [showGalleryPicker, setShowGalleryPicker] = useState(false)
 
   const renderedQuestions = assessment ? assessment.questions.map(repairQuestionItem) : []
   const totalQuestionPages = Math.max(1, Math.ceil(renderedQuestions.length / QUESTIONS_PER_PAGE))
@@ -540,7 +635,13 @@ export function AssessmentView({
                         <button
                           onClick={() => {
                           const updates: Partial<QuestionItem> = { text: editDraft.text, answer: editDraft.answer, markScheme: editDraft.markScheme }
-                          if (editDraft.tikzCode.trim()) {
+                          if (editDraft.rasterUrl.trim()) {
+                            updates.diagram = {
+                              diagramType: 'raster',
+                              url: editDraft.rasterUrl,
+                              maxWidth: editDraft.rasterMaxWidth || undefined,
+                            }
+                          } else if (editDraft.tikzCode.trim()) {
                             updates.diagram = {
                               diagramType: 'tikz',
                               code: editDraft.tikzCode,
@@ -580,19 +681,89 @@ export function AssessmentView({
                       </div>
                       {q.hasDiagram && (
                         <div>
-                          <label className="text-xs font-medium text-stone-600 mb-1.5 block flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                            TikZ Diagram
-                            <span className="text-stone-400 font-normal">(leave empty to remove diagram)</span>
-                          </label>
-                          <TikzEditor
-                            value={editDraft.tikzCode}
-                            onChange={v => setEditDraft(d => ({ ...d, tikzCode: v }))}
-                            maxWidth={editDraft.maxWidth}
-                            onMaxWidthChange={v => setEditDraft(d => ({ ...d, maxWidth: v }))}
-                            minHeight={editDraft.minHeight}
-                            onMinHeightChange={v => setEditDraft(d => ({ ...d, minHeight: v }))}
-                          />
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block shrink-0" />
+                            <span className="text-xs font-medium text-stone-600">Diagram</span>
+                            <div className="flex gap-1 ml-2">
+                              <button
+                                onClick={() => { setDiagramEditTab('tikz'); setEditDraft(d => ({ ...d, rasterUrl: '' })) }}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${diagramEditTab === 'tikz' ? 'bg-white border-stone-300 text-stone-800 shadow-sm' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+                              >
+                                <Code2 className="w-3 h-3" /> TikZ
+                              </button>
+                              <button
+                                onClick={() => { setDiagramEditTab('gallery'); setEditDraft(d => ({ ...d, tikzCode: '' })) }}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${diagramEditTab === 'gallery' ? 'bg-white border-stone-300 text-stone-800 shadow-sm' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+                              >
+                                <ImageIcon className="w-3 h-3" /> Gallery
+                              </button>
+                            </div>
+                            <span className="text-stone-400 text-xs font-normal ml-auto">(leave empty to remove)</span>
+                          </div>
+                          {diagramEditTab === 'tikz' ? (
+                            <TikzEditor
+                              value={editDraft.tikzCode}
+                              onChange={v => setEditDraft(d => ({ ...d, tikzCode: v }))}
+                              maxWidth={editDraft.maxWidth}
+                              onMaxWidthChange={v => setEditDraft(d => ({ ...d, maxWidth: v }))}
+                              minHeight={editDraft.minHeight}
+                              onMinHeightChange={v => setEditDraft(d => ({ ...d, minHeight: v }))}
+                            />
+                          ) : (
+                            <div className="border border-stone-300 rounded-lg overflow-hidden bg-white">
+                              {editDraft.rasterUrl ? (
+                                <div className="p-3 flex flex-col gap-2">
+                                  <img
+                                    src={editDraft.rasterUrl}
+                                    alt="Selected diagram"
+                                    className="max-h-48 object-contain mx-auto"
+                                  />
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <label className="flex items-center gap-1.5 text-xs text-stone-500 shrink-0">
+                                      Max width
+                                      <input
+                                        type="number" min={100} max={900} step={10}
+                                        value={editDraft.rasterMaxWidth}
+                                        onChange={e => setEditDraft(d => ({ ...d, rasterMaxWidth: Number(e.target.value) }))}
+                                        className="w-16 px-1.5 py-0.5 border border-stone-300 rounded text-xs text-stone-700 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                      />
+                                      px
+                                    </label>
+                                    <button
+                                      onClick={() => setShowGalleryPicker(true)}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded hover:bg-stone-200"
+                                    >
+                                      <RefreshCw className="w-3 h-3" /> Change
+                                    </button>
+                                    <button
+                                      onClick={() => setEditDraft(d => ({ ...d, rasterUrl: '' }))}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
+                                    >
+                                      <X className="w-3 h-3" /> Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setShowGalleryPicker(true)}
+                                  className="w-full flex flex-col items-center justify-center gap-2 py-10 text-stone-400 hover:bg-stone-50 transition-colors"
+                                >
+                                  <ImageIcon className="w-8 h-8 opacity-40" />
+                                  <span className="text-sm">Browse diagram gallery</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {showGalleryPicker && (
+                            <DiagramGalleryPicker
+                              subject={assessment?.subject ?? ''}
+                              onSelect={entry => {
+                                setEditDraft(d => ({ ...d, rasterUrl: entry.imageURL, rasterMaxWidth: 480 }))
+                                setShowGalleryPicker(false)
+                              }}
+                              onClose={() => setShowGalleryPicker(false)}
+                            />
+                          )}
                         </div>
                       )}
                     </div>
@@ -625,7 +796,7 @@ export function AssessmentView({
                       )}
                       {onUpdateQuestion && !studentMode && (
                         <button
-                          onClick={() => { setEditingQId(q.id); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0 }) }}
+                          onClick={() => { setEditingQId(q.id); setDiagramEditTab(q.diagram?.diagramType === 'raster' ? 'gallery' : 'tikz'); setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0, rasterUrl: q.diagram?.diagramType === 'raster' ? q.diagram.url : '', rasterMaxWidth: q.diagram?.diagramType === 'raster' ? (q.diagram.maxWidth ?? 480) : 480 }) }}
                           className="ml-1 opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 transition-opacity"
                           title="Edit question"
                         >
@@ -672,7 +843,8 @@ export function AssessmentView({
                         <button
                           onClick={() => {
                             setEditingQId(q.id)
-                            setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0 })
+                            setDiagramEditTab(q.diagram?.diagramType === 'raster' ? 'gallery' : 'tikz')
+                            setEditDraft({ text: q.text, answer: q.answer, markScheme: q.markScheme, tikzCode: q.diagram?.diagramType === 'tikz' ? q.diagram.code : '', maxWidth: q.diagram?.maxWidth ?? 480, minHeight: q.diagram?.diagramType === 'tikz' ? (q.diagram.minHeight ?? 0) : 0, rasterUrl: q.diagram?.diagramType === 'raster' ? q.diagram.url : '', rasterMaxWidth: q.diagram?.diagramType === 'raster' ? (q.diagram.maxWidth ?? 480) : 480 })
                           }}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-stone-100 text-stone-600 hover:bg-stone-200"
                           title="Edit TikZ code directly"
