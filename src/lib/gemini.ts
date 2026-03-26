@@ -859,6 +859,10 @@ export async function generateTest(
     return lines.join("\n");
   }
 
+  // ── Diagram pool config (computed once, used in Phase 1 prompt and Phase 2) ──
+  const poolEntries = config.diagramPool ?? [];
+  const useDiagramPool = config.useDiagramPool && poolEntries.length > 0;
+
   // ── Phase 1: Plan question slots (lightweight — no diagram data yet) ──────
 
   onLog?.("Phase 1: planning question slots…");
@@ -878,6 +882,9 @@ TASK: For each of the ${config.count} question slots, output ONLY:
 - topic: specific sub-topic to assess (must be DIFFERENT for every slot)
 - questionType: one of "mcq", "short_answer", "structured" — match the configured type
 - hasDiagram: true only if a visual diagram is VITAL for this sub-topic
+${useDiagramPool ? `
+DIAGRAM MODE: Pre-uploaded real images from past IGCSE papers will be used for diagram slots. Set hasDiagram: true ONLY for slots where an existing scientific diagram (cell structure, apparatus, circuit, organism, etc.) would genuinely enhance the question. Do NOT set hasDiagram: true for slots requiring geometry/graphs that must be drawn from scratch — those work better without a diagram in pool mode.` : `
+DIAGRAM MODE: TikZ code will be generated for diagram slots. Set hasDiagram: true for slots where a geometric figure, graph, or scientific diagram is essential. TikZ will be generated automatically.`}
 
 DO NOT generate any DSL, coordinates, or geometry here.
 Geometry is generated separately in a later step.
@@ -1289,23 +1296,37 @@ RULES:
 
   const rawQuestionsMap: Record<number, any> = {};
 
-  // Diagram questions — use diagram pool (raster) or generate TikZ
-  const poolEntries = config.diagramPool ?? [];
-  const useDiagramPool = config.useDiagramPool && poolEntries.length > 0;
-
   if (dslSlots.length > 0) {
     if (useDiagramPool) {
-      onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) using diagram pool (${poolEntries.length} images)…`);
-      const pickedEntries = dslSlots.map((slot) => {
+      // Split diagram slots: those with a matching pool entry vs those with no match (score === 0)
+      const picked = dslSlots.map((slot) => {
         const scored = poolEntries
           .map((e) => ({ e, score: scoreDiagramEntryForTopic(e, slot.topic) }))
+          .filter(({ score }) => score > 0)
           .sort((a, b) => b.score - a.score);
-        return scored[0]?.e ?? poolEntries[Math.floor(Math.random() * poolEntries.length)];
+        return scored[0]?.e ?? null;
       });
-      const rasterResults = await writeQuestionsWithRasterDiagram(dslSlots, pickedEntries);
-      dslSlots.forEach((slot, i) => {
-        rawQuestionsMap[slot.index] = { ...rasterResults[i], _poolEntry: pickedEntries[i] };
-      });
+
+      const matchedSlots = dslSlots.filter((_, i) => picked[i] !== null);
+      const matchedEntries = picked.filter((e): e is DiagramPoolEntry => e !== null);
+      const unmatchedSlots = dslSlots.filter((_, i) => picked[i] === null);
+
+      if (unmatchedSlots.length > 0) {
+        onLog?.(`[Phase 2] ${unmatchedSlots.length} diagram slot(s) have no matching pool entry — generating without diagram`);
+      }
+
+      if (matchedSlots.length > 0) {
+        onLog?.(`[Phase 2] writing ${matchedSlots.length} diagram question(s) using diagram pool (${poolEntries.length} images)…`);
+        const rasterResults = await writeQuestionsWithRasterDiagram(matchedSlots, matchedEntries);
+        matchedSlots.forEach((slot, i) => {
+          rawQuestionsMap[slot.index] = { ...rasterResults[i], _poolEntry: matchedEntries[i] };
+        });
+      }
+
+      if (unmatchedSlots.length > 0) {
+        const unmatchedResults = await writeQuestionsWithoutDSL(unmatchedSlots);
+        unmatchedSlots.forEach((slot, i) => { rawQuestionsMap[slot.index] = unmatchedResults[i]; });
+      }
     } else {
       onLog?.(`[Phase 2] writing ${dslSlots.length} diagram question(s) + TikZ…`);
       const tikzResults = await writeQuestionsWithTikz(dslSlots);

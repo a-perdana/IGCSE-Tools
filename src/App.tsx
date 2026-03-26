@@ -31,6 +31,7 @@ const DEFAULT_CONFIG: GenerationConfig = {
   calculator: true,
   model: DEFAULT_MODELS['gemini'],
   syllabusContext: '',
+  useDiagramPool: true,
 }
 
 function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
@@ -299,6 +300,18 @@ export default function App() {
         setDiagramPool(pool)
       } catch (e) {
         console.error('Failed to load diagram pool:', e)
+      }
+    }
+
+    // Block generation if pool is enabled but has no diagrams for the selected subject
+    if (config.useDiagramPool) {
+      const subjectPool = pool.filter(e => e.subject === config.subject)
+      if (subjectPool.length === 0) {
+        notify(
+          `No diagrams in pool for "${config.subject}". Upload diagrams in the Diagram Gallery or uncheck "Use Diagram Pool" to generate TikZ diagrams instead.`,
+          'error',
+        )
+        return
       }
     }
 
