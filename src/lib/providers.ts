@@ -15,7 +15,7 @@ export interface ProviderModel {
 export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
   gemini: [
     // ── 2.5 series (stable) ──────────────────────────────────────────────────
-    { id: 'gemini-2.5-flash',                      label: 'Gemini 2.5 Flash',                     hint: 'Best balance of speed and quality. May require a paid Google AI account.' },
+    { id: 'gemini-2.5-flash',                      label: 'Gemini 2.5 Flash ★ Recommended',      hint: 'Best balance of speed and quality. Ideal for most assessments.' },
     { id: 'gemini-2.5-pro',                        label: 'Gemini 2.5 Pro',                       hint: 'Highest quality output. Slower — use for Challenging difficulty.' },
     { id: 'gemini-2.5-flash-lite',                 label: 'Gemini 2.5 Flash Lite',                hint: 'Fastest and cheapest 2.5 model. Good for simple recall or MCQ-only.' },
     { id: 'gemini-2.5-flash-lite-preview-09-2025', label: 'Gemini 2.5 Flash Lite Preview Sep 25', hint: 'Preview build of 2.5 Flash Lite.' },
@@ -25,7 +25,7 @@ export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
     { id: 'gemini-3-pro-preview',                  label: 'Gemini 3 Pro Preview',                 hint: 'Previous generation 3 Pro preview.' },
     { id: 'gemini-3-flash-preview',                label: 'Gemini 3 Flash Preview',               hint: 'Previous generation 3 Flash preview.' },
     // ── 2.0 series (stable) ──────────────────────────────────────────────────
-    { id: 'gemini-2.0-flash',                      label: 'Gemini 2.0 Flash ★ Recommended',       hint: 'Stable and reliable. Works with free tier API keys.' },
+    { id: 'gemini-2.0-flash',                      label: 'Gemini 2.0 Flash',                     hint: 'Stable and reliable. Good fallback if 2.5 is unavailable.' },
     { id: 'gemini-2.0-flash-001',                  label: 'Gemini 2.0 Flash 001',                 hint: 'Pinned stable release of Gemini 2.0 Flash.' },
     { id: 'gemini-2.0-flash-lite',                 label: 'Gemini 2.0 Flash Lite',                hint: 'Fast and cheap 2.0 model.' },
     { id: 'gemini-2.0-flash-lite-001',             label: 'Gemini 2.0 Flash Lite 001',            hint: 'Pinned stable release of Gemini 2.0 Flash Lite.' },
@@ -50,7 +50,7 @@ export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
 }
 
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 }

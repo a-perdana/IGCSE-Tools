@@ -236,7 +236,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null | undefined>(undefined)
   const [view, setView] = useState<'main' | 'library' | 'diagrams'>('main')
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
@@ -261,13 +261,14 @@ export default function App() {
 
   useEffect(() => {
     return onAuthStateChanged(auth, u => {
+      const wasLoggedIn = user !== undefined && user !== null
       setUser(u)
       if (u) {
         library.loadAll()
         resources.loadResources(config.subject)
-      } else {
-        // Clear API keys from localStorage on logout so the next user
-        // doesn't see a previous user's keys.
+      } else if (wasLoggedIn) {
+        // Clear API keys from localStorage only on real logout (not initial load)
+        // so the next user doesn't see a previous user's keys.
         localStorage.removeItem('igcse_tools_api_keys')
         localStorage.removeItem('igcse_tools_provider')
         localStorage.removeItem('igcse_tools_custom_model')
