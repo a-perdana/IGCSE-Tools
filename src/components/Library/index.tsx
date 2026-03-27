@@ -9,6 +9,7 @@ import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { useExamViewImport } from '../../hooks/useExamViewImport'
+import { cleanExamViewPlaceholders } from '../../lib/firebase'
 
 interface Props {
   assessments: Assessment[]
@@ -813,6 +814,16 @@ export function Library({
   const [showExamViewImport, setShowExamViewImport] = useState(false)
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
+  // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
+  useEffect(() => {
+    const key = `examview_placeholder_cleaned_${currentUserId}`
+    if (localStorage.getItem(key)) return
+    cleanExamViewPlaceholders().then(n => {
+      if (n > 0) console.log(`Cleaned diagram placeholders from ${n} ExamView questions`)
+      localStorage.setItem(key, '1')
+    }).catch(() => {})
+  }, [currentUserId])
+
   useEffect(() => {
     if (!previewQuestion) return
     const updated = questions.find(q => q.id === previewQuestion.id)

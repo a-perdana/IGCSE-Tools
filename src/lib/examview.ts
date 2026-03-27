@@ -87,10 +87,12 @@ function parseFormattedText(raw: string): { text: string; imageFilenames: string
     img.replaceWith(`[diagram:${alt ?? 'image'}]`)
   })
 
-  // Convert <b>/<strong> to markdown bold
+  // Convert <b>/<strong> — if it looks like a sub-part label (a. / b. / i. etc.) add a newline;
+  // otherwise render as markdown bold.
   body.querySelectorAll('b, strong').forEach(el => {
-    const md = `**${el.textContent}**`
-    el.replaceWith(md)
+    const t = el.textContent ?? ''
+    const isLabel = /^[a-z]{1,2}\.$/.test(t.trim())
+    el.replaceWith(isLabel ? `\n${t.trim()} ` : `**${t}**`)
   })
 
   // Convert <br> to newline

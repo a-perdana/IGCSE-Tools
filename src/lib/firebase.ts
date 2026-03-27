@@ -689,6 +689,43 @@ export const deleteUserData = async (): Promise<void> => {
   await user.delete()
 }
 
+// ─── ExamView cleanup ─────────────────────────────────────────────────────────
+
+const DIAGRAM_PLACEHOLDER_RE = /\[diagram:[^\]]*\]/g
+
+/** One-time migration: strip legacy [diagram:...] placeholders from ExamView question text/options. */
+export const cleanExamViewPlaceholders = async (): Promise<number> => {
+  if (!auth.currentUser) return 0
+  const uid = auth.currentUser.uid
+  const snap = await getDocs(query(
+    collection(db, 'questions'),
+    where('userId', '==', uid),
+    where('source', '==', 'examview'),
+  ))
+  let fixed = 0
+  const BATCH_SIZE = 400
+  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    for (const d of snap.docs.slice(i, i + BATCH_SIZE)) {
+      const data = d.data()
+      const text: string = data.text ?? ''
+      const options: string[] | undefined = data.options
+      const cleanText = text.replace(DIAGRAM_PLACEHOLDER_RE, '').trim()
+      const cleanOptions = options?.map((o: string) => o.replace(DIAGRAM_PLACEHOLDER_RE, '').trim())
+      const hasChange =
+        cleanText !== text ||
+        (cleanOptions && JSON.stringify(cleanOptions) !== JSON.stringify(options))
+      if (!hasChange) continue
+      const update: Record<string, unknown> = { text: cleanText }
+      if (cleanOptions) update.options = cleanOptions
+      batch.update(d.ref, update)
+      fixed++
+    }
+    await batch.commit()
+  }
+  return fixed
+}
+
 // ─── ExamView import ──────────────────────────────────────────────────────────
 
 export interface ExamViewImportOptions {
@@ -737,9 +774,16 @@ export const importExamViewQuestions = async (
     )
   }
 
+  // Fetch already-imported sourceIds for this sourceFile to skip duplicates
+  const existingSnap = await getDocs(
+    query(collection(db, 'questions'),
+      where('userId', '==', uid),
+      where('sourceFile', '==', safeSource),
+    )
+  )
+  const existingSourceIds = new Set(existingSnap.docs.map(d => d.data().sourceId as string))
+
   // Save questions in batches of 400 (Firestore writeBatch limit)
-  // Doc ID is deterministic: base64(uid|sourceFile|sourceId) — re-importing the same
-  // ZIP overwrites the same document, so there are never duplicates.
   const BATCH_SIZE = 400
   let saved = 0
 
@@ -748,8 +792,9 @@ export const importExamViewQuestions = async (
     const slice = questions.slice(i, i + BATCH_SIZE)
 
     for (const q of slice) {
-      // Skip questions with no usable text — Firestore rules require text.size() > 0
+      // Skip questions with no usable text or already imported from this ZIP
       if (!q.text.trim()) continue
+      if (existingSourceIds.has(q.sourceId)) continue
 
       const qRef = doc(collection(db, 'questions'))
 
@@ -801,7 +846,7 @@ export const importExamViewQuestions = async (
     }
 
     await batch.commit()
-    saved += slice.filter(q => q.text.trim()).length
+    saved += slice.filter(q => q.text.trim() && !existingSourceIds.has(q.sourceId)).length
     onProgress?.(saved, questions.length)
   }
 
