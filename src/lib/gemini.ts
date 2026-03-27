@@ -2405,7 +2405,7 @@ Return ONLY a single JSON object (no markdown, no explanation):
         { text: prompt },
       ],
     }],
-    config: { temperature: 0.7 },
+    config: { temperature: 0.7, responseMimeType: 'application/json' },
   })
 
   const raw = safeJsonParse(response.text ?? '{}')
