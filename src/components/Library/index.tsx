@@ -1094,7 +1094,7 @@ export function Library({
     const siblingIdx = siblings.findIndex(s => s.id === folder.id)
     const canMoveUp = siblingIdx > 0
     const canMoveDown = siblingIdx < siblings.length - 1
-    const sc = depth === 0 ? subjectColors(rootSubject) : null
+    const sc = rootSubject ? subjectColors(rootSubject) : null
     const reorder = (delta: -1 | 1) => {
       const newSiblings = [...siblings]
       const idx = siblingIdx
