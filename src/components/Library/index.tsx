@@ -50,30 +50,36 @@ const SUBJECT_COLORS: Record<string, {
   border: string; bg: string; hoverBorder: string; hoverBg: string;
   badge: string; badgeText: string; codeBg: string; codeText: string; codeBorder: string;
   accentBar: string;
+  // raw CSS values for inline styles (sidebar folder rows)
+  rawAccent: string; rawBg: string; rawSelectedBg: string; rawBorder: string;
 }> = {
   Mathematics: {
     border: 'border-blue-300', bg: 'bg-blue-50', hoverBorder: 'hover:border-blue-500', hoverBg: 'hover:bg-blue-100/60',
     badge: 'bg-blue-500', badgeText: 'text-white',
     codeBg: 'bg-blue-100', codeText: 'text-blue-800', codeBorder: 'border-blue-400',
     accentBar: 'bg-blue-500',
+    rawAccent: '#3b82f6', rawBg: '#eff6ff', rawSelectedBg: '#dbeafe', rawBorder: '#93c5fd',
   },
   Biology: {
     border: 'border-emerald-300', bg: 'bg-emerald-50', hoverBorder: 'hover:border-emerald-500', hoverBg: 'hover:bg-emerald-100/60',
     badge: 'bg-emerald-500', badgeText: 'text-white',
     codeBg: 'bg-emerald-100', codeText: 'text-emerald-800', codeBorder: 'border-emerald-400',
     accentBar: 'bg-emerald-500',
+    rawAccent: '#10b981', rawBg: '#ecfdf5', rawSelectedBg: '#d1fae5', rawBorder: '#6ee7b7',
   },
   Chemistry: {
     border: 'border-orange-300', bg: 'bg-orange-50', hoverBorder: 'hover:border-orange-500', hoverBg: 'hover:bg-orange-100/60',
     badge: 'bg-orange-500', badgeText: 'text-white',
     codeBg: 'bg-orange-100', codeText: 'text-orange-800', codeBorder: 'border-orange-400',
     accentBar: 'bg-orange-500',
+    rawAccent: '#f97316', rawBg: '#fff7ed', rawSelectedBg: '#fed7aa', rawBorder: '#fdba74',
   },
   Physics: {
     border: 'border-violet-300', bg: 'bg-violet-50', hoverBorder: 'hover:border-violet-500', hoverBg: 'hover:bg-violet-100/60',
     badge: 'bg-violet-500', badgeText: 'text-white',
     codeBg: 'bg-violet-100', codeText: 'text-violet-800', codeBorder: 'border-violet-400',
     accentBar: 'bg-violet-500',
+    rawAccent: '#8b5cf6', rawBg: '#f5f3ff', rawSelectedBg: '#ede9fe', rawBorder: '#c4b5fd',
   },
 }
 
@@ -82,6 +88,7 @@ const SUBJECT_FALLBACK = {
   badge: 'bg-stone-500', badgeText: 'text-white',
   codeBg: 'bg-stone-100', codeText: 'text-stone-600', codeBorder: 'border-stone-300',
   accentBar: 'bg-stone-400',
+  rawAccent: '#78716c', rawBg: '#fafaf9', rawSelectedBg: '#d6d3d1', rawBorder: '#d6d3d1',
 }
 
 function subjectColors(subject?: string) {
@@ -938,6 +945,24 @@ export function Library({
     return ids
   }, [childrenByParent])
 
+  // Dominant subject for each root folder (based on items in all descendants)
+  const folderSubjectMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    rootFolders.forEach(rf => {
+      const ids = getDescendantIds(rf.id)
+      const tally: Record<string, number> = {}
+      questions.forEach(q => { if (q.folderId && ids.has(q.folderId) && q.subject) tally[q.subject] = (tally[q.subject] ?? 0) + 1 })
+      assessments.forEach(a => { if (a.folderId && ids.has(a.folderId) && a.subject) tally[a.subject] = (tally[a.subject] ?? 0) + 1 })
+      const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]
+      if (top) map[rf.id] = top[0]
+    })
+    return map
+  }, [rootFolders, questions, assessments, getDescendantIds])
+
+  const visibleRootFolders = useMemo(() =>
+    subjectFilter ? rootFolders.filter(f => folderSubjectMap[f.id] === subjectFilter) : rootFolders
+  , [rootFolders, subjectFilter, folderSubjectMap])
+
   const flattenedFolderOptions = useMemo(() => {
     const result: { id: string; label: string }[] = []
     const visit = (f: (typeof folders)[0], depth: number) => {
@@ -1058,7 +1083,7 @@ export function Library({
     setAddToAssessmentId('')
   }
 
-  const renderFolderRow = (folder: (typeof folders)[0], depth: number, siblings: (typeof folders)[0][]): React.ReactNode => {
+  const renderFolderRow = (folder: (typeof folders)[0], depth: number, siblings: (typeof folders)[0][], rootSubject?: string): React.ReactNode => {
     const isSelected = selectedFolderId === folder.id
     const hasChildren = (childrenByParent[folder.id]?.length ?? 0) > 0
     const isExpanded = expandedFolders.has(folder.id)
@@ -1069,6 +1094,7 @@ export function Library({
     const siblingIdx = siblings.findIndex(s => s.id === folder.id)
     const canMoveUp = siblingIdx > 0
     const canMoveDown = siblingIdx < siblings.length - 1
+    const sc = depth === 0 ? subjectColors(rootSubject) : null
     const reorder = (delta: -1 | 1) => {
       const newSiblings = [...siblings]
       const idx = siblingIdx
@@ -1096,8 +1122,16 @@ export function Library({
           ) : (
             <>
               <button onClick={() => onSelectFolder(folder.id)}
-                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 pr-16 ${isSelected ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}>
-                <FolderIcon className="w-3.5 h-3.5 shrink-0" />
+                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 pr-16 transition-colors ${isSelected ? 'font-medium' : 'text-stone-700'}`}
+                style={sc ? {
+                  backgroundColor: isSelected ? sc.rawSelectedBg : undefined,
+                  borderLeft: `3px solid ${sc.rawAccent}`,
+                  paddingLeft: '6px',
+                } : isSelected ? { backgroundColor: '#d1fae5' } : undefined}
+                onMouseEnter={e => { if (!isSelected && sc) (e.currentTarget as HTMLButtonElement).style.backgroundColor = sc.rawBg }}
+                onMouseLeave={e => { if (!isSelected && sc) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '' }}
+              >
+                <FolderIcon className="w-3.5 h-3.5 shrink-0" style={sc ? { color: sc.rawAccent } : undefined} />
                 <span className="truncate">{folder.name}</span>
                 <span className={`text-[10px] shrink-0 ml-auto ${count > 0 ? 'text-stone-400' : 'text-stone-300'}`}>({count})</span>
               </button>
@@ -1155,7 +1189,7 @@ export function Library({
             <button onClick={() => setNewSubfolderParentId(null)} className="p-1 text-stone-400 hover:bg-stone-100 rounded"><X className="w-3.5 h-3.5" /></button>
           </div>
         )}
-        {isExpanded && (() => { const ch = childrenByParent[folder.id] ?? []; return ch.map(child => renderFolderRow(child, depth + 1, ch)) })()}
+        {isExpanded && (() => { const ch = childrenByParent[folder.id] ?? []; return ch.map(child => renderFolderRow(child, depth + 1, ch, rootSubject)) })()}
       </div>
     )
   }
@@ -1204,7 +1238,7 @@ export function Library({
             >
               <LibraryIcon className="w-3.5 h-3.5" /> All
             </button>
-            {rootFolders.map(f => renderFolderRow(f, 0, rootFolders))}
+            {visibleRootFolders.map(f => renderFolderRow(f, 0, visibleRootFolders, folderSubjectMap[f.id]))}
           </div>
         )}
       </div>
