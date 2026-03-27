@@ -441,7 +441,7 @@ function QuestionPreviewModal({
             )}
           </div>
           <div className="flex items-center gap-1">
-            {onRegenerateDiagram && question.hasDiagram && !editing && (
+            {onRegenerateDiagram && question.hasDiagram && !editing && question.diagram?.diagramType !== 'raster' && (
               <button
                 onClick={async () => { setRegenerating(true); try { await onRegenerateDiagram(question) } finally { setRegenerating(false) } }}
                 disabled={regenerating}
@@ -502,6 +502,20 @@ function QuestionPreviewModal({
             <>
               {question.diagram && <DiagramRenderer spec={question.diagram} />}
               <QMarkdown content={question.text} />
+              {question.type === 'mcq' && question.options && question.options.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {question.options.map((opt, i) => {
+                    const letter = String.fromCharCode(65 + i)
+                    const isCorrect = question.answer?.trim().toUpperCase() === letter
+                    return (
+                      <div key={i} className={`flex items-start gap-2 px-3 py-1.5 rounded-lg text-sm border ${isCorrect ? 'bg-emerald-50 border-emerald-300 font-medium text-emerald-800' : 'bg-stone-50 border-stone-200 text-stone-700'}`}>
+                        <span className={`font-bold shrink-0 ${isCorrect ? 'text-emerald-700' : 'text-stone-400'}`}>{letter}</span>
+                        <QMarkdown content={opt} />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               <div className="mt-4 pt-4 border-t border-stone-100">
                 <p className="text-xs font-semibold text-stone-500 mb-1">Answer</p>
                 <QMarkdown content={question.answer} />
