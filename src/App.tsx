@@ -608,77 +608,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      {view === 'main' && <Sidebar
-        config={config}
-        onConfigChange={patch => setConfig(c => ({
-          ...c,
-          ...patch,
-          topic: patch.subject ? (IGCSE_TOPICS[patch.subject]?.[0] ?? c.topic) : (patch.topic ?? c.topic),
-        }))}
-        onGenerate={handleGenerate}
-        isGenerating={generation.isGenerating}
-        isAuditing={false}
-        retryCount={generation.retryCount}
-        lastRunCostIDR={generation.lastRunCostIDR}
-        resources={resources.resources}
-        knowledgeBase={resources.knowledgeBase}
-        onUploadResource={(file, subject, resourceType) => {
-          const geminiKey = apiKeys['gemini']
-          const isPdf = (resourceType === 'syllabus' || resourceType === 'past_paper')
-          if (isPdf && !geminiKey) {
-            notify('A Gemini API key is required to extract and cache PDF content. Add your free key in API Settings → Google Gemini.', 'error')
-          }
-          resources.uploadResource(file, subject, resourceType).then(resource => {
-            if (resource && resourceType === 'syllabus' && geminiKey) {
-              resources.processSyllabus(resource, geminiKey)
-            }
-            if (resource && resourceType === 'past_paper' && geminiKey) {
-              resources.processPastPaper(resource, geminiKey)
-            }
-          })
-        }}
-        onAddToKB={(resource) => {
-          resources.addToKnowledgeBase(resource)
-          const geminiKey = apiKeys['gemini']
-          const isPdf = (resource.resourceType === 'past_paper' || resource.resourceType === 'syllabus')
-          if (isPdf && !geminiKey) {
-            notify('A Gemini API key is required to extract PDF content for use as a reference. Add your free key in API Settings → Google Gemini.', 'error')
-          }
-          if (resource.resourceType === 'past_paper' && geminiKey) {
-            resources.processPastPaper(resource, geminiKey)
-          }
-          if (resource.resourceType === 'syllabus' && geminiKey) {
-            resources.processSyllabus(resource, geminiKey)
-          }
-        }}
-        onRemoveFromKB={resources.removeFromKnowledgeBase}
-        onDeleteResource={resources.deleteResource}
-        onUpdateResourceType={resources.updateResourceType}
-        onToggleShared={resources.toggleShared}
-        currentUserId={user?.uid}
-        uploading={resources.uploading}
-        processingIds={resources.processingIds}
-        studentMode={studentMode}
-        onStudentModeToggle={() => setStudentMode(s => !s)}
-        syllabusContext={syllabusContext}
-        onSyllabusContextChange={setSyllabusContext}
-        provider={provider}
-        onProviderChange={p => {
-          setProvider(p)
-          setConfig(c => ({ ...c, provider: p, model: DEFAULT_MODELS[p] }))
-          if (p !== 'gemini') {
-            notify('Quality audit is only available with Gemini. Generated questions will not be audited for Cambridge IGCSE standards.', 'info')
-          }
-        }}
-        apiKeys={apiKeys}
-        onApiKeyChange={setApiKey}
-        customModel={customModel}
-        onCustomModelChange={setCustomModel}
-        apiSettingsOpen={apiSettingsOpen}
-        onApiSettingsOpenChange={setApiSettingsOpen}
-        diagramPoolCount={diagramPool.length}
-      />}
-
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {/* Top nav */}
         <header className="border-b border-stone-200 px-4 py-2 flex items-center gap-3">
@@ -825,6 +754,77 @@ export default function App() {
           />
           </div>
         ) : (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-row">
+          <Sidebar
+            config={config}
+            onConfigChange={patch => setConfig(c => ({
+              ...c,
+              ...patch,
+              topic: patch.subject ? (IGCSE_TOPICS[patch.subject]?.[0] ?? c.topic) : (patch.topic ?? c.topic),
+            }))}
+            onGenerate={handleGenerate}
+            isGenerating={generation.isGenerating}
+            isAuditing={false}
+            retryCount={generation.retryCount}
+            lastRunCostIDR={generation.lastRunCostIDR}
+            resources={resources.resources}
+            knowledgeBase={resources.knowledgeBase}
+            onUploadResource={(file, subject, resourceType) => {
+              const geminiKey = apiKeys['gemini']
+              const isPdf = (resourceType === 'syllabus' || resourceType === 'past_paper')
+              if (isPdf && !geminiKey) {
+                notify('A Gemini API key is required to extract and cache PDF content. Add your free key in API Settings → Google Gemini.', 'error')
+              }
+              resources.uploadResource(file, subject, resourceType).then(resource => {
+                if (resource && resourceType === 'syllabus' && geminiKey) {
+                  resources.processSyllabus(resource, geminiKey)
+                }
+                if (resource && resourceType === 'past_paper' && geminiKey) {
+                  resources.processPastPaper(resource, geminiKey)
+                }
+              })
+            }}
+            onAddToKB={(resource) => {
+              resources.addToKnowledgeBase(resource)
+              const geminiKey = apiKeys['gemini']
+              const isPdf = (resource.resourceType === 'past_paper' || resource.resourceType === 'syllabus')
+              if (isPdf && !geminiKey) {
+                notify('A Gemini API key is required to extract PDF content for use as a reference. Add your free key in API Settings → Google Gemini.', 'error')
+              }
+              if (resource.resourceType === 'past_paper' && geminiKey) {
+                resources.processPastPaper(resource, geminiKey)
+              }
+              if (resource.resourceType === 'syllabus' && geminiKey) {
+                resources.processSyllabus(resource, geminiKey)
+              }
+            }}
+            onRemoveFromKB={resources.removeFromKnowledgeBase}
+            onDeleteResource={resources.deleteResource}
+            onUpdateResourceType={resources.updateResourceType}
+            onToggleShared={resources.toggleShared}
+            currentUserId={user?.uid}
+            uploading={resources.uploading}
+            processingIds={resources.processingIds}
+            studentMode={studentMode}
+            onStudentModeToggle={() => setStudentMode(s => !s)}
+            syllabusContext={syllabusContext}
+            onSyllabusContextChange={setSyllabusContext}
+            provider={provider}
+            onProviderChange={p => {
+              setProvider(p)
+              setConfig(c => ({ ...c, provider: p, model: DEFAULT_MODELS[p] }))
+              if (p !== 'gemini') {
+                notify('Quality audit is only available with Gemini. Generated questions will not be audited for Cambridge IGCSE standards.', 'info')
+              }
+            }}
+            apiKeys={apiKeys}
+            onApiKeyChange={setApiKey}
+            customModel={customModel}
+            onCustomModelChange={setCustomModel}
+            apiSettingsOpen={apiSettingsOpen}
+            onApiSettingsOpenChange={setApiSettingsOpen}
+            diagramPoolCount={diagramPool.length}
+          />
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <AssessmentView
             assessment={displayAssessment}
@@ -849,6 +849,7 @@ export default function App() {
             onRegenerateDiagrams={handleRegenerateDiagrams}
             onRepairQuestion={handleRepairQuestion}
           />
+          </div>
           </div>
         )}
 
