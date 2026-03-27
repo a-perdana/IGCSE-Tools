@@ -40,6 +40,52 @@ interface Props {
   onUpdateImported?: (uid: string, updates: Partial<ImportedQuestion>) => Promise<void>
 }
 
+// ─── Subject colour palette ───────────────────────────────────────────────────
+
+const SUBJECT_COLORS: Record<string, {
+  border: string; bg: string; hoverBorder: string; hoverBg: string;
+  badge: string; badgeText: string; codeBg: string; codeText: string; codeBorder: string
+}> = {
+  Mathematics: {
+    border: 'border-blue-200', bg: 'bg-blue-50/60', hoverBorder: 'hover:border-blue-400', hoverBg: 'hover:bg-blue-50',
+    badge: 'bg-blue-100', badgeText: 'text-blue-800',
+    codeBg: 'bg-blue-100', codeText: 'text-blue-800', codeBorder: 'border-blue-300',
+  },
+  Biology: {
+    border: 'border-emerald-200', bg: 'bg-emerald-50/60', hoverBorder: 'hover:border-emerald-400', hoverBg: 'hover:bg-emerald-50',
+    badge: 'bg-emerald-100', badgeText: 'text-emerald-800',
+    codeBg: 'bg-emerald-100', codeText: 'text-emerald-700', codeBorder: 'border-emerald-300',
+  },
+  Chemistry: {
+    border: 'border-amber-200', bg: 'bg-amber-50/60', hoverBorder: 'hover:border-amber-400', hoverBg: 'hover:bg-amber-50',
+    badge: 'bg-amber-100', badgeText: 'text-amber-800',
+    codeBg: 'bg-amber-100', codeText: 'text-amber-800', codeBorder: 'border-amber-300',
+  },
+  Physics: {
+    border: 'border-violet-200', bg: 'bg-violet-50/60', hoverBorder: 'hover:border-violet-400', hoverBg: 'hover:bg-violet-50',
+    badge: 'bg-violet-100', badgeText: 'text-violet-800',
+    codeBg: 'bg-violet-100', codeText: 'text-violet-800', codeBorder: 'border-violet-300',
+  },
+}
+
+const SUBJECT_FALLBACK = {
+  border: 'border-stone-200', bg: 'bg-white', hoverBorder: 'hover:border-stone-400', hoverBg: 'hover:bg-stone-50',
+  badge: 'bg-stone-100', badgeText: 'text-stone-600',
+  codeBg: 'bg-stone-100', codeText: 'text-stone-600', codeBorder: 'border-stone-300',
+}
+
+function subjectColors(subject?: string) {
+  return (subject && SUBJECT_COLORS[subject]) ?? SUBJECT_FALLBACK
+}
+
+/** Generate a short display code when the question has none (e.g. MAT-2M-MCQ) */
+function autoCode(q: { subject?: string; marks?: number; type?: string }): string {
+  const subj = (q.subject ?? 'GEN').substring(0, 3).toUpperCase()
+  const m = q.marks ?? 1
+  const t = q.type === 'mcq' ? 'MCQ' : q.type === 'structured' ? 'STR' : 'SA'
+  return `${subj}-${m}M-${t}`
+}
+
 // ─── Helper: ImportedQuestion → QuestionItem ─────────────────────────────────
 
 function importedToQuestionItem(iq: ImportedQuestion): Question {
@@ -1077,6 +1123,8 @@ export function Library({
               {pagedQuestions.map(q => {
                 const isSelected = selectedIds.has(q.id)
                 const isGlobal = q.userId !== currentUserId && q.isPublic
+                const sc = subjectColors(q.subject)
+                const displayCode = q.code || autoCode(q)
                 return (
                   <div
                     key={q.id}
@@ -1085,7 +1133,7 @@ export function Library({
                         ? 'border-emerald-400 bg-emerald-50 shadow-sm'
                         : isGlobal
                           ? 'border-sky-200 bg-sky-50 hover:border-sky-400 hover:shadow-sm'
-                          : 'border-stone-200 bg-white hover:border-emerald-300 hover:shadow-sm hover:bg-stone-50'
+                          : `${sc.border} ${sc.bg} ${sc.hoverBorder} ${sc.hoverBg} hover:shadow-sm`
                       }`}
                     onClick={() => toggleSelect(q.id)}
                   >
@@ -1098,11 +1146,12 @@ export function Library({
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      {q.code && (
-                        <div className="font-mono text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit mb-1">
-                          {q.code}
+                      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <div className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>
+                          {displayCode}
                         </div>
-                      )}
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{q.subject}</span>
+                      </div>
                       <div className="text-xs text-stone-700 truncate">
                         {q.text
                         .replace(/```svg[\s\S]*?```/g, '[diagram]')
@@ -1110,7 +1159,7 @@ export function Library({
                         .substring(0, 120)}...
                       </div>
                       <div className="text-xs text-stone-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                        <span>{q.subject} · {q.marks}m · {q.commandWord}</span>
+                        <span>{q.marks}m · {q.commandWord}</span>
                         <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                           q.type === 'mcq' ? 'bg-blue-100 text-blue-700' :
                           q.type === 'structured' ? 'bg-violet-100 text-violet-700' :
