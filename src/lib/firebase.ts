@@ -737,16 +737,9 @@ export const importExamViewQuestions = async (
     )
   }
 
-  // Fetch already-imported sourceIds for this sourceFile to skip duplicates
-  const existingSnap = await getDocs(
-    query(collection(db, 'questions'),
-      where('userId', '==', uid),
-      where('sourceFile', '==', safeSource),
-    )
-  )
-  const existingSourceIds = new Set(existingSnap.docs.map(d => d.data().sourceId as string))
-
   // Save questions in batches of 400 (Firestore writeBatch limit)
+  // Doc ID is deterministic: base64(uid|sourceFile|sourceId) — re-importing the same
+  // ZIP overwrites the same document, so there are never duplicates.
   const BATCH_SIZE = 400
   let saved = 0
 
@@ -755,11 +748,12 @@ export const importExamViewQuestions = async (
     const slice = questions.slice(i, i + BATCH_SIZE)
 
     for (const q of slice) {
-      // Skip empty text or already-imported questions
+      // Skip questions with no usable text — Firestore rules require text.size() > 0
       if (!q.text.trim()) continue
-      if (existingSourceIds.has(q.sourceId)) continue
 
-      const qRef = doc(collection(db, 'questions'))
+      const docId = btoa(`${uid}|${safeSource}|${q.sourceId}`)
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+      const qRef = doc(db, 'questions', docId)
 
       // Build diagram field if question has exactly one image
       let diagram: Record<string, unknown> | undefined
