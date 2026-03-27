@@ -785,7 +785,14 @@ export const importExamViewQuestions = async (
       if (diagram) payload.diagram = diagram
       if (folderId) payload.folderId = folderId
 
-      batch.set(qRef, stripUndefined(payload))
+      // Don't run stripUndefined on the full payload — it corrupts FieldValue sentinels
+      // (serverTimestamp is an object; stripUndefined would recurse into it and return {}).
+      // Instead, remove undefined keys manually at the top level only.
+      const cleanPayload: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(payload)) {
+        if (v !== undefined) cleanPayload[k] = v
+      }
+      batch.set(qRef, cleanPayload)
     }
 
     await batch.commit()
