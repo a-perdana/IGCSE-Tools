@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { X, Pencil, Trash2, Plus, Check, Loader2, Upload, Search, Tag, Image as ImageIcon } from 'lucide-react'
-import type { DiagramPoolEntry, DiagramCategory } from '../../lib/types'
+import { X, Pencil, Trash2, Plus, Check, Loader2, Upload, Search, Tag, Image as ImageIcon, FileText } from 'lucide-react'
+import type { DiagramPoolEntry, DiagramCategory, QuestionItem } from '../../lib/types'
 import { IGCSE_SUBJECTS } from '../../lib/gemini'
+import { PdfDiagramExtractor } from './PdfDiagramExtractor'
 
 const CATEGORY_LABELS: Record<DiagramCategory, string> = {
   diagram: 'Diagram',
@@ -26,6 +27,8 @@ interface Props {
   onUpdate: (id: string, updates: Partial<DiagramPoolEntry>) => Promise<void>
   onDelete: (id: string) => Promise<void>
   onUpload: (file: File, subject: string, meta: { description: string; category: DiagramCategory; topics: string[]; tags: string[] }) => Promise<void>
+  onSaveQuestions?: (questions: Omit<QuestionItem, 'id'>[], subject: string, topic: string) => Promise<void>
+  geminiApiKey?: string
 }
 
 // ─── Edit modal ───────────────────────────────────────────────────────────────
@@ -277,13 +280,14 @@ function UploadModal({
 
 const PER_PAGE = 30
 
-export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, onUpload }: Props) {
+export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, onUpload, onSaveQuestions, geminiApiKey }: Props) {
   const [subjectFilter, setSubjectFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<DiagramCategory | ''>('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [editEntry, setEditEntry] = useState<DiagramPoolEntry | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+  const [showPdfExtractor, setShowPdfExtractor] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const hasLoaded = useRef(false)
@@ -370,6 +374,14 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
         </select>
 
         <span className="text-xs text-stone-400 ml-auto">{filtered.length} diagrams</span>
+
+        <button
+          onClick={() => setShowPdfExtractor(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium bg-violet-600 text-white hover:bg-violet-700"
+          title="Extract diagrams from a PDF"
+        >
+          <FileText className="w-3.5 h-3.5" /> From PDF
+        </button>
 
         <button
           onClick={() => setShowUpload(true)}
@@ -487,6 +499,15 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
         <UploadModal
           onClose={() => setShowUpload(false)}
           onUpload={onUpload}
+        />
+      )}
+
+      {showPdfExtractor && (
+        <PdfDiagramExtractor
+          onClose={() => { setShowPdfExtractor(false); onLoad(subjectFilter || undefined) }}
+          onUpload={onUpload}
+          onSaveQuestions={onSaveQuestions}
+          geminiApiKey={geminiApiKey}
         />
       )}
 

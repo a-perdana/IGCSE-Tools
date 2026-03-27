@@ -733,6 +733,20 @@ export default function App() {
               onUpdate={handleUpdateDiagramEntry}
               onDelete={handleDeleteDiagramEntry}
               onUpload={handleUploadDiagram}
+              geminiApiKey={apiKeys['gemini']}
+              onSaveQuestions={async (questions, subject, topic) => {
+                const full = questions.map(q => ({
+                  ...q,
+                  id: crypto.randomUUID(),
+                  subject,
+                  topic,
+                  difficulty: 'Medium',
+                  userId: '',
+                  createdAt: null as any,
+                }))
+                await library.saveQuestions(full)
+                notify('Questions saved to library', 'success')
+              }}
             />
           </div>
         ) : view === 'library' ? (

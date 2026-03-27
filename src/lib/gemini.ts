@@ -808,7 +808,22 @@ export async function generateTest(
     return score;
   }
 
-  /** Score a diagram pool entry against a slot topic. */
+  /** Score a diagram pool entry against a slot topic.
+   *
+   * Scoring tiers:
+   *  8  — exact topic match
+   *  4  — partial topic match (substring either way)
+   *  2  — keyword overlap in topics
+   *  1  — keyword overlap in tags
+   *  0.5 — keyword overlap in description
+   *  0.1 — same subject, no other match (fallback so subject-matched entries
+   *         are always preferred over a random cross-subject entry)
+   *
+   * Callers treat score === 0 as "no match at all". A subject-only match
+   * returns 0.1 so that diagrams with empty topics/tags are still eligible
+   * when no better match exists — preventing the "no matching pool entry"
+   * message when there are hundreds of same-subject diagrams available.
+   */
   function scoreDiagramEntryForTopic(entry: DiagramPoolEntry, slotTopic: string): number {
     const norm = slotTopic.toLowerCase().trim();
     const keywords = norm.split(/[\s,/]+/).filter((k) => k.length > 2);
@@ -825,6 +840,12 @@ export async function generateTest(
     if (entry.description) {
       const dl = entry.description.toLowerCase();
       score += keywords.filter((k) => dl.includes(k)).length * 0.5;
+    }
+    // Subject-level fallback: if the entry belongs to the same subject and
+    // has no topic/tag match, give it a small base score so it can still be
+    // selected when nothing better exists.
+    if (score === 0 && entry.subject?.toLowerCase() === config.subject.toLowerCase()) {
+      score = 0.1;
     }
     return score;
   }
@@ -1138,77 +1159,121 @@ MARK SCHEME: Cambridge notation (B1, M1, A1).`;
    * Writes diagram questions that reference real past-paper images from the diagram pool.
    * The AI sees the image URL + description and writes a question around it.
    */
+  /** Fetch an image URL and return base64 + mimeType for Gemini inlineData. */
+  async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) return null
+      const blob = await res.blob()
+      const mimeType = blob.type || 'image/png'
+      return new Promise(resolve => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string
+          const base64 = dataUrl.split(',')[1]
+          resolve(base64 ? { data: base64, mimeType } : null)
+        }
+        reader.onerror = () => resolve(null)
+        reader.readAsDataURL(blob)
+      })
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Writes diagram questions where the AI actually SEES each diagram image
+   * via Gemini vision (inlineData), so questions are grounded in the real image.
+   * Falls back to text-only description if image fetch fails.
+   */
   async function writeQuestionsWithRasterDiagram(
     rasterSlots: QuestionSlot[],
     pickedEntries: DiagramPoolEntry[],
   ): Promise<any[]> {
     if (rasterSlots.length === 0) return [];
 
-    const slotDescriptions = rasterSlots
-      .map((s, i) => {
-        const entry = pickedEntries[i];
-        const template = buildSlotTemplate(s.topic, true);
-        return [
-          `Q${s.index + 1}: topic="${s.topic}", type="${s.questionType}"`,
-          `USE THIS REAL DIAGRAM IMAGE: ${entry.imageURL}`,
-          `The image shows: ${entry.description || entry.topics.join(", ")} (topics: ${entry.topics.join(", ")})`,
-          `Write a question that directly interprets or analyses this specific diagram.`,
+    // Fetch all images in parallel (best-effort — failure falls back to description)
+    const imageData = await Promise.all(
+      pickedEntries.map(entry => fetchImageAsBase64(entry.imageURL))
+    )
+
+    // Build one call per slot so each gets its own image in the vision context.
+    // We do them in parallel to keep latency low.
+    const perSlotResults = await Promise.all(
+      rasterSlots.map(async (slot, i) => {
+        const entry = pickedEntries[i]
+        const imgB64 = imageData[i]
+        const template = buildSlotTemplate(slot.topic, true)
+
+        const slotText = [
+          `Generate exactly 1 Cambridge IGCSE ${config.subject} question for the diagram shown above.`,
+          ``,
+          `SLOT CONFIGURATION:`,
+          `- topic: "${slot.topic}"`,
+          `- questionType: "${slot.questionType}"`,
+          `- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}`,
+          `- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}`,
+          config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : "",
+          ``,
+          `RULES:`,
+          `1. Study the diagram carefully. Write a question that DIRECTLY requires the student to read, interpret, or analyse this specific diagram.`,
+          `2. Open with "The diagram shows…" or "Using the diagram…" or "Refer to the diagram…".`,
+          `3. MCQ: 4 options (no letter prefix); answer = "A"/"B"/"C"/"D".`,
+          `4. LaTeX math in $...$. syllabusObjective: "REF – statement" format.`,
+          `5. assessmentObjective: "AO1"|"AO2"|"AO3". difficultyStars: 1|2|3.`,
+          `6. hasDiagram: true.`,
+          `7. Do NOT recreate the diagram in TikZ.`,
           template ? `\n${template}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
+        ].filter(s => s !== undefined).join("\n")
+
+        const parts: any[] = []
+
+        if (imgB64) {
+          // Vision: AI sees the actual diagram
+          parts.push({ inlineData: { mimeType: imgB64.mimeType, data: imgB64.data } })
+          onLog?.(`[Phase 2] Q${slot.index + 1}: sending diagram image to Gemini vision (${entry.imageName})`)
+        } else {
+          // Fallback: describe from metadata
+          const desc = entry.description || entry.topics.join(", ") || entry.imageName
+          parts.push({ text: `[DIAGRAM: ${desc}]` })
+          onLog?.(`[Phase 2] Q${slot.index + 1}: image fetch failed, using description fallback`)
+        }
+
+        parts.push(...allRefParts, { text: slotText })
+
+        return withRetry(async () => {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [{ role: 'user', parts }],
+            config: {
+              responseMimeType: "application/json",
+              maxOutputTokens: 8192,
+              temperature: 0.75,
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: { questions: { type: Type.ARRAY, items: questionSchema } },
+                required: ["questions"],
+              },
+              systemInstruction: phase2SystemInstruction,
+            },
+          })
+          const usage = getGeminiUsage(response)
+          if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens)
+          const finishReason = (response as any)?.candidates?.[0]?.finishReason
+          onLog?.(`[Phase 2 vision Q${slot.index + 1}] length=${response.text?.length ?? 0} finishReason=${finishReason}`)
+          if (finishReason === "MAX_TOKENS") {
+            throw { type: "invalid_response", retryable: true, message: `Vision slot Q${slot.index + 1} hit token limit. Retrying…` }
+          }
+          const parsed = safeJsonParse(response.text || "{}");
+          if (!parsed.questions?.length) {
+            throw { type: "invalid_response", retryable: true, message: `Vision slot Q${slot.index + 1} returned no question.` }
+          }
+          return parsed.questions[0]
+        }, 3, onRetry)
       })
-      .join("\n\n");
+    )
 
-    const prompt = `Generate a Cambridge IGCSE ${config.subject} assessment using REAL past-paper diagrams.
-
-CONFIGURATION:
-- ${DIFFICULTY_GUIDANCE[config.difficulty] ?? `Difficulty: ${config.difficulty}`}
-- Calculator: ${config.calculator ? "Allowed" : "Not Allowed"}
-${config.syllabusContext ? `- Syllabus focus: ${config.syllabusContext}` : ""}
-
-QUESTION SLOTS (each includes a real diagram image):
-${slotDescriptions}
-
-RULES:
-1. Each question MUST directly reference and require interpretation of the provided diagram image.
-2. Phrase the question as if the student is looking at the diagram (e.g. "The diagram shows...", "Using the diagram...").
-3. MCQ: 4 options (no letter prefix); answer = "A"/"B"/"C"/"D".
-4. LaTeX: all math in $...$. syllabusObjective: "REF – statement" format.
-5. assessmentObjective: "AO1" | "AO2" | "AO3". difficultyStars: 1|2|3.
-6. hasDiagram: true for all these questions.
-7. answer field: MCQ = letter; others = method description only.
-8. Do NOT describe or recreate the diagram in TikZ — the image is already provided.`;
-
-    return withRetry(async () => {
-      const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [...allRefParts, { text: prompt }] },
-        config: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 32768,
-          temperature: 0.75,
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: { questions: { type: Type.ARRAY, items: questionSchema } },
-            required: ["questions"],
-          },
-          systemInstruction: phase2SystemInstruction,
-        },
-      });
-      const usage = getGeminiUsage(response);
-      if (usage) onUsage?.(model, usage.inputTokens, usage.outputTokens);
-      const finishReason = (response as any)?.candidates?.[0]?.finishReason;
-      onLog?.(`[Phase 2 RasterDiagram batch] length=${response.text?.length ?? 0} finishReason=${finishReason}`);
-      if (finishReason === "MAX_TOKENS") {
-        throw { type: "invalid_response", retryable: true, message: `Raster diagram batch hit token limit. Retrying…` };
-      }
-      const parsed = safeJsonParse(response.text || "{}");
-      if (!parsed.questions || parsed.questions.length < rasterSlots.length) {
-        throw { type: "invalid_response", retryable: true, message: `Raster diagram batch returned ${parsed.questions?.length ?? 0} questions, expected ${rasterSlots.length}.` };
-      }
-      return parsed.questions;
-    }, 3, onRetry);
+    return perSlotResults
   }
 
   /**
@@ -1299,12 +1364,18 @@ RULES:
   if (dslSlots.length > 0) {
     if (useDiagramPool) {
       // Split diagram slots: those with a matching pool entry vs those with no match (score === 0)
+      // Shuffle pool entries once so equal-score ties resolve randomly each run.
+      const shuffledPool = [...poolEntries].sort(() => Math.random() - 0.5);
+      const usedEntryIds = new Set<string>();
       const picked = dslSlots.map((slot) => {
-        const scored = poolEntries
+        const scored = shuffledPool
           .map((e) => ({ e, score: scoreDiagramEntryForTopic(e, slot.topic) }))
           .filter(({ score }) => score > 0)
           .sort((a, b) => b.score - a.score);
-        return scored[0]?.e ?? null;
+        // Prefer an entry not already assigned to another slot in this batch
+        const best = scored.find(({ e }) => !usedEntryIds.has(e.id)) ?? scored[0] ?? null;
+        if (best) usedEntryIds.add(best.e.id);
+        return best?.e ?? null;
       });
 
       const matchedSlots = dslSlots.filter((_, i) => picked[i] !== null);
@@ -2127,4 +2198,91 @@ Do NOT use SVG. Use hasDiagram=true for questions requiring diagrams.`,
       };
     }),
   };
+}
+
+// ── PDF Question Parser ───────────────────────────────────────────────────────
+
+export interface ParsedPdfQuestion {
+  id: string
+  text: string          // question text, math as $...$ or $$...$$
+  markScheme: string    // mark scheme / answer, math as $...$ or $$...$$
+  marks: number
+  type: 'mcq' | 'short_answer' | 'structured'
+  options?: string[]    // MCQ options A-D
+  commandWord: string
+  topic: string         // best guess from content
+  assessmentObjective: 'AO1' | 'AO2' | 'AO3'
+}
+
+/**
+ * Send a PNG (as base64 data URL) to Gemini vision and extract all exam
+ * questions found on the page/crop. Math symbols are returned as LaTeX
+ * inline ($...$) or display ($$...$$) delimiters.
+ */
+export async function parsePdfQuestionsWithGemini(
+  imageDataUrl: string,   // "data:image/png;base64,..."
+  subject: string,
+  apiKey: string,
+  model = 'gemini-2.5-flash',
+): Promise<ParsedPdfQuestion[]> {
+  const ai = getAI(apiKey)
+
+  // Strip the data URL prefix to get raw base64
+  const base64 = imageDataUrl.replace(/^data:image\/\w+;base64,/, '')
+
+  const prompt = `You are an expert Cambridge IGCSE ${subject} examiner.
+
+Carefully read the exam page image and extract ALL exam questions visible.
+
+Rules:
+- Represent ALL mathematical symbols, formulae, and expressions using LaTeX delimiters:
+  - Inline math: $...$ (e.g. $x^2 + 2x - 3$, $\frac{a}{b}$, $\sqrt{x}$)
+  - Display/block math: $$...$$ for standalone equations
+- Preserve sub-parts: if a question has (a), (b), (c) parts, combine them into one structured question with the parts clearly labelled in the text field.
+- For MCQ questions, list the four options in the "options" array.
+- For the mark scheme, write the expected answer or marking points. Include LaTeX math where needed.
+- "commandWord": the Cambridge command word (State, Describe, Explain, Calculate, Show, Define, Suggest, Evaluate, etc.). Use "State" if unclear.
+- "assessmentObjective": AO1 (recall/knowledge), AO2 (application), AO3 (analysis/evaluation). Use AO1 if unclear.
+- "topic": your best guess at the syllabus topic based on the content.
+- If no questions are visible (e.g. page is a cover page or blank), return an empty array.
+
+Return ONLY a valid JSON array with this schema (no markdown, no explanation):
+[
+  {
+    "text": "question text with LaTeX math",
+    "markScheme": "expected answer with LaTeX math",
+    "marks": 2,
+    "type": "short_answer",
+    "commandWord": "Describe",
+    "topic": "Cell biology",
+    "assessmentObjective": "AO2",
+    "options": []
+  }
+]`
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: 'image/png', data: base64 } },
+        { text: prompt },
+      ],
+    }],
+    config: { temperature: 0.1 },
+  })
+
+  const raw = safeJsonParse(response.text ?? '[]')
+  const arr: ParsedPdfQuestion[] = (Array.isArray(raw) ? raw : []).map((q: any) => ({
+    id: crypto.randomUUID(),
+    text: String(q.text ?? ''),
+    markScheme: String(q.markScheme ?? ''),
+    marks: typeof q.marks === 'number' ? q.marks : 1,
+    type: (['mcq', 'short_answer', 'structured'].includes(q.type) ? q.type : 'short_answer') as ParsedPdfQuestion['type'],
+    options: Array.isArray(q.options) && q.options.length > 0 ? q.options.map(String) : undefined,
+    commandWord: String(q.commandWord ?? 'State'),
+    topic: String(q.topic ?? subject),
+    assessmentObjective: (['AO1', 'AO2', 'AO3'].includes(q.assessmentObjective) ? q.assessmentObjective : 'AO1') as ParsedPdfQuestion['assessmentObjective'],
+  }))
+  return arr
 }

@@ -68,6 +68,12 @@ export default defineConfig(() => {
         'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
       },
     },
+    optimizeDeps: {
+      include: ['pdfjs-dist'],
+    },
+    worker: {
+      format: 'es' as const,
+    },
     test: {
       environment: 'jsdom',
     },

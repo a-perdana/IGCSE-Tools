@@ -24,6 +24,7 @@
     "jspdf": "^4.2.0",
     "katex": "^0.16.38",
     "lucide-react": "^0.546.0",
+    "pdfjs-dist": "^5.5.207",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
