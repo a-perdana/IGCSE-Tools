@@ -14,14 +14,27 @@ export interface ProviderModel {
 
 export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash',               label: 'Gemini 2.5 Flash ★ Recommended',   hint: 'Best balance of speed and quality. Ideal for most assessments.' },
-    { id: 'gemini-2.5-pro',                 label: 'Gemini 2.5 Pro',                    hint: 'Highest quality output. Slower — use for Challenging difficulty.' },
-    { id: 'gemini-2.5-flash-lite',          label: 'Gemini 2.5 Flash Lite',             hint: 'Fastest and cheapest. Good for simple recall or MCQ-only assessments.' },
-    { id: 'gemini-3-flash-preview',         label: 'Gemini 3 Flash Preview',            hint: 'Next-gen preview model. Fast and capable, may produce inconsistent results.' },
-    { id: 'gemini-3.1-pro-preview',         label: 'Gemini 3.1 Pro Preview',            hint: 'Latest generation Pro model. Highest capability — slower and more expensive.' },
-    { id: 'gemini-3.1-flash-lite-preview',  label: 'Gemini 3.1 Flash Lite Preview',     hint: 'Latest generation budget model. Fast and affordable.' },
-    { id: 'gemini-2.0-flash',               label: 'Gemini 2.0 Flash',                  hint: 'Stable and reliable. Good fallback if 2.5 is unavailable.' },
-    { id: 'gemini-2.0-flash-lite',          label: 'Gemini 2.0 Flash Lite',             hint: 'Fastest and cheapest 2.0 model.' },
+    // ── 2.5 series (stable) ──────────────────────────────────────────────────
+    { id: 'gemini-2.5-flash',                      label: 'Gemini 2.5 Flash ★ Recommended',      hint: 'Best balance of speed and quality. Ideal for most assessments.' },
+    { id: 'gemini-2.5-pro',                        label: 'Gemini 2.5 Pro',                       hint: 'Highest quality output. Slower — use for Challenging difficulty.' },
+    { id: 'gemini-2.5-flash-lite',                 label: 'Gemini 2.5 Flash Lite',                hint: 'Fastest and cheapest 2.5 model. Good for simple recall or MCQ-only.' },
+    { id: 'gemini-2.5-flash-lite-preview-09-2025', label: 'Gemini 2.5 Flash Lite Preview Sep 25', hint: 'Preview build of 2.5 Flash Lite.' },
+    // ── 3.x series (preview) ─────────────────────────────────────────────────
+    { id: 'gemini-3.1-pro-preview',                label: 'Gemini 3.1 Pro Preview',               hint: 'Latest generation Pro model. Highest capability — slower and more expensive.' },
+    { id: 'gemini-3.1-flash-lite-preview',         label: 'Gemini 3.1 Flash Lite Preview',        hint: 'Latest generation budget model. Fast and affordable.' },
+    { id: 'gemini-3-pro-preview',                  label: 'Gemini 3 Pro Preview',                 hint: 'Previous generation 3 Pro preview.' },
+    { id: 'gemini-3-flash-preview',                label: 'Gemini 3 Flash Preview',               hint: 'Previous generation 3 Flash preview.' },
+    // ── 2.0 series (stable) ──────────────────────────────────────────────────
+    { id: 'gemini-2.0-flash',                      label: 'Gemini 2.0 Flash',                     hint: 'Stable and reliable. Good fallback if 2.5 is unavailable.' },
+    { id: 'gemini-2.0-flash-001',                  label: 'Gemini 2.0 Flash 001',                 hint: 'Pinned stable release of Gemini 2.0 Flash.' },
+    { id: 'gemini-2.0-flash-lite',                 label: 'Gemini 2.0 Flash Lite',                hint: 'Fast and cheap 2.0 model.' },
+    { id: 'gemini-2.0-flash-lite-001',             label: 'Gemini 2.0 Flash Lite 001',            hint: 'Pinned stable release of Gemini 2.0 Flash Lite.' },
+    // ── Always-latest aliases ────────────────────────────────────────────────
+    { id: 'gemini-flash-latest',                   label: 'Gemini Flash Latest',                  hint: 'Always points to the latest stable Flash model.' },
+    { id: 'gemini-flash-lite-latest',              label: 'Gemini Flash Lite Latest',             hint: 'Always points to the latest stable Flash Lite model.' },
+    { id: 'gemini-pro-latest',                     label: 'Gemini Pro Latest',                    hint: 'Always points to the latest stable Pro model.' },
+    // ── Specialist ───────────────────────────────────────────────────────────
+    { id: 'deep-research-pro-preview-12-2025',     label: 'Deep Research Pro Preview',            hint: 'Optimised for long-form research and deep reasoning tasks.' },
   ],
   openai: [
     { id: 'gpt-4o-mini',  label: 'GPT-4o Mini',  hint: 'Fast and cost-effective. Good for straightforward assessments.' },
