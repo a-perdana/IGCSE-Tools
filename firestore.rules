@@ -57,11 +57,12 @@ service cloud.firestore {
     }
 
     function isValidFolder(data) {
-      return hasOnlyAllowedFields(['name', 'userId', 'createdAt', 'parentId']) &&
+      return hasOnlyAllowedFields(['name', 'userId', 'createdAt', 'parentId', 'order']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.userId == request.auth.uid &&
              data.createdAt is timestamp &&
-             (!('parentId' in data) || data.parentId == null || data.parentId is string);
+             (!('parentId' in data) || data.parentId == null || data.parentId is string) &&
+             (!('order' in data) || data.order == null || data.order is number);
     }
 
     function isValidResource(data) {

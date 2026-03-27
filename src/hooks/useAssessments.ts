@@ -19,6 +19,7 @@ import {
   deleteFolder as fbDeleteFolder,
   updateFolder as fbUpdateFolder,
   moveFolderParent as fbMoveFolderParent,
+  reorderFolders as fbReorderFolders,
   togglePublicAssessment as fbTogglePublicAssessment,
   togglePublicQuestion as fbTogglePublicQuestion,
 } from "../lib/firebase";
@@ -249,6 +250,25 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     [notify, folders],
   );
 
+  const reorderFolders = useCallback(
+    async (orderedIds: string[]) => {
+      // Optimistic update
+      setFolders(prev => {
+        const byId = Object.fromEntries(prev.map(f => [f.id, f]))
+        const reordered = orderedIds.map((id, i) => ({ ...byId[id], order: i })).filter(Boolean)
+        const rest = prev.filter(f => !orderedIds.includes(f.id))
+        return [...reordered, ...rest]
+      })
+      try {
+        await fbReorderFolders(orderedIds)
+      } catch (e) {
+        notify("Failed to reorder folders", "error")
+        await loadAll()
+      }
+    },
+    [notify, loadAll],
+  );
+
   const renameFolder = useCallback(
     async (id: string, name: string) => {
       const original = folders.find((x) => x.id === id);
@@ -355,6 +375,7 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     deleteFolder,
     renameFolder,
     moveFolder,
+    reorderFolders,
     togglePublicAssessment,
     togglePublicQuestion,
     toggleAssessmentLike,

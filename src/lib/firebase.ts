@@ -228,14 +228,28 @@ export const getFolders = async () => {
   );
   try {
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Folder[];
+    const folders = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Folder[];
+    // Sort by explicit order field if present, otherwise by createdAt (already ordered)
+    return folders.sort((a, b) => {
+      const aHas = a.order !== undefined, bHas = b.order !== undefined
+      if (aHas && bHas) return (a.order as number) - (b.order as number)
+      if (aHas) return -1
+      if (bHas) return 1
+      return 0
+    })
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'folders');
     return [];
   }
+};
+
+/** Persist a new order for a list of sibling folders (same parent). */
+export const reorderFolders = async (orderedIds: string[]): Promise<void> => {
+  const batch = writeBatch(db)
+  orderedIds.forEach((id, index) => {
+    batch.update(doc(db, 'folders', id), { order: index })
+  })
+  await batch.commit()
 };
 
 export const deleteFolder = async (id: string) => {

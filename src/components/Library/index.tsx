@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid, Upload, ChevronRight, ChevronDown } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid, Upload, ChevronRight, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
@@ -26,6 +26,7 @@ interface Props {
   onDeleteFolder: (id: string) => void
   onRenameFolder: (id: string, name: string) => void
   onMoveFolder: (id: string, parentId: string | null) => void
+  onReorderFolders: (orderedIds: string[]) => void
   selectedFolderId: string | null | undefined
   onSelectFolder: (id: string | null | undefined) => void
   onCreateAssessmentFromQuestions: (questions: Question[]) => void
@@ -806,7 +807,7 @@ export function Library({
   assessments, questions, folders, loading,
   onSelect, onDeleteAssessment, onMoveAssessment, onRenameAssessment,
   onDeleteQuestion, onMoveQuestion,
-  onCreateFolder, onDeleteFolder, onRenameFolder, onMoveFolder,
+  onCreateFolder, onDeleteFolder, onRenameFolder, onMoveFolder, onReorderFolders,
   selectedFolderId, onSelectFolder,
   onCreateAssessmentFromQuestions, onAddQuestionsToAssessment,
   onUpdateQuestion,
@@ -1019,7 +1020,7 @@ export function Library({
     setAddToAssessmentId('')
   }
 
-  const renderFolderRow = (folder: (typeof folders)[0], depth: number): React.ReactNode => {
+  const renderFolderRow = (folder: (typeof folders)[0], depth: number, siblings: (typeof folders)[0][]): React.ReactNode => {
     const isSelected = selectedFolderId === folder.id
     const hasChildren = (childrenByParent[folder.id]?.length ?? 0) > 0
     const isExpanded = expandedFolders.has(folder.id)
@@ -1027,6 +1028,15 @@ export function Library({
     const isRenamingThis = renamingFolderId === folder.id
     const isAddingSubfolder = newSubfolderParentId === folder.id
     const isMovingThis = movingFolderId === folder.id
+    const siblingIdx = siblings.findIndex(s => s.id === folder.id)
+    const canMoveUp = siblingIdx > 0
+    const canMoveDown = siblingIdx < siblings.length - 1
+    const reorder = (delta: -1 | 1) => {
+      const newSiblings = [...siblings]
+      const idx = siblingIdx
+      ;[newSiblings[idx], newSiblings[idx + delta]] = [newSiblings[idx + delta], newSiblings[idx]]
+      onReorderFolders(newSiblings.map(s => s.id))
+    }
 
     return (
       <div key={folder.id}>
@@ -1053,6 +1063,14 @@ export function Library({
                 <span className="truncate">{folder.name}</span>
                 <span className={`text-[10px] shrink-0 ml-auto ${count > 0 ? 'text-stone-400' : 'text-stone-300'}`}>({count})</span>
               </button>
+              {canMoveUp && <button onClick={() => reorder(-1)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0" title="Move up">
+                <ArrowUp className="w-3 h-3" />
+              </button>}
+              {canMoveDown && <button onClick={() => reorder(1)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0" title="Move down">
+                <ArrowDown className="w-3 h-3" />
+              </button>}
               <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
                 className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 shrink-0" title="Add subfolder">
                 <FolderPlus className="w-3 h-3" />
@@ -1097,7 +1115,7 @@ export function Library({
             <button onClick={() => setNewSubfolderParentId(null)} className="p-1 text-stone-400 hover:bg-stone-100 rounded"><X className="w-3.5 h-3.5" /></button>
           </div>
         )}
-        {isExpanded && childrenByParent[folder.id]?.map(child => renderFolderRow(child, depth + 1))}
+        {isExpanded && (() => { const ch = childrenByParent[folder.id] ?? []; return ch.map(child => renderFolderRow(child, depth + 1, ch)) })()}
       </div>
     )
   }
@@ -1133,7 +1151,7 @@ export function Library({
           <LibraryIcon className="w-3.5 h-3.5" /> All
         </button>
         <div className="overflow-y-auto flex flex-col gap-0.5">
-          {rootFolders.map(f => renderFolderRow(f, 0))}
+          {rootFolders.map(f => renderFolderRow(f, 0, rootFolders))}
         </div>
       </div>
 
