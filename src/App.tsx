@@ -265,6 +265,12 @@ export default function App() {
       if (u) {
         library.loadAll()
         resources.loadResources(config.subject)
+      } else {
+        // Clear API keys from localStorage on logout so the next user
+        // doesn't see a previous user's keys.
+        localStorage.removeItem('igcse_tools_api_keys')
+        localStorage.removeItem('igcse_tools_provider')
+        localStorage.removeItem('igcse_tools_custom_model')
       }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
