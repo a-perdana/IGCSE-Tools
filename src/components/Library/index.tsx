@@ -851,6 +851,7 @@ export function Library({
   const [newSubfolderParentId, setNewSubfolderParentId] = useState<string | null>(null)
   const [newSubfolderName, setNewSubfolderName] = useState('')
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
@@ -1123,40 +1124,54 @@ export function Library({
   return (
     <div className="flex h-full overflow-hidden">
       {/* Folder Sidebar */}
-      <div className="w-56 border-r border-stone-200 p-3 flex flex-col gap-2">
-        <div className="flex gap-1">
-          <input
-            value={newFolderName}
-            onChange={e => setNewFolderName(e.target.value)}
-            placeholder="New folder..."
-            className="flex-1 text-xs px-2 py-1 border border-stone-300 rounded"
-            onKeyDown={e => {
-              if (e.key === 'Enter' && newFolderName.trim()) {
-                onCreateFolder(newFolderName.trim())
-                setNewFolderName('')
-              }
-            }}
-          />
+      <div className={`${sidebarOpen ? 'w-64' : 'w-8'} shrink-0 border-r border-stone-200 flex flex-col transition-all duration-200`}>
+        {/* Sidebar header — always visible */}
+        <div className="flex items-center gap-1 px-2 pt-2 pb-1">
           <button
-            onClick={() => { if (newFolderName.trim()) { onCreateFolder(newFolderName.trim()); setNewFolderName('') } }}
-            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+            onClick={() => setSidebarOpen(v => !v)}
+            className="p-1 text-stone-400 hover:text-stone-600 rounded hover:bg-stone-100 shrink-0"
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
           >
-            <Plus className="w-4 h-4" />
+            {sidebarOpen ? <ChevronDown className="w-3.5 h-3.5 -rotate-90" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
+          {sidebarOpen && (
+            <>
+              <input
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                placeholder="New folder..."
+                className="flex-1 text-xs px-2 py-1 border border-stone-300 rounded min-w-0"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newFolderName.trim()) {
+                    onCreateFolder(newFolderName.trim())
+                    setNewFolderName('')
+                  }
+                }}
+              />
+              <button
+                onClick={() => { if (newFolderName.trim()) { onCreateFolder(newFolderName.trim()); setNewFolderName('') } }}
+                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
-        <button
-          onClick={() => onSelectFolder(undefined)}
-          className={`text-left text-xs px-2 py-1.5 rounded flex items-center gap-1 ${selectedFolderId === undefined ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}
-        >
-          <LibraryIcon className="w-3.5 h-3.5" /> All
-        </button>
-        <div className="overflow-y-auto flex flex-col gap-0.5">
-          {rootFolders.map(f => renderFolderRow(f, 0, rootFolders))}
-        </div>
+        {sidebarOpen && (
+          <div className="flex flex-col gap-0.5 px-2 pb-2 overflow-y-auto flex-1">
+            <button
+              onClick={() => onSelectFolder(undefined)}
+              className={`text-left text-xs px-2 py-1.5 rounded flex items-center gap-1 ${selectedFolderId === undefined ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}
+            >
+              <LibraryIcon className="w-3.5 h-3.5" /> All
+            </button>
+            {rootFolders.map(f => renderFolderRow(f, 0, rootFolders))}
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Tab switcher + subject filter */}
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
           <button
