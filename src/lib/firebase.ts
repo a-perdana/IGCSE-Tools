@@ -751,9 +751,7 @@ export const importExamViewQuestions = async (
       // Skip questions with no usable text — Firestore rules require text.size() > 0
       if (!q.text.trim()) continue
 
-      const docId = btoa(`${uid}|${safeSource}|${q.sourceId}`)
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-      const qRef = doc(db, 'questions', docId)
+      const qRef = doc(collection(db, 'questions'))
 
       // Build diagram field if question has exactly one image
       let diagram: Record<string, unknown> | undefined
@@ -791,7 +789,7 @@ export const importExamViewQuestions = async (
     }
 
     await batch.commit()
-    saved += slice.length
+    saved += slice.filter(q => q.text.trim()).length
     onProgress?.(saved, questions.length)
   }
 
