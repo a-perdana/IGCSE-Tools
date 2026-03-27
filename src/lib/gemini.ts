@@ -2087,6 +2087,28 @@ function safeJsonParse(text: string) {
   return parseJsonWithRecovery(text || "{}", "Gemini");
 }
 
+/** Fetch an image URL and return base64 + mimeType for Gemini inlineData. */
+async function fetchImageAsBase64Util(url: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const mimeType = blob.type || 'image/png'
+    return new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string
+        const base64 = dataUrl.split(',')[1]
+        resolve(base64 ? { data: base64, mimeType } : null)
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 function getGeminiUsage(
   response: any,
 ): { inputTokens: number; outputTokens: number } | null {
@@ -2293,4 +2315,113 @@ Return ONLY a valid JSON array with this schema (no markdown, no explanation):
     assessmentObjective: (['AO1', 'AO2', 'AO3'].includes(q.assessmentObjective) ? q.assessmentObjective : 'AO1') as ParsedPdfQuestion['assessmentObjective'],
   }))
   return arr
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export interface GenerateFromDiagramConfig {
+  subject: string
+  topic: string
+  type: 'mcq' | 'short_answer' | 'structured'
+  difficulty: 1 | 2 | 3          // 1=easy 2=medium 3=hard
+  marks: number
+  assessmentObjective: 'AO1' | 'AO2' | 'AO3'
+}
+
+export interface GeneratedDiagramQuestion {
+  text: string
+  markScheme: string
+  marks: number
+  type: 'mcq' | 'short_answer' | 'structured'
+  options?: string[]
+  commandWord: string
+  topic: string
+  assessmentObjective: 'AO1' | 'AO2' | 'AO3'
+  difficultyStars: 1 | 2 | 3
+  syllabusObjective: string
+}
+
+/**
+ * Generate a single Cambridge IGCSE exam question grounded in a specific diagram.
+ * The diagram image URL is fetched and sent to Gemini vision.
+ */
+export async function generateQuestionFromDiagram(
+  imageURL: string,
+  config: GenerateFromDiagramConfig,
+  apiKey: string,
+  model = 'gemini-2.5-flash',
+): Promise<GeneratedDiagramQuestion> {
+  const ai = getAI(apiKey)
+
+  const imgB64 = await fetchImageAsBase64Util(imageURL)
+  if (!imgB64) throw new Error('Could not fetch diagram image. Check your connection.')
+
+  const difficultyLabel = config.difficulty === 1 ? 'easy (straightforward recall/application)' : config.difficulty === 2 ? 'medium (requires some reasoning)' : 'hard (multi-step or higher-order thinking)'
+  const typeGuide = config.type === 'mcq'
+    ? 'Write a 4-option MCQ. The "options" array must have exactly 4 strings (A, B, C, D — without the letter prefix, just the answer text). The correct answer goes in markScheme as the letter only (e.g. "B").'
+    : config.type === 'structured'
+    ? 'Write a structured question with sub-parts (a), (b), (c). Combine all sub-parts into the "text" field. The markScheme should address each sub-part.'
+    : 'Write a short-answer question requiring a written response.'
+
+  const prompt = `You are a Cambridge IGCSE ${config.subject} examiner writing a NEW exam question based on the diagram shown.
+
+The diagram is provided as an image — study it carefully before writing the question.
+
+Requirements:
+- Subject: ${config.subject}
+- Topic hint: ${config.topic || 'infer from diagram'}
+- Question type: ${config.type} — ${typeGuide}
+- Difficulty: ${difficultyLabel}
+- Marks: ${config.marks}
+- Assessment objective: ${config.assessmentObjective}
+
+Rules:
+- The question MUST refer directly to the diagram (use "the diagram", "the graph", "shape A", etc.)
+- All math in LaTeX: inline $...$, display $$...$$
+- commandWord: Cambridge command word (State, Describe, Explain, Calculate, Show, Find, etc.)
+- syllabusObjective: "REF – statement" format, e.g. "C2.3 – Describe transformations"
+- markScheme: concise marking points matching the marks value
+
+Return ONLY a single JSON object (no markdown, no explanation):
+{
+  "text": "question text referencing the diagram, math in $...$",
+  "markScheme": "mark scheme with marking points",
+  "marks": ${config.marks},
+  "type": "${config.type}",
+  "options": [],
+  "commandWord": "Describe",
+  "topic": "${config.topic || config.subject}",
+  "assessmentObjective": "${config.assessmentObjective}",
+  "difficultyStars": ${config.difficulty},
+  "syllabusObjective": "REF – statement"
+}`
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: imgB64.mimeType, data: imgB64.data } },
+        { text: prompt },
+      ],
+    }],
+    config: { temperature: 0.7 },
+  })
+
+  const raw = safeJsonParse(response.text ?? '{}')
+  if (!raw || typeof raw !== 'object') throw new Error('Gemini returned invalid JSON')
+
+  const q = raw as Record<string, unknown>
+  return {
+    text: String(q.text ?? ''),
+    markScheme: String(q.markScheme ?? ''),
+    marks: typeof q.marks === 'number' ? q.marks : config.marks,
+    type: (['mcq', 'short_answer', 'structured'].includes(String(q.type)) ? q.type : config.type) as GeneratedDiagramQuestion['type'],
+    options: config.type === 'mcq' && Array.isArray(q.options) && q.options.length >= 4 ? (q.options as unknown[]).slice(0, 4).map(String) : undefined,
+    commandWord: String(q.commandWord ?? 'Describe'),
+    topic: String(q.topic ?? config.topic ?? config.subject),
+    assessmentObjective: (['AO1', 'AO2', 'AO3'].includes(String(q.assessmentObjective)) ? q.assessmentObjective : config.assessmentObjective) as GeneratedDiagramQuestion['assessmentObjective'],
+    difficultyStars: ([1, 2, 3].includes(Number(q.difficultyStars)) ? Number(q.difficultyStars) : config.difficulty) as 1 | 2 | 3,
+    syllabusObjective: String(q.syllabusObjective ?? ''),
+  }
 }
