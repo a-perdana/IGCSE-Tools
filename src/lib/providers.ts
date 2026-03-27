@@ -21,8 +21,7 @@ export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
     { id: 'gemini-3.1-pro-preview',         label: 'Gemini 3.1 Pro Preview',            hint: 'Latest generation Pro model. Highest capability — slower and more expensive.' },
     { id: 'gemini-3.1-flash-lite-preview',  label: 'Gemini 3.1 Flash Lite Preview',     hint: 'Latest generation budget model. Fast and affordable.' },
     { id: 'gemini-2.0-flash',               label: 'Gemini 2.0 Flash',                  hint: 'Stable and reliable. Good fallback if 2.5 is unavailable.' },
-    { id: 'gemini-flash-latest',            label: 'Gemini Flash Latest',               hint: 'Always points to the latest Flash model.' },
-    { id: 'gemini-pro-latest',              label: 'Gemini Pro Latest',                 hint: 'Always points to the latest Pro model.' },
+    { id: 'gemini-2.0-flash-lite',          label: 'Gemini 2.0 Flash Lite',             hint: 'Fastest and cheapest 2.0 model.' },
   ],
   openai: [
     { id: 'gpt-4o-mini',  label: 'GPT-4o Mini',  hint: 'Fast and cost-effective. Good for straightforward assessments.' },
