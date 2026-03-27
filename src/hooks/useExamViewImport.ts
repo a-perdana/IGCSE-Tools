@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { parseExamViewZip, type ExamViewParseResult } from '../lib/examview'
 import { importExamViewQuestions } from '../lib/firebase'
 
@@ -26,34 +26,47 @@ const INITIAL: ImportState = {
 
 export function useExamViewImport() {
   const [state, setState] = useState<ImportState>(INITIAL)
+  // Store parsed result in a ref so confirmImport can read it without stale closure
+  const parsedRef = useRef<ExamViewParseResult | null>(null)
+  const subjectRef = useRef<string>('')
+  const folderRef = useRef<string | undefined>(undefined)
 
   const pickAndParse = useCallback(async (file: File) => {
     setState(s => ({ ...s, stage: 'parsing', error: null }))
     try {
       const parsed = await parseExamViewZip(file)
+      parsedRef.current = parsed
       setState(s => ({ ...s, stage: 'preview', parsed }))
     } catch (e) {
       setState(s => ({ ...s, stage: 'error', error: String(e) }))
     }
   }, [])
 
-  const setSubject = useCallback((subject: string) =>
-    setState(s => ({ ...s, subject })), [])
+  const setSubject = useCallback((subject: string) => {
+    subjectRef.current = subject
+    setState(s => ({ ...s, subject }))
+  }, [])
 
-  const setFolderId = useCallback((folderId: string | undefined) =>
-    setState(s => ({ ...s, folderId })), [])
+  const setFolderId = useCallback((folderId: string | undefined) => {
+    folderRef.current = folderId
+    setState(s => ({ ...s, folderId }))
+  }, [])
 
   const confirmImport = useCallback(async () => {
-    setState(s => {
-      if (!s.parsed || !s.subject) return s
-      return { ...s, stage: 'importing', progress: { done: 0, total: s.parsed.questions.length } }
-    })
+    const parsed = parsedRef.current
+    const subject = subjectRef.current
+    const folderId = folderRef.current
 
-    setState(prev => {
-      const { parsed, subject, folderId } = prev
-      if (!parsed || !subject) return prev
+    if (!parsed || !subject) return
 
-      importExamViewQuestions(
+    setState(s => ({
+      ...s,
+      stage: 'importing',
+      progress: { done: 0, total: parsed.questions.length },
+    }))
+
+    try {
+      const savedCount = await importExamViewQuestions(
         parsed.questions,
         parsed.allImages,
         parsed.sourceFile,
@@ -64,14 +77,18 @@ export function useExamViewImport() {
             setState(s => ({ ...s, progress: { done, total } })),
         },
       )
-        .then(savedCount => setState(s => ({ ...s, stage: 'done', savedCount })))
-        .catch(e => setState(s => ({ ...s, stage: 'error', error: String(e) })))
-
-      return prev
-    })
+      setState(s => ({ ...s, stage: 'done', savedCount }))
+    } catch (e) {
+      setState(s => ({ ...s, stage: 'error', error: String(e) }))
+    }
   }, [])
 
-  const reset = useCallback(() => setState(INITIAL), [])
+  const reset = useCallback(() => {
+    parsedRef.current = null
+    subjectRef.current = ''
+    folderRef.current = undefined
+    setState(INITIAL)
+  }, [])
 
   return { state, pickAndParse, setSubject, setFolderId, confirmImport, reset }
 }

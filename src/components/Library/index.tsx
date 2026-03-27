@@ -730,11 +730,15 @@ function ExamViewImportModal({ onClose, onDone, folders }: {
           {stage === 'importing' && (
             <div className="flex flex-col items-center gap-3 py-4">
               <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
-              <p className="text-sm text-stone-700">Importing… {progress.done} / {progress.total}</p>
+              <p className="text-sm text-stone-700">
+                {progress.done === 0
+                  ? 'Uploading images…'
+                  : `Saving questions… ${progress.done} / ${progress.total}`}
+              </p>
               <div className="w-full bg-stone-200 rounded-full h-1.5">
                 <div
                   className="bg-emerald-500 h-1.5 rounded-full transition-all"
-                  style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }}
+                  style={{ width: `${progress.total && progress.done > 0 ? (progress.done / progress.total) * 100 : 0}%` }}
                 />
               </div>
             </div>

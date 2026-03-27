@@ -716,13 +716,19 @@ export const importExamViewQuestions = async (
   // Sanitise source filename for use in Storage paths
   const safeSource = sourceFile.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.zip$/i, '')
 
-  // Upload images once, keyed by filename
+  // Upload images in parallel (5 concurrent) — much faster than sequential
   const imageURLs = new Map<string, string>()
-  for (const [filename, img] of imageMap) {
-    const path = `examview/${uid}/${safeSource}/${filename}`
-    const ref = storageRef(storage, path)
-    await uploadBytes(ref, img.data, { contentType: img.mimeType })
-    imageURLs.set(filename, await getDownloadURL(ref))
+  const imageEntries = Array.from(imageMap.entries())
+  const UPLOAD_CONCURRENCY = 5
+  for (let i = 0; i < imageEntries.length; i += UPLOAD_CONCURRENCY) {
+    await Promise.all(
+      imageEntries.slice(i, i + UPLOAD_CONCURRENCY).map(async ([filename, img]) => {
+        const path = `examview/${uid}/${safeSource}/${filename}`
+        const ref = storageRef(storage, path)
+        await uploadBytes(ref, img.data, { contentType: img.mimeType })
+        imageURLs.set(filename, await getDownloadURL(ref))
+      })
+    )
   }
 
   // Save questions in batches of 400 (Firestore writeBatch limit)
