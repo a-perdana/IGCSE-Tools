@@ -152,6 +152,9 @@ function usePdfRenderer() {
 function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const [dragging, setDragging] = useState(false)
   const [rect, setRect] = useState<CropRect | null>(null)
+  // Keep a ref in sync so cropToBlob always reads the latest value
+  // regardless of closure staleness
+  const rectRef = useRef<CropRect | null>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
 
   const getCanvasPos = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -168,6 +171,7 @@ function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) 
     if (e.button !== 0) return
     const pos = getCanvasPos(e)
     startRef.current = pos
+    rectRef.current = null
     setRect(null)
     setDragging(true)
   }
@@ -175,30 +179,37 @@ function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) 
   const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dragging || !startRef.current) return
     const pos = getCanvasPos(e)
-    setRect({
+    const r = {
       x: Math.min(startRef.current.x, pos.x),
       y: Math.min(startRef.current.y, pos.y),
       w: Math.abs(pos.x - startRef.current.x),
       h: Math.abs(pos.y - startRef.current.y),
-    })
+    }
+    rectRef.current = r
+    setRect(r)
   }
 
   const onMouseUp = () => setDragging(false)
 
+  // Reads from rectRef — always has the latest value, no stale closure issue
   const cropToBlob = useCallback((): Promise<Blob | null> => {
     return new Promise(resolve => {
       const canvas = canvasRef.current
-      if (!canvas || !rect || rect.w < 4 || rect.h < 4) return resolve(null)
+      const r = rectRef.current
+      if (!canvas || !r || r.w < 4 || r.h < 4) return resolve(null)
       const offscreen = document.createElement('canvas')
-      offscreen.width = rect.w
-      offscreen.height = rect.h
+      offscreen.width = r.w
+      offscreen.height = r.h
       const ctx = offscreen.getContext('2d')!
-      ctx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h)
+      ctx.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
       offscreen.toBlob(b => resolve(b), 'image/png')
     })
-  }, [canvasRef, rect])
+  }, [canvasRef])
 
-  const clearRect = () => setRect(null)
+  const clearRect = () => {
+    rectRef.current = null
+    setRect(null)
+  }
 
   return { rect, dragging, onMouseDown, onMouseMove, onMouseUp, cropToBlob, clearRect }
 }
@@ -487,9 +498,11 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
   const pdf = usePdfRenderer()
   const crop = useCropSelection(pdf.canvasRef)
 
-  // Capture crop on mouse up if rect is large enough
+  // Capture crop on mouse up — only adds to crop list in Diagrams mode
   const handleMouseUp = useCallback(async () => {
     crop.onMouseUp()
+    // In Questions/Selection mode the crop stays visible for Extract button — don't auto-add
+    if (mode !== 'diagrams') return
     const blob = await crop.cropToBlob()
     if (!blob) return
     const dataUrl = URL.createObjectURL(blob)
@@ -506,11 +519,10 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
     }
     setCrops(prev => [...prev, newItem])
     crop.clearRect()
-    // scroll crop panel to bottom
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }, 50)
-  }, [crop, pdf.pageNum])
+  }, [crop, pdf.pageNum, mode])
 
   const handlePdfFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith('.pdf')) return
