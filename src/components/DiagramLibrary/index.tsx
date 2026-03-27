@@ -284,6 +284,7 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
   const [subjectFilter, setSubjectFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<DiagramCategory | ''>('')
   const [search, setSearch] = useState('')
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
   const [page, setPage] = useState(1)
   const [editEntry, setEditEntry] = useState<DiagramPoolEntry | null>(null)
   const [showUpload, setShowUpload] = useState(false)
@@ -320,8 +321,14 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
         e.imageName.toLowerCase().includes(s)
       )
     }
+    // Sort by createdAt — entries without a timestamp (null) go to top when newest
+    list = [...list].sort((a, b) => {
+      const aMs = a.createdAt?.toMillis?.() ?? Infinity
+      const bMs = b.createdAt?.toMillis?.() ?? Infinity
+      return sortOrder === 'newest' ? bMs - aMs : aMs - bMs
+    })
     return list
-  }, [entries, categoryFilter, search])
+  }, [entries, categoryFilter, search, sortOrder])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE))
   const safePage = Math.min(page, totalPages)
@@ -374,6 +381,15 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
         </select>
 
         <span className="text-xs text-stone-400 ml-auto">{filtered.length} diagrams</span>
+
+        {/* Sort order */}
+        <button
+          onClick={() => { setSortOrder(s => s === 'newest' ? 'oldest' : 'newest'); setPage(1) }}
+          className="text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600 hover:border-emerald-400 whitespace-nowrap"
+          title="Toggle sort order"
+        >
+          {sortOrder === 'newest' ? '↓ Newest' : '↑ Oldest'}
+        </button>
 
         <button
           onClick={() => setShowPdfExtractor(true)}

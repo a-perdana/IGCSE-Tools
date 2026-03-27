@@ -424,33 +424,38 @@ export default function App() {
     subject: string,
     meta: { description: string; category: DiagramCategory; topics: string[]; tags: string[] }
   ) => {
-    const { imageURL, storagePath, imageName } = await uploadDiagramImage(file, subject)
-    const id = await addDiagramPoolEntry({
-      imageName,
-      storagePath,
-      imageURL,
-      subject,
-      topics: meta.topics,
-      tags: meta.tags,
-      description: meta.description,
-      category: meta.category,
-      usedInQuestionUids: [],
-    })
-    const newEntry: DiagramPoolEntry = {
-      id,
-      imageName,
-      storagePath,
-      imageURL,
-      subject,
-      topics: meta.topics,
-      tags: meta.tags,
-      description: meta.description,
-      category: meta.category,
-      usedInQuestionUids: [],
-      createdAt: null as any,
+    try {
+      const { imageURL, storagePath, imageName } = await uploadDiagramImage(file, subject)
+      const id = await addDiagramPoolEntry({
+        imageName,
+        storagePath,
+        imageURL,
+        subject,
+        topics: meta.topics,
+        tags: meta.tags,
+        description: meta.description,
+        category: meta.category,
+        usedInQuestionUids: [],
+      })
+      const newEntry: DiagramPoolEntry = {
+        id,
+        imageName,
+        storagePath,
+        imageURL,
+        subject,
+        topics: meta.topics,
+        tags: meta.tags,
+        description: meta.description,
+        category: meta.category,
+        usedInQuestionUids: [],
+        createdAt: null as any,
+      }
+      setDiagramPool(prev => [newEntry, ...prev])
+      notify('Diagram uploaded successfully', 'success')
+    } catch (e: unknown) {
+      notify(`Upload failed: ${(e as Error).message ?? 'Unknown error'}`, 'error')
+      throw e // re-throw so PdfDiagramExtractor can show per-item error
     }
-    setDiagramPool(prev => [newEntry, ...prev])
-    notify('Diagram uploaded successfully', 'success')
   }, [notify])
 
   const handleCreateAssessmentFromQuestions = useCallback((questions: Question[]) => {
