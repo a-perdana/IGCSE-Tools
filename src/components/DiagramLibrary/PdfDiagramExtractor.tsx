@@ -672,19 +672,25 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
     let errorCount = 0
     for (const item of crops) {
       try {
+        console.log('[PDF Extractor] uploading blob size:', item.blob?.size, 'type:', item.blob?.type, 'subject:', item.subject)
+        if (!item.blob || item.blob.size === 0) {
+          throw new Error('Blob is empty — crop may have been lost')
+        }
         const filename = `diagram_p${item.pageNum}_${Date.now()}.png`
         const file = blobToFile(item.blob, filename)
+        console.log('[PDF Extractor] File object:', file.name, file.size, file.type)
         await onUpload(file, item.subject, {
           description: item.description,
           category: item.category,
           topics: item.topics.split(',').map(t => t.trim()).filter(Boolean),
           tags: item.tags.split(',').map(t => t.trim()).filter(Boolean),
         })
+        console.log('[PDF Extractor] upload success for', item.id)
         setUploadProgress(p => ({ ...p, [item.id]: 'done' }))
       } catch (e: unknown) {
         errorCount++
         setUploadProgress(p => ({ ...p, [item.id]: 'error' }))
-        console.error('Diagram upload failed:', e)
+        console.error('[PDF Extractor] Diagram upload failed:', e)
       }
     }
     setUploading(false)
