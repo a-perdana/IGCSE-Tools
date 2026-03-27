@@ -699,7 +699,7 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
     }
   }
 
-  const allDone = crops.length > 0 && Object.values(uploadProgress).every(s => s === 'done')
+  const allDone = crops.length > 0 && crops.every(c => uploadProgress[c.id] === 'done')
 
   // Compute overlay rect in CSS % for the crop indicator overlay
   const overlayStyle = (() => {
