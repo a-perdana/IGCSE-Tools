@@ -471,12 +471,19 @@ function QuestionPreviewModal({
 }: {
   question: Question
   onClose: () => void
-  onUpdate?: (updates: { text: string; answer: string; markScheme: string }) => void
+  onUpdate?: (updates: { text: string; answer: string; markScheme: string; syllabusObjective: string; topic: string; difficulty: string }) => void
   onRegenerateDiagram?: (q: Question) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
-  const [draft, setDraft] = useState({ text: question.text, answer: question.answer, markScheme: question.markScheme })
+  const [draft, setDraft] = useState({
+    text: question.text,
+    answer: question.answer,
+    markScheme: question.markScheme,
+    syllabusObjective: (question as any).syllabusObjective ?? '',
+    topic: question.topic ?? '',
+    difficulty: question.difficulty ?? '',
+  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -509,13 +516,13 @@ function QuestionPreviewModal({
               editing ? (
                 <>
                   <button
-                    onClick={() => { onUpdate(draft); setEditing(false) }}
+                    onClick={() => { onUpdate({ text: draft.text, answer: draft.answer, markScheme: draft.markScheme, syllabusObjective: draft.syllabusObjective, topic: draft.topic, difficulty: draft.difficulty }); setEditing(false) }}
                     className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
                   >
                     Apply
                   </button>
                   <button
-                    onClick={() => { setDraft({ text: question.text, answer: question.answer, markScheme: question.markScheme }); setEditing(false) }}
+                    onClick={() => { setDraft({ text: question.text, answer: question.answer, markScheme: question.markScheme, syllabusObjective: (question as any).syllabusObjective ?? '', topic: question.topic ?? '', difficulty: question.difficulty ?? '' }); setEditing(false) }}
                     className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200"
                   >
                     Cancel
@@ -551,6 +558,25 @@ function QuestionPreviewModal({
                 <label className="text-xs font-medium text-stone-600 mb-1 block">Mark Scheme</label>
                 <RichEditor value={draft.markScheme} onChange={v => setDraft(d => ({ ...d, markScheme: v }))} minRows={6} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-stone-600 mb-1 block">Topic</label>
+                  <input className="w-full text-xs border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-400" value={draft.topic} onChange={e => setDraft(d => ({ ...d, topic: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-stone-600 mb-1 block">Difficulty</label>
+                  <select className="w-full text-xs border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-400" value={draft.difficulty} onChange={e => setDraft(d => ({ ...d, difficulty: e.target.value }))}>
+                    <option value="">—</option>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Learning Objective</label>
+                <input className="w-full text-xs border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-400" value={draft.syllabusObjective} onChange={e => setDraft(d => ({ ...d, syllabusObjective: e.target.value }))} />
+              </div>
             </div>
           ) : (
             <>
@@ -568,6 +594,13 @@ function QuestionPreviewModal({
                       </div>
                     )
                   })}
+                </div>
+              )}
+              {((question as any).syllabusObjective || question.topic || question.difficulty) && (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500 border-t border-stone-100 pt-3">
+                  {question.topic && <span><span className="font-semibold">Topic:</span> {question.topic}</span>}
+                  {question.difficulty && <span><span className="font-semibold">Difficulty:</span> {question.difficulty}</span>}
+                  {(question as any).syllabusObjective && <span><span className="font-semibold">Objective:</span> {(question as any).syllabusObjective}</span>}
                 </div>
               )}
               <div className="mt-4 pt-4 border-t border-stone-100">
