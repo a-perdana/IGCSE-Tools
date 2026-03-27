@@ -14,10 +14,15 @@ export interface ProviderModel {
 
 export const PROVIDER_MODELS: Record<AIProvider, ProviderModel[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash (Recommended)', hint: 'Best balance of speed and quality. Ideal for most assessments.' },
-    { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro (Best Quality)',   hint: 'Highest quality output. Slower and more expensive — use for Challenging difficulty.' },
-    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (Budget)',  hint: 'Fastest and cheapest. Good for simple recall or MCQ-only assessments.' },
-    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)',       hint: 'Experimental next-gen model. May produce inconsistent results.' },
+    { id: 'gemini-2.5-flash',               label: 'Gemini 2.5 Flash ★ Recommended',   hint: 'Best balance of speed and quality. Ideal for most assessments.' },
+    { id: 'gemini-2.5-pro',                 label: 'Gemini 2.5 Pro',                    hint: 'Highest quality output. Slower — use for Challenging difficulty.' },
+    { id: 'gemini-2.5-flash-lite',          label: 'Gemini 2.5 Flash Lite',             hint: 'Fastest and cheapest. Good for simple recall or MCQ-only assessments.' },
+    { id: 'gemini-3-flash-preview',         label: 'Gemini 3 Flash Preview',            hint: 'Next-gen preview model. Fast and capable, may produce inconsistent results.' },
+    { id: 'gemini-3.1-pro-preview',         label: 'Gemini 3.1 Pro Preview',            hint: 'Latest generation Pro model. Highest capability — slower and more expensive.' },
+    { id: 'gemini-3.1-flash-lite-preview',  label: 'Gemini 3.1 Flash Lite Preview',     hint: 'Latest generation budget model. Fast and affordable.' },
+    { id: 'gemini-2.0-flash',               label: 'Gemini 2.0 Flash',                  hint: 'Stable and reliable. Good fallback if 2.5 is unavailable.' },
+    { id: 'gemini-flash-latest',            label: 'Gemini Flash Latest',               hint: 'Always points to the latest Flash model.' },
+    { id: 'gemini-pro-latest',              label: 'Gemini Pro Latest',                 hint: 'Always points to the latest Pro model.' },
   ],
   openai: [
     { id: 'gpt-4o-mini',  label: 'GPT-4o Mini',  hint: 'Fast and cost-effective. Good for straightforward assessments.' },
