@@ -7,7 +7,7 @@ import 'katex/dist/katex.min.css'
 import {
   X, Upload, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Crop,
   Check, Loader2, Trash2, FileText, Image as ImageIcon, Sparkles,
-  Eye, EyeOff, AlertCircle,
+  Eye, EyeOff, AlertCircle, Maximize2, Minimize2,
 } from 'lucide-react'
 import type { DiagramCategory, QuestionItem } from '../../lib/types'
 import { IGCSE_SUBJECTS, parsePdfQuestionsWithGemini, type ParsedPdfQuestion } from '../../lib/gemini'
@@ -113,6 +113,11 @@ function usePdfRenderer() {
   }, [])
 
   const loadPdf = useCallback(async (file: File) => {
+    // Cancel any in-flight render before touching pdfDoc state
+    if (renderTaskRef.current) {
+      try { renderTaskRef.current.cancel() } catch {}
+      renderTaskRef.current = null
+    }
     setPdfLoading(true)
     setPdfError(null)
     setPdfDoc(null)
@@ -121,18 +126,18 @@ function usePdfRenderer() {
     try {
       const arrayBuffer = await file.arrayBuffer()
       const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-      setPdfDoc(doc)
       setTotalPages(doc.numPages)
-      await renderPage(doc, 1, ZOOM_LEVELS[DEFAULT_ZOOM_INDEX])
+      setPdfDoc(doc)
+      // renderPage is triggered by the useEffect below when pdfDoc changes
     } catch (e) {
       setPdfError('Failed to load PDF. Make sure it is a valid PDF file.')
       console.error(e)
     } finally {
       setPdfLoading(false)
     }
-  }, [renderPage])
+  }, [])
 
-  // re-render when page or zoom changes
+  // Single source of truth: render whenever doc/page/scale changes
   useEffect(() => {
     if (pdfDoc) renderPage(pdfDoc, pageNum, scale)
   }, [pdfDoc, pageNum, scale, renderPage])
@@ -478,6 +483,7 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
   const pdfFileRef = useRef<HTMLInputElement>(null)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [mode, setMode] = useState<ExtractorMode>('diagrams')
+  const [fullscreen, setFullscreen] = useState(false)
 
   // ── Diagram mode state ───────────────────────────────────────────────────
   const [crops, setCrops] = useState<CroppedItem[]>([])
@@ -693,7 +699,11 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
   return (
     <div className="fixed inset-0 z-50 flex items-stretch bg-black/50" onClick={onClose}>
       <div
-        className="relative flex flex-col w-full max-w-6xl mx-auto my-4 bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className={`relative flex flex-col bg-white shadow-2xl overflow-hidden transition-all duration-200 ${
+          fullscreen
+            ? 'w-full h-full rounded-none'
+            : 'w-full max-w-6xl mx-auto my-4 rounded-2xl'
+        }`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -766,6 +776,13 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
               </button>
             )}
 
+            <button
+              onClick={() => setFullscreen(f => !f)}
+              className="p-1.5 text-stone-400 hover:text-stone-600 rounded-lg hover:bg-stone-100"
+              title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
             <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-600 rounded-lg hover:bg-stone-100">
               <X className="w-4 h-4" />
             </button>
