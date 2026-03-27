@@ -2,8 +2,11 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     // User-uploaded PDFs (past papers, syllabuses)
+    // Any authenticated user can read (shared resources are accessed by other users).
+    // Only the owner can write/delete.
     match /resources/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     // Diagram pool — imported by Admin SDK or uploaded via the Diagram Library UI.
