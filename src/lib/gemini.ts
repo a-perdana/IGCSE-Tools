@@ -481,12 +481,16 @@ export async function withRetry<T>(
       }
 
       // Preserve original error message if available
+      console.error('[gemini] unhandled error', { status, err })
       const originalMsg =
         err?.message && !err.message.startsWith("{") ? err.message : null;
+      const jsonMsg = err?.message?.startsWith("{")
+        ? (() => { try { return JSON.parse(err.message)?.[0]?.error?.message ?? null } catch { return null } })()
+        : null
       throw {
         type: "unknown",
         retryable: false,
-        message: originalMsg ?? "Generation failed. Please try again.",
+        message: originalMsg ?? jsonMsg ?? `Generation failed (status ${status ?? 'unknown'}). Please try again.`,
       } satisfies GeminiError;
     }
   }
