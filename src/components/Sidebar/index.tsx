@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react'
 import {
   BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
-  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ExternalLink, FileText, BookOpen, File, Globe, Lock, Image,
+  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ChevronLeft, ExternalLink, FileText, BookOpen, File, Globe, Lock, Image,
 } from 'lucide-react'
 import type { GenerationConfig, Resource, ResourceType } from '../../lib/types'
 import type { AIProvider } from '../../lib/providers'
@@ -80,6 +80,7 @@ export function Sidebar({
   diagramPoolCount,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(true)
   const [showApiKey, setShowApiKey] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
@@ -143,15 +144,36 @@ export function Sidebar({
   const currentApiKey = apiKeys[provider] ?? ''
 
   return (
-    <div className="w-96 border-r border-stone-200 bg-stone-50 flex flex-col h-full overflow-y-auto">
-      <div className="p-4 border-b border-stone-200">
-        <h2 className="font-semibold text-stone-800 text-sm flex items-center gap-2">
-          <BrainCircuit className="w-4 h-4 text-emerald-600" />
-          Assessment Designer
-        </h2>
+    <div className={`border-r border-stone-200 bg-stone-50 flex flex-col h-full transition-all duration-200 ${open ? 'w-96' : 'w-12'} shrink-0`}>
+      <div className={`p-4 border-b border-stone-200 flex items-center ${open ? 'justify-between' : 'justify-center'}`}>
+        {open && (
+          <h2 className="font-semibold text-stone-800 text-sm flex items-center gap-2">
+            <BrainCircuit className="w-4 h-4 text-emerald-600" />
+            Assessment Designer
+          </h2>
+        )}
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="p-1 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-200 transition-colors shrink-0"
+          title={open ? 'Hide panel' : 'Show Assessment Designer'}
+        >
+          {open ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
       </div>
 
-      <div className="p-4 flex flex-col gap-3 flex-1">
+      {!open && (
+        <div className="flex flex-col items-center gap-3 pt-4">
+          <button
+            onClick={() => setOpen(true)}
+            className="p-2 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+            title="Assessment Designer"
+          >
+            <BrainCircuit className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {open && <div className="p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
         {/* Provider */}
         <div>
           <label className="text-xs font-medium text-stone-600 mb-1 block">AI Provider</label>
@@ -581,7 +603,7 @@ export function Sidebar({
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
