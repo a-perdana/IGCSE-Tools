@@ -206,9 +206,14 @@ export async function parseExamViewZip(file: File): Promise<ExamViewParseResult>
       ''
     const { text: questionText, imageFilenames: qImages } = parseFormattedText(qtextRaw)
 
-    // Options (MCQ only)
+    // Options (MCQ only) — collect image filenames separately for upload;
+    // inject a placeholder token into option text so firebase.ts can replace it with a real URL.
     const optionsParsed = type === 'mcq' ? parseOptions(itemXml) : []
-    const options = optionsParsed.map(o => o.text)
+    const options = optionsParsed.map(o =>
+      o.imageFilenames.length > 0
+        ? `[examview-img:${o.imageFilenames[0]}]${o.text ? ' ' + o.text : ''}`
+        : o.text
+    )
     const optionImages = optionsParsed.flatMap(o => o.imageFilenames)
 
     // Correct answer

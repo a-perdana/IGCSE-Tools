@@ -770,7 +770,12 @@ export const importExamViewQuestions = async (
         commandWord: q.type === 'mcq' ? 'Choose' : 'Write',
         type: q.type,
         hasDiagram: q.hasDiagram && !!diagram,
-        options: q.options.length > 0 ? q.options : undefined,
+        options: q.options.length > 0
+          ? q.options.map(o => o.replace(/\[examview-img:([^\]]+)\]/g, (_, fn) => {
+              const url = imageURLs.get(fn)
+              return url ? `![](${url})` : ''
+            }).trim())
+          : undefined,
         syllabusObjective: q.syllabusObjective || undefined,
         difficultyStars: q.difficultyStars,
         topic: q.topic || 'Uncategorised',
