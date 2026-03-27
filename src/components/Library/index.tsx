@@ -1041,7 +1041,7 @@ export function Library({
 
     return (
       <div key={folder.id}>
-        <div className="flex items-center gap-0.5 group" style={{ paddingLeft: depth * 12 }}>
+        <div className="flex items-center gap-0.5 group relative" style={{ paddingLeft: depth * 12 }}>
           <button
             onClick={() => setExpandedFolders(prev => { const n = new Set(prev); n.has(folder.id) ? n.delete(folder.id) : n.add(folder.id); return n })}
             className={`shrink-0 w-4 h-4 flex items-center justify-center text-stone-400 ${hasChildren ? '' : 'invisible pointer-events-none'}`}
@@ -1059,35 +1059,37 @@ export function Library({
           ) : (
             <>
               <button onClick={() => onSelectFolder(folder.id)}
-                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 ${isSelected ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}>
+                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 pr-16 ${isSelected ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}>
                 <FolderIcon className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{folder.name}</span>
                 <span className={`text-[10px] shrink-0 ml-auto ${count > 0 ? 'text-stone-400' : 'text-stone-300'}`}>({count})</span>
               </button>
-              {canMoveUp && <button onClick={() => reorder(-1)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0" title="Move up">
-                <ArrowUp className="w-3 h-3" />
-              </button>}
-              {canMoveDown && <button onClick={() => reorder(1)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0" title="Move down">
-                <ArrowDown className="w-3 h-3" />
-              </button>}
-              <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 shrink-0" title="Add subfolder">
-                <FolderPlus className="w-3 h-3" />
-              </button>
-              <button onClick={() => setMovingFolderId(isMovingThis ? null : folder.id)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-violet-600 shrink-0" title="Move to…">
-                <FilePlus className="w-3 h-3" />
-              </button>
-              <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0">
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name })}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 shrink-0">
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <div className="absolute right-0 flex items-center gap-0 opacity-0 group-hover:opacity-100 bg-white/90 rounded pl-0.5">
+                {canMoveUp && <button onClick={() => reorder(-1)}
+                  className="p-0.5 text-stone-400 hover:text-stone-600" title="Move up">
+                  <ArrowUp className="w-3 h-3" />
+                </button>}
+                {canMoveDown && <button onClick={() => reorder(1)}
+                  className="p-0.5 text-stone-400 hover:text-stone-600" title="Move down">
+                  <ArrowDown className="w-3 h-3" />
+                </button>}
+                <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
+                  className="p-0.5 text-stone-400 hover:text-emerald-600" title="Add subfolder">
+                  <FolderPlus className="w-3 h-3" />
+                </button>
+                <button onClick={() => setMovingFolderId(isMovingThis ? null : folder.id)}
+                  className="p-0.5 text-stone-400 hover:text-violet-600" title="Move to…">
+                  <FilePlus className="w-3 h-3" />
+                </button>
+                <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
+                  className="p-0.5 text-stone-400 hover:text-stone-600">
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name })}
+                  className="p-0.5 text-red-400 hover:text-red-600">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -1124,7 +1126,7 @@ export function Library({
   return (
     <div className="flex h-full overflow-hidden">
       {/* Folder Sidebar */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-8'} shrink-0 border-r border-stone-200 flex flex-col transition-all duration-200`}>
+      <div className={`${sidebarOpen ? 'w-80' : 'w-8'} shrink-0 border-r border-stone-200 flex flex-col transition-all duration-200`}>
         {/* Sidebar header — always visible */}
         <div className="flex items-center gap-1 px-2 pt-2 pb-1">
           <button
