@@ -3,11 +3,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid, Upload } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { DiagramRenderer } from '../DiagramRenderer'
+import { useExamViewImport } from '../../hooks/useExamViewImport'
 
 interface Props {
   assessments: Assessment[]
@@ -611,6 +612,157 @@ function ConfirmDeleteModal({ target, onConfirm, onCancel, isDeleting }: {
   )
 }
 
+// ─── ExamView Import Modal ────────────────────────────────────────────────────
+
+const KNOWN_SUBJECTS = [
+  'Mathematics', 'Biology', 'Chemistry', 'Physics',
+  'English', 'History', 'Geography', 'Computer Science',
+  'Economics', 'Business Studies', 'Accounting',
+  'Pre-Algebra', 'Algebra', 'Geometry', 'Other',
+]
+
+function ExamViewImportModal({ onClose, onDone, folders }: {
+  onClose: () => void
+  onDone: () => void
+  folders: Folder[]
+}) {
+  const { state, pickAndParse, setSubject, setFolderId, confirmImport, reset } = useExamViewImport()
+  const fileRef = React.useRef<HTMLInputElement>(null)
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) pickAndParse(file)
+  }
+
+  function handleClose() { reset(); onClose() }
+
+  function handleDone() { reset(); onDone() }
+
+  const { stage, parsed, subject, folderId, progress, error, savedCount } = state
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={handleClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4 text-emerald-600" />
+            <span className="text-sm font-semibold text-stone-800">Import from ExamView</span>
+          </div>
+          <button onClick={handleClose} className="text-stone-400 hover:text-stone-600"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-4">
+
+          {/* idle / parsing */}
+          {(stage === 'idle' || stage === 'parsing') && (
+            <>
+              <p className="text-xs text-stone-500">
+                Export from ExamView via <strong>File → Export → Blackboard 7.1-9.0</strong>, then upload the ZIP here.
+              </p>
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={stage === 'parsing'}
+                className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-stone-300 rounded-lg text-sm text-stone-500 hover:border-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+              >
+                {stage === 'parsing'
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Parsing…</>
+                  : <><Upload className="w-4 h-4" /> Choose Blackboard ZIP file</>
+                }
+              </button>
+              <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={handleFile} />
+            </>
+          )}
+
+          {/* preview */}
+          {stage === 'preview' && parsed && (
+            <>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-xs text-emerald-800">
+                <p className="font-semibold">{parsed.sourceFile}</p>
+                <p className="mt-0.5">
+                  {parsed.questions.length} questions
+                  ({parsed.questions.filter(q => q.type === 'mcq').length} MCQ,{' '}
+                  {parsed.questions.filter(q => q.type === 'short_answer').length} Short Answer)
+                  · {parsed.allImages.size} images
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-medium text-stone-700">Subject <span className="text-red-500">*</span></label>
+                <select
+                  value={subject}
+                  onChange={e => setSubject(e.target.value)}
+                  className="text-sm border border-stone-300 rounded-lg px-3 py-1.5 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                >
+                  <option value="">Select subject…</option>
+                  {KNOWN_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {folders.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-medium text-stone-700">Save to folder (optional)</label>
+                  <select
+                    value={folderId ?? ''}
+                    onChange={e => setFolderId(e.target.value || undefined)}
+                    className="text-sm border border-stone-300 rounded-lg px-3 py-1.5 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                  >
+                    <option value="">No folder</option>
+                    {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={handleClose} className="px-3 py-1.5 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200">Cancel</button>
+                <button
+                  onClick={confirmImport}
+                  disabled={!subject}
+                  className="px-4 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Import {parsed.questions.length} questions
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* importing */}
+          {stage === 'importing' && (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
+              <p className="text-sm text-stone-700">Importing… {progress.done} / {progress.total}</p>
+              <div className="w-full bg-stone-200 rounded-full h-1.5">
+                <div
+                  className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                  style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* done */}
+          {stage === 'done' && (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <Check className="w-8 h-8 text-emerald-600" />
+              <p className="text-sm font-semibold text-stone-800">{savedCount} questions imported!</p>
+              <p className="text-xs text-stone-500">They are now in your Questions library.</p>
+              <button onClick={handleDone} className="mt-1 px-4 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700">Done</button>
+            </div>
+          )}
+
+          {/* error */}
+          {stage === 'error' && (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>
+              <button onClick={reset} className="text-xs text-stone-600 underline">Try again</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Library({
   assessments, questions, folders, loading,
   onSelect, onDeleteAssessment, onMoveAssessment, onRenameAssessment,
@@ -654,6 +806,7 @@ export function Library({
   const [importedSelectedIds, setImportedSelectedIds] = useState<Set<string>>(new Set())
   const [previewImported, setPreviewImported] = useState<ImportedQuestion | null>(null)
   const importedLoaded = importedQuestions.length > 0 || importedLoading
+  const [showExamViewImport, setShowExamViewImport] = useState(false)
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   useEffect(() => {
@@ -909,13 +1062,22 @@ export function Library({
             </>
           )}
           {bankView === 'questions' && (
-            <input
-              type="text"
-              value={questionSearch}
-              onChange={e => { setQuestionSearch(e.target.value); setQuestionPage(1) }}
-              placeholder="Search by code or text…"
-              className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-            />
+            <>
+              <input
+                type="text"
+                value={questionSearch}
+                onChange={e => { setQuestionSearch(e.target.value); setQuestionPage(1) }}
+                placeholder="Search by code or text…"
+                className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              <button
+                onClick={() => setShowExamViewImport(true)}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+                title="Import questions from ExamView"
+              >
+                <Upload className="w-3.5 h-3.5" /> Import ExamView
+              </button>
+            </>
           )}
           {bankView === 'pastpapers' && (
             <>
@@ -1441,6 +1603,15 @@ export function Library({
           )}
         </div>
       </div>
+
+      {/* ExamView Import Modal */}
+      {showExamViewImport && (
+        <ExamViewImportModal
+          folders={folders}
+          onClose={() => setShowExamViewImport(false)}
+          onDone={() => { setShowExamViewImport(false); setBankView('questions') }}
+        />
+      )}
 
       {/* Confirm Delete Modal */}
       {confirmDelete && (

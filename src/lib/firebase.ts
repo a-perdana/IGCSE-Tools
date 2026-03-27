@@ -21,6 +21,7 @@ import {
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry } from './types'
+import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
@@ -686,4 +687,94 @@ export const deleteUserData = async (): Promise<void> => {
 
   // Finally delete the Auth account
   await user.delete()
+}
+
+// ─── ExamView import ──────────────────────────────────────────────────────────
+
+export interface ExamViewImportOptions {
+  subject: string
+  folderId?: string
+  /** Called after each question is saved, with count of completed so far */
+  onProgress?: (done: number, total: number) => void
+}
+
+/**
+ * Imports a batch of ExamView questions into Firestore.
+ * Images are uploaded to Firebase Storage under examview/{uid}/{sourceFile}/{filename}.
+ * Returns the number of questions saved.
+ */
+export const importExamViewQuestions = async (
+  questions: ExamViewQuestion[],
+  imageMap: Map<string, ExamViewImage>,
+  sourceFile: string,
+  opts: ExamViewImportOptions,
+): Promise<number> => {
+  if (!auth.currentUser) throw new Error('User must be authenticated to import')
+  const uid = auth.currentUser.uid
+  const { subject, folderId, onProgress } = opts
+
+  // Sanitise source filename for use in Storage paths
+  const safeSource = sourceFile.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.zip$/i, '')
+
+  // Upload images once, keyed by filename
+  const imageURLs = new Map<string, string>()
+  for (const [filename, img] of imageMap) {
+    const path = `examview/${uid}/${safeSource}/${filename}`
+    const ref = storageRef(storage, path)
+    await uploadBytes(ref, img.data, { contentType: img.mimeType })
+    imageURLs.set(filename, await getDownloadURL(ref))
+  }
+
+  // Save questions in batches of 400 (Firestore writeBatch limit)
+  const BATCH_SIZE = 400
+  let saved = 0
+
+  for (let i = 0; i < questions.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    const slice = questions.slice(i, i + BATCH_SIZE)
+
+    for (const q of slice) {
+      const qRef = doc(collection(db, 'questions'))
+
+      // Build diagram field if question has exactly one image
+      let diagram: Record<string, unknown> | undefined
+      if (q.hasDiagram && q.images.length > 0) {
+        const url = imageURLs.get(q.images[0].filename)
+        if (url) {
+          diagram = { diagramType: 'raster', url, maxWidth: 480 }
+        }
+      }
+
+      const payload: Record<string, unknown> = {
+        text: q.text,
+        answer: q.correctAnswer,
+        markScheme: '',
+        marks: 1,
+        commandWord: q.type === 'mcq' ? 'Choose' : 'Write',
+        type: q.type,
+        hasDiagram: q.hasDiagram && !!diagram,
+        options: q.options.length > 0 ? q.options : undefined,
+        syllabusObjective: q.syllabusObjective || undefined,
+        difficultyStars: q.difficultyStars,
+        topic: q.topic,
+        subject,
+        difficulty: q.difficultyStars === 1 ? 'Easy' : q.difficultyStars === 3 ? 'Hard' : 'Medium',
+        userId: uid,
+        createdAt: serverTimestamp(),
+        source: 'examview',
+        sourceId: q.sourceId,
+        sourceFile: safeSource,
+      }
+      if (diagram) payload.diagram = diagram
+      if (folderId) payload.folderId = folderId
+
+      batch.set(qRef, stripUndefined(payload))
+    }
+
+    await batch.commit()
+    saved += slice.length
+    onProgress?.(saved, questions.length)
+  }
+
+  return saved
 }
