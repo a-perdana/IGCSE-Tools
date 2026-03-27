@@ -830,6 +830,7 @@ export const importExamViewQuestions = async (
         createdAt: serverTimestamp(),
         source: 'examview',
         sourceId: q.sourceId,
+        keywords: q.keywords.length > 0 ? q.keywords : undefined,
         sourceFile: safeSource,
       }
       if (diagram) payload.diagram = diagram
