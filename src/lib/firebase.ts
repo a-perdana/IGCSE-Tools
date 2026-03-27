@@ -725,11 +725,26 @@ export const importExamViewQuestions = async (
       imageEntries.slice(i, i + UPLOAD_CONCURRENCY).map(async ([filename, img]) => {
         const path = `examview/${uid}/${safeSource}/${filename}`
         const ref = storageRef(storage, path)
-        await uploadBytes(ref, img.data, { contentType: img.mimeType })
-        imageURLs.set(filename, await getDownloadURL(ref))
+        try {
+          // File already exists — reuse its URL
+          imageURLs.set(filename, await getDownloadURL(ref))
+        } catch {
+          // File doesn't exist yet — upload it
+          await uploadBytes(ref, img.data, { contentType: img.mimeType })
+          imageURLs.set(filename, await getDownloadURL(ref))
+        }
       })
     )
   }
+
+  // Fetch already-imported sourceIds for this sourceFile to skip duplicates
+  const existingSnap = await getDocs(
+    query(collection(db, 'questions'),
+      where('userId', '==', uid),
+      where('sourceFile', '==', safeSource),
+    )
+  )
+  const existingSourceIds = new Set(existingSnap.docs.map(d => d.data().sourceId as string))
 
   // Save questions in batches of 400 (Firestore writeBatch limit)
   const BATCH_SIZE = 400
@@ -740,6 +755,10 @@ export const importExamViewQuestions = async (
     const slice = questions.slice(i, i + BATCH_SIZE)
 
     for (const q of slice) {
+      // Skip empty text or already-imported questions
+      if (!q.text.trim()) continue
+      if (existingSourceIds.has(q.sourceId)) continue
+
       const qRef = doc(collection(db, 'questions'))
 
       // Build diagram field if question has exactly one image
@@ -752,7 +771,7 @@ export const importExamViewQuestions = async (
       }
 
       const payload: Record<string, unknown> = {
-        text: q.text,
+        text: q.text.slice(0, 9900),
         answer: q.correctAnswer,
         markScheme: '',
         marks: 1,

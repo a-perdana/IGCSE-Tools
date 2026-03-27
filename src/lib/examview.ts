@@ -198,10 +198,11 @@ export async function parseExamViewZip(file: File): Promise<ExamViewParseResult>
     const type: ExamViewQuestionType =
       qTypeRaw === 'Multiple Choice' ? 'mcq' : 'short_answer'
 
-    // Question text
-    const qtextRaw = itemXml.match(
-      /class="QUESTION_BLOCK"[\s\S]*?<mat_formattedtext[^>]*>([\s\S]*?)<\/mat_formattedtext>/
-    )?.[1] ?? ''
+    // Question text — try QUESTION_BLOCK first, fall back to first mat_formattedtext
+    const qtextRaw =
+      itemXml.match(/class="QUESTION_BLOCK"[\s\S]*?<mat_formattedtext[^>]*>([\s\S]*?)<\/mat_formattedtext>/)?.[1] ??
+      itemXml.match(/<mat_formattedtext[^>]*>([\s\S]*?)<\/mat_formattedtext>/)?.[1] ??
+      ''
     const { text: questionText, imageFilenames: qImages } = parseFormattedText(qtextRaw)
 
     // Options (MCQ only)
