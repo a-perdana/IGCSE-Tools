@@ -762,7 +762,7 @@ export const importExamViewQuestions = async (
         options: q.options.length > 0 ? q.options : undefined,
         syllabusObjective: q.syllabusObjective || undefined,
         difficultyStars: q.difficultyStars,
-        topic: q.topic,
+        topic: q.topic || 'Uncategorised',
         subject,
         difficulty: q.difficultyStars === 1 ? 'Easy' : q.difficultyStars === 3 ? 'Hard' : 'Medium',
         userId: uid,
