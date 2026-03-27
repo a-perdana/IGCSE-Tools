@@ -520,7 +520,7 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
 
       {showPdfExtractor && (
         <PdfDiagramExtractor
-          onClose={() => { setShowPdfExtractor(false); onLoad(subjectFilter || undefined) }}
+          onClose={() => setShowPdfExtractor(false)}
           onUpload={onUpload}
           onSaveQuestions={onSaveQuestions}
           geminiApiKey={geminiApiKey}
