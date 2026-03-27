@@ -49,6 +49,7 @@ interface Props {
   ) => Promise<void>
   onSaveQuestions?: (questions: Omit<QuestionItem, 'id'>[], subject: string, topic: string) => Promise<void>
   geminiApiKey?: string
+  defaultSubject?: string
 }
 
 const CATEGORY_LABELS: Record<DiagramCategory, string> = {
@@ -157,8 +158,9 @@ function usePdfRenderer() {
 function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const [dragging, setDragging] = useState(false)
   const [rect, setRect] = useState<CropRect | null>(null)
-  // Keep a ref in sync so cropToBlob always reads the latest value
+  // Keep refs in sync so callbacks always read the latest values
   // regardless of closure staleness
+  const draggingRef = useRef(false)
   const rectRef = useRef<CropRect | null>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
 
@@ -177,12 +179,13 @@ function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) 
     const pos = getCanvasPos(e)
     startRef.current = pos
     rectRef.current = null
+    draggingRef.current = true
     setRect(null)
     setDragging(true)
   }
 
   const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!dragging || !startRef.current) return
+    if (!draggingRef.current || !startRef.current) return
     const pos = getCanvasPos(e)
     const r = {
       x: Math.min(startRef.current.x, pos.x),
@@ -194,7 +197,7 @@ function useCropSelection(canvasRef: React.RefObject<HTMLCanvasElement | null>) 
     setRect(r)
   }
 
-  const onMouseUp = () => setDragging(false)
+  const onMouseUp = () => { draggingRef.current = false; setDragging(false) }
 
   // Reads from rectRef — always has the latest value, no stale closure issue
   const cropToBlob = useCallback((): Promise<Blob | null> => {
@@ -479,7 +482,8 @@ function ParsedQuestionCard({
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, geminiApiKey }: Props) {
+export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, geminiApiKey, defaultSubject }: Props) {
+  const initialSubject = (defaultSubject && IGCSE_SUBJECTS.includes(defaultSubject)) ? defaultSubject : IGCSE_SUBJECTS[0]
   const pdfFileRef = useRef<HTMLInputElement>(null)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [mode, setMode] = useState<ExtractorMode>('diagrams')
@@ -489,9 +493,10 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
   const [crops, setCrops] = useState<CroppedItem[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<Record<string, 'pending' | 'done' | 'error'>>({})
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   // ── Question mode state ──────────────────────────────────────────────────
-  const [qSubject, setQSubject] = useState(IGCSE_SUBJECTS[0])
+  const [qSubject, setQSubject] = useState(initialSubject)
   const [parsedQuestions, setParsedQuestions] = useState<ParsedPdfQuestion[]>([])
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -517,7 +522,7 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
       dataUrl,
       blob,
       pageNum: pdf.pageNum,
-      subject: IGCSE_SUBJECTS[0],
+      subject: initialSubject,
       description: '',
       category: 'diagram',
       topics: '',
@@ -581,7 +586,7 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
           return
         }
       }
-      const results = await parsePdfQuestionsWithGemini(dataUrl, qSubject, geminiApiKey)
+      const results = await parsePdfQuestionsWithGemini(dataUrl, qSubject, geminiApiKey, undefined, parseSource === 'crop')
       if (results.length === 0) {
         setParseError('No questions found on this page. Try a different page or select a specific area.')
       } else {
@@ -659,10 +664,12 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
   const handleUploadAll = async () => {
     if (crops.length === 0) return
     setUploading(true)
+    setUploadError(null)
     const progress: Record<string, 'pending' | 'done' | 'error'> = {}
     crops.forEach(c => { progress[c.id] = 'pending' })
     setUploadProgress({ ...progress })
 
+    let errorCount = 0
     for (const item of crops) {
       try {
         const filename = `diagram_p${item.pageNum}_${Date.now()}.png`
@@ -674,11 +681,16 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
           tags: item.tags.split(',').map(t => t.trim()).filter(Boolean),
         })
         setUploadProgress(p => ({ ...p, [item.id]: 'done' }))
-      } catch {
+      } catch (e: unknown) {
+        errorCount++
         setUploadProgress(p => ({ ...p, [item.id]: 'error' }))
+        console.error('Diagram upload failed:', e)
       }
     }
     setUploading(false)
+    if (errorCount > 0) {
+      setUploadError(`${errorCount} diagram${errorCount > 1 ? 's' : ''} failed to upload. Check your connection and try again.`)
+    }
   }
 
   const allDone = crops.length > 0 && Object.values(uploadProgress).every(s => s === 'done')
@@ -936,6 +948,12 @@ export function PdfDiagramExtractor({ onClose, onUpload, onSaveQuestions, gemini
                     >Clear all</button>
                   )}
                 </div>
+                {uploadError && (
+                  <div className="mx-3 mt-2 flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
                   {crops.length === 0 && (
                     <div className="flex flex-col items-center justify-center gap-2 py-16 text-stone-300">

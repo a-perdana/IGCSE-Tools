@@ -186,7 +186,7 @@ service cloud.firestore {
     // Written by Admin SDK; readable by all authenticated users.
     match /diagramPool/{dId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow write: if isAuthenticated();
     }
   }
 }

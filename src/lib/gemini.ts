@@ -2218,21 +2218,29 @@ export interface ParsedPdfQuestion {
  * Send a PNG (as base64 data URL) to Gemini vision and extract all exam
  * questions found on the page/crop. Math symbols are returned as LaTeX
  * inline ($...$) or display ($$...$$) delimiters.
+ *
+ * @param isCrop - true when image is a user-drawn selection crop (not full page).
+ *                 Tells Gemini to extract ONLY what is fully visible in the image.
  */
 export async function parsePdfQuestionsWithGemini(
   imageDataUrl: string,   // "data:image/png;base64,..."
   subject: string,
   apiKey: string,
   model = 'gemini-2.5-flash',
+  isCrop = false,
 ): Promise<ParsedPdfQuestion[]> {
   const ai = getAI(apiKey)
 
   // Strip the data URL prefix to get raw base64
   const base64 = imageDataUrl.replace(/^data:image\/\w+;base64,/, '')
 
+  const scopeInstruction = isCrop
+    ? `This image is a user-selected crop of an exam page. Extract ONLY the question(s) that appear FULLY or SUBSTANTIALLY within this cropped region. Do NOT infer or include questions from outside the visible area. If a question appears only partially cut off at the edge, still include it — but never add questions that are not present in the image at all.`
+    : `Carefully read the exam page image and extract ALL exam questions visible.`
+
   const prompt = `You are an expert Cambridge IGCSE ${subject} examiner.
 
-Carefully read the exam page image and extract ALL exam questions visible.
+${scopeInstruction}
 
 Rules:
 - Represent ALL mathematical symbols, formulae, and expressions using LaTeX delimiters:

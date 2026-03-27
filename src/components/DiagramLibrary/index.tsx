@@ -508,6 +508,7 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
           onUpload={onUpload}
           onSaveQuestions={onSaveQuestions}
           geminiApiKey={geminiApiKey}
+          defaultSubject={subjectFilter || undefined}
         />
       )}
 
