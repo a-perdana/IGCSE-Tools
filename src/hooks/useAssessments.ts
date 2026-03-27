@@ -18,6 +18,7 @@ import {
   getFolders,
   deleteFolder as fbDeleteFolder,
   updateFolder as fbUpdateFolder,
+  moveFolderParent as fbMoveFolderParent,
   togglePublicAssessment as fbTogglePublicAssessment,
   togglePublicQuestion as fbTogglePublicQuestion,
 } from "../lib/firebase";
@@ -234,6 +235,20 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     [notify],
   );
 
+  const moveFolder = useCallback(
+    async (id: string, parentId: string | null) => {
+      const original = folders.find((x) => x.id === id);
+      setFolders((f) => f.map((x) => (x.id === id ? { ...x, parentId: parentId ?? undefined } : x)));
+      try {
+        await fbMoveFolderParent(id, parentId);
+      } catch (e) {
+        setFolders((f) => f.map((x) => (x.id === id ? (original ?? x) : x)));
+        notify("Failed to move folder", "error");
+      }
+    },
+    [notify, folders],
+  );
+
   const renameFolder = useCallback(
     async (id: string, name: string) => {
       const original = folders.find((x) => x.id === id);
@@ -339,6 +354,7 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     createFolder,
     deleteFolder,
     renameFolder,
+    moveFolder,
     togglePublicAssessment,
     togglePublicQuestion,
     toggleAssessmentLike,

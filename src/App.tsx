@@ -777,6 +777,7 @@ export default function App() {
             onCreateFolder={library.createFolder}
             onDeleteFolder={library.deleteFolder}
             onRenameFolder={library.renameFolder}
+            onMoveFolder={library.moveFolder}
             selectedFolderId={selectedFolderId}
             onSelectFolder={setSelectedFolderId}
             onCreateAssessmentFromQuestions={handleCreateAssessmentFromQuestions}

@@ -25,6 +25,7 @@ interface Props {
   onCreateFolder: (name: string, parentId?: string) => void
   onDeleteFolder: (id: string) => void
   onRenameFolder: (id: string, name: string) => void
+  onMoveFolder: (id: string, parentId: string | null) => void
   selectedFolderId: string | null | undefined
   onSelectFolder: (id: string | null | undefined) => void
   onCreateAssessmentFromQuestions: (questions: Question[]) => void
@@ -805,7 +806,7 @@ export function Library({
   assessments, questions, folders, loading,
   onSelect, onDeleteAssessment, onMoveAssessment, onRenameAssessment,
   onDeleteQuestion, onMoveQuestion,
-  onCreateFolder, onDeleteFolder, onRenameFolder,
+  onCreateFolder, onDeleteFolder, onRenameFolder, onMoveFolder,
   selectedFolderId, onSelectFolder,
   onCreateAssessmentFromQuestions, onAddQuestionsToAssessment,
   onUpdateQuestion,
@@ -848,6 +849,7 @@ export function Library({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [newSubfolderParentId, setNewSubfolderParentId] = useState<string | null>(null)
   const [newSubfolderName, setNewSubfolderName] = useState('')
+  const [movingFolderId, setMovingFolderId] = useState<string | null>(null)
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
@@ -1024,6 +1026,7 @@ export function Library({
     const count = itemCountByFolder[folder.id] ?? 0
     const isRenamingThis = renamingFolderId === folder.id
     const isAddingSubfolder = newSubfolderParentId === folder.id
+    const isMovingThis = movingFolderId === folder.id
 
     return (
       <div key={folder.id}>
@@ -1054,6 +1057,10 @@ export function Library({
                 className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 shrink-0" title="Add subfolder">
                 <FolderPlus className="w-3 h-3" />
               </button>
+              <button onClick={() => setMovingFolderId(isMovingThis ? null : folder.id)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-violet-600 shrink-0" title="Move to…">
+                <FilePlus className="w-3 h-3" />
+              </button>
               <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
                 className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0">
                 <Pencil className="w-3 h-3" />
@@ -1065,6 +1072,21 @@ export function Library({
             </>
           )}
         </div>
+        {isMovingThis && (
+          <div className="flex gap-1 mt-1 pr-1" style={{ paddingLeft: depth * 12 + 20 }}>
+            <select
+              className="flex-1 text-xs border border-stone-300 rounded px-2 py-1"
+              defaultValue={folder.parentId ?? ''}
+              onChange={e => { onMoveFolder(folder.id, e.target.value || null); setMovingFolderId(null) }}
+            >
+              <option value="">— Root (no parent) —</option>
+              {flattenedFolderOptions.filter(opt => opt.id !== folder.id).map(opt => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
+            <button onClick={() => setMovingFolderId(null)} className="p-1 text-stone-400 hover:bg-stone-100 rounded"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
         {isAddingSubfolder && (
           <div className="flex gap-1 mt-1 pr-1" style={{ paddingLeft: (depth + 1) * 12 + 16 }}>
             <input value={newSubfolderName} onChange={e => setNewSubfolderName(e.target.value)}

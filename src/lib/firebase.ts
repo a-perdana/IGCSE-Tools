@@ -256,6 +256,15 @@ export const updateFolder = async (id: string, name: string) => {
   }
 };
 
+export const moveFolderParent = async (id: string, parentId: string | null) => {
+  const docRef = doc(db, 'folders', id);
+  try {
+    return await updateDoc(docRef, { parentId: parentId ?? deleteField() });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `folders/${id}`);
+  }
+};
+
 export const saveResource = async (
   file: { name: string; data: ArrayBuffer; mimeType: string },
   subject: string,
