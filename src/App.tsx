@@ -608,7 +608,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      <Sidebar
+      {view === 'main' && <Sidebar
         config={config}
         onConfigChange={patch => setConfig(c => ({
           ...c,
@@ -677,7 +677,7 @@ export default function App() {
         apiSettingsOpen={apiSettingsOpen}
         onApiSettingsOpenChange={setApiSettingsOpen}
         diagramPoolCount={diagramPool.length}
-      />
+      />}
 
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {/* Top nav */}
