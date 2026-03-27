@@ -1,14 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react'
 import {
   BrainCircuit, Calculator, Loader2, Database, Trash2, Plus,
-  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ChevronLeft, ExternalLink, FileText, BookOpen, File, Globe, Lock, Image,
+  KeyRound, Eye, EyeOff, ChevronDown, ChevronRight, ChevronLeft, ExternalLink, FileText, BookOpen, File, Globe, Lock, Image, CheckCircle, XCircle,
 } from 'lucide-react'
 import type { GenerationConfig, Resource, ResourceType } from '../../lib/types'
 import type { AIProvider } from '../../lib/providers'
 import {
   IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS,
 } from '../../lib/gemini'
-import { estimateCostIDR, MODEL_PRICING } from '../../lib/pricing'
+import { estimateCostUSD, MODEL_PRICING, formatCost, type CostCurrency } from '../../lib/pricing'
 import {
   PROVIDER_LABELS, PROVIDER_MODELS, API_KEY_PLACEHOLDERS, API_KEY_URLS, API_USAGE_URLS,
   DEFAULT_AUDIT_MODELS, FREE_TIER_INFO,
@@ -88,6 +88,39 @@ export function Sidebar({
   const [uploadStarted, setUploadStarted] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [currency, setCurrency] = useState<CostCurrency>(() =>
+    (localStorage.getItem('igcse_cost_currency') as CostCurrency) ?? 'IDR'
+  )
+  const toggleCurrency = () => {
+    const next: CostCurrency = currency === 'IDR' ? 'USD' : 'IDR'
+    setCurrency(next)
+    localStorage.setItem('igcse_cost_currency', next)
+  }
+  const [keyTestState, setKeyTestState] = useState<Record<string, 'idle' | 'testing' | 'ok' | 'fail'>>({})
+
+  const testApiKey = useCallback(async (p: string, key: string) => {
+    if (!key) return
+    setKeyTestState(s => ({ ...s, [p]: 'testing' }))
+    try {
+      let ok = false
+      if (p === 'gemini') {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, { method: 'GET' })
+        ok = res.ok
+      } else if (p === 'openai') {
+        const res = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` } })
+        ok = res.ok
+      } else if (p === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
+        })
+        ok = res.ok
+      }
+      setKeyTestState(s => ({ ...s, [p]: ok ? 'ok' : 'fail' }))
+    } catch {
+      setKeyTestState(s => ({ ...s, [p]: 'fail' }))
+    }
+    setTimeout(() => setKeyTestState(s => ({ ...s, [p]: 'idle' })), 4000)
+  }, [])
 
   // Clear pending file once upload finishes
   useEffect(() => {
@@ -127,19 +160,19 @@ export function Sidebar({
   // Cost estimate: generation + audit (Gemini only) + critiqueForDifficulty (Challenging)
   const genInputTokens = Math.round(1500 + (syllabusContext.length / 4))
   const genOutputTokens = config.count * 600
-  let totalCostIDR = estimateCostIDR(effectiveModel, genInputTokens, genOutputTokens)
+  let totalCostUSD = estimateCostUSD(effectiveModel, genInputTokens, genOutputTokens)
   // Gemini audit call uses pro model
   if (provider === 'gemini') {
     const auditModel = DEFAULT_AUDIT_MODELS['gemini']
     const auditInputTokens = 800 + config.count * 400
     const auditOutputTokens = config.count * 600
-    totalCostIDR += estimateCostIDR(auditModel, auditInputTokens, auditOutputTokens)
+    totalCostUSD += estimateCostUSD(auditModel, auditInputTokens, auditOutputTokens)
   }
   // Challenging adds a critiqueForDifficulty call (all providers)
   if (config.difficulty === 'Challenging') {
     const critiqueInputTokens = 800 + config.count * 400
     const critiqueOutputTokens = config.count * 600
-    totalCostIDR += estimateCostIDR(effectiveModel, critiqueInputTokens, critiqueOutputTokens)
+    totalCostUSD += estimateCostUSD(effectiveModel, critiqueInputTokens, critiqueOutputTokens)
   }
   const currentApiKey = apiKeys[provider] ?? ''
 
@@ -320,13 +353,16 @@ export function Sidebar({
 
         {/* Cost estimate */}
         <div className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1.5">
-          Estimated cost: ~Rp {totalCostIDR.toLocaleString('id-ID')}
+          <span>Estimated cost: ~{formatCost(totalCostUSD, currency)}</span>
           {!MODEL_PRICING_HAS(effectiveModel) && <span className="text-stone-400"> (estimate)</span>}
           {provider === 'gemini' && <span className="text-stone-400"> (gen + audit)</span>}
           {config.difficulty === 'Challenging' && <span className="text-stone-400"> (+ critique)</span>}
+          <button onClick={toggleCurrency} className="ml-1.5 text-[10px] text-stone-400 hover:text-stone-600 underline underline-offset-2">
+            {currency === 'IDR' ? 'USD' : 'IDR'}
+          </button>
           {lastRunCostIDR && (
             <span className="block mt-0.5 text-emerald-700">
-              Last actual run: Rp {lastRunCostIDR.toLocaleString('id-ID')}
+              Last actual run: {formatCost(lastRunCostIDR / 15800, currency)}
             </span>
           )}
         </div>
@@ -579,12 +615,25 @@ export function Sidebar({
                           {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       )}
+                      {hasKey && (
+                        <button
+                          onClick={() => testApiKey(p, apiKeys[p] ?? '')}
+                          disabled={keyTestState[p] === 'testing'}
+                          className="px-2 text-xs border border-stone-300 rounded-lg shrink-0 text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+                          title="Test this API key"
+                        >
+                          {keyTestState[p] === 'testing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
+                           keyTestState[p] === 'ok' ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> :
+                           keyTestState[p] === 'fail' ? <XCircle className="w-3.5 h-3.5 text-red-500" /> :
+                           'Test'}
+                        </button>
+                      )}
                     </div>
+                    {keyTestState[p] === 'ok' && <p className="text-[11px] text-emerald-600 mt-0.5">✓ Key is valid</p>}
+                    {keyTestState[p] === 'fail' && <p className="text-[11px] text-red-500 mt-0.5">✗ Key rejected — check it and try again</p>}
 
                     {/* Status / guidance */}
-                    {hasKey ? (
-                      <p className="text-xs text-emerald-600 mt-0.5">✓ Using your {PROVIDER_LABELS[p]} key</p>
-                    ) : (
+                    {!hasKey && (
                       <div className="mt-1.5 bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5">
                         <p className="text-[11px] text-stone-500 mb-1">{tier.description}</p>
                         <ol className="text-[11px] text-stone-500 space-y-0.5 list-none">

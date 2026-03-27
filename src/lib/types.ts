@@ -91,7 +91,7 @@ export interface Resource {
   resourceType?: ResourceType;
   isShared?: boolean;
   geminiFileUri?: string;
-  geminiFileUploadedAt?: Timestamp;
+  geminiFileUploadedAt?: Timestamp | number;
 }
 
 export type AIProvider = 'gemini' | 'openai' | 'anthropic';

@@ -61,12 +61,18 @@ export function DiagramRenderer({ spec, onError }: { spec: TikzSpec | RasterSpec
           </div>
         )}
         {state.error && (
-          <details className="text-xs text-red-400 py-2 px-1">
-            <summary className="cursor-pointer font-semibold">Render error — click to see details</summary>
-            <p className="font-mono whitespace-pre-wrap mt-1">{state.error}</p>
-            <p className="mt-2 font-semibold text-stone-500">TikZ source:</p>
-            <pre className="font-mono text-stone-400 whitespace-pre-wrap text-[10px] mt-1 max-h-40 overflow-y-auto">{tikzSpec?.code}</pre>
-          </details>
+          <div className="py-2 px-1">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-red-500 mb-1">
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
+              Diagram failed to render
+            </div>
+            <details className="text-xs text-stone-400">
+              <summary className="cursor-pointer hover:text-stone-600">Show details</summary>
+              <p className="font-mono whitespace-pre-wrap mt-1 text-red-400">{state.error}</p>
+              <p className="mt-2 font-semibold text-stone-500">TikZ source:</p>
+              <pre className="font-mono text-stone-400 whitespace-pre-wrap text-[10px] mt-1 max-h-40 overflow-y-auto">{tikzSpec?.code}</pre>
+            </details>
+          </div>
         )}
         {state.url && (
           <img

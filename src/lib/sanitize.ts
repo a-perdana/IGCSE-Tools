@@ -98,17 +98,20 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, "id"> {
     ? q.options
         .slice(0, 4)
         .map((x: unknown) => stripOptionPrefix(String(x ?? "").trim()))
-        .filter(Boolean)
+        .filter((s: string) => s.length > 0)
     : [];
   const extractedOptions = extractMcqOptionsFromText(text);
-  const options =
+  const rawOptions =
     type === "mcq"
       ? optionsFromModel.length === 4
         ? optionsFromModel
         : extractedOptions
       : [];
+  // Enforce exactly 4 non-empty options for MCQ; downgrade to short_answer if not met
+  const options = rawOptions.length === 4 && rawOptions.every((o: string) => o.length > 0) ? rawOptions : [];
+  const effectiveType = type === "mcq" && options.length !== 4 ? "short_answer" : type;
 
-  if (type === "mcq" && options.length === 4 && !hasMcqLabelsInText(text)) {
+  if (effectiveType === "mcq" && options.length === 4 && !hasMcqLabelsInText(text)) {
     const letters = ["A", "B", "C", "D"];
     const optLines = options
       .map(
@@ -155,13 +158,13 @@ export function sanitizeQuestion(q: any): Omit<QuestionItem, "id"> {
     markScheme: fix(q.markScheme),
     marks: Number(q.marks) || 1,
     commandWord: q.commandWord ?? "",
-    type,
+    type: effectiveType,
     hasDiagram: wantsDiagram,
     ...(diagram ? { diagram } : {}),
     ...(q.diagramType ? { diagramType: q.diagramType } : {}),
     ...(q.diagramData ? { diagramData: q.diagramData } : {}),
     ...(diagramMissing ? { diagramMissing } : {}),
-    ...(type === "mcq" && options.length === 4 ? { options } : {}),
+    ...(effectiveType === "mcq" && options.length === 4 ? { options } : {}),
     ...(q.code ? { code: q.code } : {}),
     ...(q.syllabusObjective ? { syllabusObjective: q.syllabusObjective } : {}),
     ...(assessmentObjective ? { assessmentObjective } : {}),

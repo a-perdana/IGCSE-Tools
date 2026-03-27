@@ -150,9 +150,11 @@ async function buildReferences(
     knowledgeBaseResources.map(async (r) => {
       // For Gemini: try to use File API URI instead of re-uploading base64 each time
       if (provider === "gemini" && apiKey) {
-        const uriAge = r.geminiFileUploadedAt
-          ? Date.now() - r.geminiFileUploadedAt.toMillis()
-          : Infinity;
+        const uploadedAt = r.geminiFileUploadedAt
+        const uploadedAtMs = uploadedAt
+          ? typeof uploadedAt === 'number' ? uploadedAt : uploadedAt.toMillis()
+          : null
+        const uriAge = uploadedAtMs != null ? Date.now() - uploadedAtMs : Infinity;
         if (r.geminiFileUri && uriAge < GEMINI_URI_VALID_MS) {
           // Valid URI — skip base64 download entirely
           return {
@@ -161,7 +163,7 @@ async function buildReferences(
             resourceType: r.resourceType,
             name: r.name,
             geminiFileUri: r.geminiFileUri,
-            geminiFileUploadedAt: r.geminiFileUploadedAt?.toMillis(),
+            geminiFileUploadedAt: uploadedAtMs ?? undefined,
           };
         }
         // For syllabus: check text cache before downloading the file
