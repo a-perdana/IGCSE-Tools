@@ -57,7 +57,7 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
         </div>
         <p className="text-xs text-amber-700 mt-1">
           {isRateLimit
-            ? 'The shared API key has hit its per-minute or daily limit. To fix this:'
+            ? 'Your API key has hit its per-minute or daily limit. Wait a moment and try again, or:'
             : isOverloaded
             ? 'The selected model is currently overloaded. To fix this:'
             : error.message}
