@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
@@ -44,34 +44,40 @@ interface Props {
 
 const SUBJECT_COLORS: Record<string, {
   border: string; bg: string; hoverBorder: string; hoverBg: string;
-  badge: string; badgeText: string; codeBg: string; codeText: string; codeBorder: string
+  badge: string; badgeText: string; codeBg: string; codeText: string; codeBorder: string;
+  accentBar: string;
 }> = {
   Mathematics: {
-    border: 'border-blue-200', bg: 'bg-blue-50/60', hoverBorder: 'hover:border-blue-400', hoverBg: 'hover:bg-blue-50',
-    badge: 'bg-blue-100', badgeText: 'text-blue-800',
-    codeBg: 'bg-blue-100', codeText: 'text-blue-800', codeBorder: 'border-blue-300',
+    border: 'border-blue-300', bg: 'bg-blue-50', hoverBorder: 'hover:border-blue-500', hoverBg: 'hover:bg-blue-100/60',
+    badge: 'bg-blue-500', badgeText: 'text-white',
+    codeBg: 'bg-blue-100', codeText: 'text-blue-800', codeBorder: 'border-blue-400',
+    accentBar: 'bg-blue-500',
   },
   Biology: {
-    border: 'border-emerald-200', bg: 'bg-emerald-50/60', hoverBorder: 'hover:border-emerald-400', hoverBg: 'hover:bg-emerald-50',
-    badge: 'bg-emerald-100', badgeText: 'text-emerald-800',
-    codeBg: 'bg-emerald-100', codeText: 'text-emerald-700', codeBorder: 'border-emerald-300',
+    border: 'border-emerald-300', bg: 'bg-emerald-50', hoverBorder: 'hover:border-emerald-500', hoverBg: 'hover:bg-emerald-100/60',
+    badge: 'bg-emerald-500', badgeText: 'text-white',
+    codeBg: 'bg-emerald-100', codeText: 'text-emerald-800', codeBorder: 'border-emerald-400',
+    accentBar: 'bg-emerald-500',
   },
   Chemistry: {
-    border: 'border-amber-200', bg: 'bg-amber-50/60', hoverBorder: 'hover:border-amber-400', hoverBg: 'hover:bg-amber-50',
-    badge: 'bg-amber-100', badgeText: 'text-amber-800',
-    codeBg: 'bg-amber-100', codeText: 'text-amber-800', codeBorder: 'border-amber-300',
+    border: 'border-orange-300', bg: 'bg-orange-50', hoverBorder: 'hover:border-orange-500', hoverBg: 'hover:bg-orange-100/60',
+    badge: 'bg-orange-500', badgeText: 'text-white',
+    codeBg: 'bg-orange-100', codeText: 'text-orange-800', codeBorder: 'border-orange-400',
+    accentBar: 'bg-orange-500',
   },
   Physics: {
-    border: 'border-violet-200', bg: 'bg-violet-50/60', hoverBorder: 'hover:border-violet-400', hoverBg: 'hover:bg-violet-50',
-    badge: 'bg-violet-100', badgeText: 'text-violet-800',
-    codeBg: 'bg-violet-100', codeText: 'text-violet-800', codeBorder: 'border-violet-300',
+    border: 'border-violet-300', bg: 'bg-violet-50', hoverBorder: 'hover:border-violet-500', hoverBg: 'hover:bg-violet-100/60',
+    badge: 'bg-violet-500', badgeText: 'text-white',
+    codeBg: 'bg-violet-100', codeText: 'text-violet-800', codeBorder: 'border-violet-400',
+    accentBar: 'bg-violet-500',
   },
 }
 
 const SUBJECT_FALLBACK = {
   border: 'border-stone-200', bg: 'bg-white', hoverBorder: 'hover:border-stone-400', hoverBg: 'hover:bg-stone-50',
-  badge: 'bg-stone-100', badgeText: 'text-stone-600',
+  badge: 'bg-stone-500', badgeText: 'text-white',
   codeBg: 'bg-stone-100', codeText: 'text-stone-600', codeBorder: 'border-stone-300',
+  accentBar: 'bg-stone-400',
 }
 
 function subjectColors(subject?: string) {
@@ -625,6 +631,7 @@ export function Library({
   const ASSESSMENTS_PER_PAGE = 12
   const IMPORTED_PER_PAGE = 25
   const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('assessments')
+  const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('list')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -879,13 +886,27 @@ export function Library({
             Past Papers {importedQuestions.length > 0 ? `(${filteredImported.length})` : ''}
           </button>
           {bankView === 'assessments' && (
-            <input
-              type="text"
-              value={assessmentSearch}
-              onChange={e => { setAssessmentSearch(e.target.value); setAssessmentPage(1) }}
-              placeholder="Search by code or topic…"
-              className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-            />
+            <>
+              <input
+                type="text"
+                value={assessmentSearch}
+                onChange={e => { setAssessmentSearch(e.target.value); setAssessmentPage(1) }}
+                placeholder="Search by code or topic…"
+                className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto">
+                <button
+                  onClick={() => setAssessmentLayout('list')}
+                  className={`p-1.5 transition-colors ${assessmentLayout === 'list' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="List view"
+                ><List className="w-3.5 h-3.5" /></button>
+                <button
+                  onClick={() => setAssessmentLayout('gallery')}
+                  className={`p-1.5 border-l border-stone-200 transition-colors ${assessmentLayout === 'gallery' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="Gallery view"
+                ><LayoutGrid className="w-3.5 h-3.5" /></button>
+              </div>
+            </>
           )}
           {bankView === 'questions' && (
             <input
@@ -1016,11 +1037,66 @@ export function Library({
           {loading && <div className="text-stone-400 text-sm">Loading...</div>}
 
           {bankView === 'assessments' && (
-            <div className="grid grid-cols-1 gap-3">
+            <div className={assessmentLayout === 'gallery' ? 'grid grid-cols-2 lg:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-3'}>
               {pagedAssessments.map(a => {
                 const isGlobal = a.userId !== currentUserId && a.isPublic
+                const sc = subjectColors(a.subject)
+                if (assessmentLayout === 'gallery') {
+                  return (
+                    <div key={a.id} className={`border rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer ${isGlobal ? 'border-sky-300' : sc.border}`}
+                      onClick={() => { if (renamingId !== a.id) onSelect(a) }}
+                    >
+                      <div className={`h-2 w-full ${isGlobal ? 'bg-sky-400' : sc.accentBar}`} />
+                      <div className={`p-3 ${isGlobal ? 'bg-sky-50' : sc.bg}`}>
+                        {renamingId === a.id ? (
+                          <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                            <input value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                              className="flex-1 text-sm px-1 border border-emerald-400 rounded" autoFocus />
+                            <button onClick={() => { onRenameAssessment(a.id, renameValue); setRenamingId(null) }} className="text-emerald-600"><Check className="w-4 h-4" /></button>
+                            <button onClick={() => setRenamingId(null)} className="text-stone-400"><X className="w-4 h-4" /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start justify-between gap-1 mb-1">
+                              <div className="flex flex-wrap gap-1 items-center">
+                                {a.subject && (
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{a.subject}</span>
+                                )}
+                                {a.code && (
+                                  <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>{a.code}</span>
+                                )}
+                              </div>
+                              {a.userId === currentUserId && (
+                                <button onClick={e => { e.stopPropagation(); onTogglePublicAssessment(a.id, !a.isPublic) }}
+                                  className={`p-0.5 rounded ${a.isPublic ? 'text-emerald-600' : 'text-stone-300'}`}>
+                                  <Globe className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-sm font-semibold text-stone-800 line-clamp-2 leading-tight">{a.topic}</div>
+                            <div className="text-[11px] text-stone-500 mt-1">{a.difficulty} · {a.questions.length}q</div>
+                            {isGlobal && a.preparedBy && <div className="text-[10px] text-emerald-600 mt-0.5">by {a.preparedBy}</div>}
+                            <div className="flex items-center justify-between mt-2" onClick={e => e.stopPropagation()}>
+                              {a.userId === currentUserId && (
+                                <div className="flex gap-1">
+                                  <button onClick={() => { setRenamingId(a.id); setRenameValue(a.topic) }} className="p-1 text-stone-400 hover:text-stone-600"><Pencil className="w-3 h-3" /></button>
+                                  <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+                                </div>
+                              )}
+                              <span className="text-[10px] text-stone-400 ml-auto">
+                                {a.createdAt.toDate().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
                 return (
-                <div key={a.id} className={`border rounded-lg p-3 hover:shadow-sm transition-all ${isGlobal ? 'bg-sky-50 border-sky-200 hover:border-sky-400' : 'bg-white border-stone-200 hover:border-emerald-300'}`}>
+                <div key={a.id} className={`border rounded-lg overflow-hidden hover:shadow-sm transition-all ${isGlobal ? 'bg-sky-50 border-sky-200 hover:border-sky-400' : `${sc.bg} ${sc.border} ${sc.hoverBorder} ${sc.hoverBg}`}`}>
+                  <div className={`h-1 w-full ${isGlobal ? 'bg-sky-400' : sc.accentBar}`} />
+                  <div className="p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       {renamingId === a.id ? (
@@ -1035,12 +1111,15 @@ export function Library({
                           <button onClick={() => setRenamingId(null)} className="text-stone-400"><X className="w-4 h-4" /></button>
                         </div>
                       ) : (
-                        <button onClick={() => onSelect(a)} className="text-left">
-                          {a.code && (
-                            <div className="font-mono text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit mb-1">
-                              {a.code}
-                            </div>
-                          )}
+                        <button onClick={() => onSelect(a)} className="text-left w-full">
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            {a.subject && (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{a.subject}</span>
+                            )}
+                            {a.code && (
+                              <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>{a.code}</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-stone-800">{a.topic}</span>
                             {a.userId === currentUserId && (
@@ -1054,7 +1133,7 @@ export function Library({
                             )}
                           </div>
                           <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap">
-                            <span>{a.subject} · {a.difficulty} · {a.questions.length}q</span>
+                            <span>{a.difficulty} · {a.questions.length}q</span>
                             {a.userId !== currentUserId && a.isPublic && a.preparedBy && (
                               <span className="text-xs text-emerald-600">by {a.preparedBy}</span>
                             )}
@@ -1084,6 +1163,7 @@ export function Library({
                         </>
                       )}
                     </div>
+                  </div>
                   </div>
                 </div>
               )})}
@@ -1267,13 +1347,14 @@ export function Library({
               )}
               {pagedImported.map(q => {
                 const isSelected = importedSelectedIds.has(q.uid)
+                const sc = subjectColors(q.subject)
                 return (
                   <div
                     key={q.uid}
-                    className={`border rounded-lg p-2.5 flex gap-2 items-start cursor-pointer transition-all group
+                    className={`border rounded-lg overflow-hidden flex flex-col cursor-pointer transition-all group
                       ${isSelected
-                        ? 'border-amber-400 bg-amber-50 shadow-sm'
-                        : 'border-stone-200 bg-white hover:border-amber-300 hover:shadow-sm hover:bg-amber-50/30'
+                        ? `${sc.border} ${sc.bg} shadow-sm`
+                        : `border-stone-200 bg-white ${sc.hoverBorder} hover:shadow-sm ${sc.hoverBg}`
                       }`}
                     onClick={() => setImportedSelectedIds(prev => {
                       const next = new Set(prev)
@@ -1281,9 +1362,11 @@ export function Library({
                       return next
                     })}
                   >
+                    <div className={`h-1 w-full ${isSelected ? sc.accentBar : 'bg-stone-200 group-hover:' + sc.accentBar}`} />
+                    <div className="p-2.5 flex gap-2 items-start">
                     {/* Checkbox */}
                     <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors
-                      ${isSelected ? 'border-amber-500 bg-amber-500' : 'border-stone-300 group-hover:border-amber-400'}`}
+                      ${isSelected ? `${sc.accentBar} border-transparent` : 'border-stone-300'}`}
                     >
                       {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
                     </div>
@@ -1291,13 +1374,16 @@ export function Library({
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                        <span className="font-mono text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                        {q.subject && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{q.subject}</span>
+                        )}
+                        <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>
                           {q.rawCode}
                         </span>
                         {q.hasImage && (
-                          <span className="text-[10px] text-amber-500">📷</span>
+                          <span className="text-[10px] text-stone-400">📷</span>
                         )}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">MCQ</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">MCQ</span>
                       </div>
                       <div className="text-xs text-stone-700 truncate">
                         {q.questionText.substring(0, 130)}{q.questionText.length > 130 ? '…' : ''}
@@ -1311,12 +1397,13 @@ export function Library({
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => setPreviewImported(q)}
-                        className="p-1 text-stone-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="p-1 text-stone-400 hover:text-stone-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Preview"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                    </div>{/* end p-2.5 flex */}
                   </div>
                 )
               })}
