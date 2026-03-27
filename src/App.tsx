@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
-import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2 } from 'lucide-react'
 import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory } from './lib/types'
 import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
@@ -238,6 +238,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [view, setView] = useState<'main' | 'library' | 'diagrams'>('main')
+  const [previousView, setPreviousView] = useState<'library' | null>(null)
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
   const [studentMode, setStudentMode] = useState(false)
@@ -297,6 +298,7 @@ export default function App() {
       return
     }
     setView('main')
+    setPreviousView(null)
     const effectiveModel = customModel.trim() || config.model
 
     // If diagram pool is enabled, ensure it's loaded before generating
@@ -476,6 +478,7 @@ export default function App() {
       createdAt: Timestamp.now(),
     }
     generation.setGeneratedAssessment(assessment)
+    setPreviousView('library')
     setView('main')
   }, [generation])
 
@@ -678,39 +681,59 @@ export default function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {/* Top nav */}
-        <header className="border-b border-stone-200 px-4 py-2 flex items-center justify-between">
-          <h1 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-emerald-600" />
-            IGCSE Tools
-          </h1>
-          <div className="flex items-center gap-2">
+        <header className="border-b border-stone-200 px-4 py-2 flex items-center gap-3">
+          {/* Left: logo + back button */}
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-sm font-semibold text-stone-700 flex items-center gap-1.5 shrink-0">
+              <BookOpen className="w-4 h-4 text-emerald-600" />
+              IGCSE Tools
+            </h1>
+            {view === 'main' && previousView === 'library' && (
+              <button
+                onClick={() => { setPreviousView(null); setView('library') }}
+                className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium ml-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Back to Library
+              </button>
+            )}
+          </div>
+
+          {/* Centre: tab nav */}
+          <nav className="flex items-center gap-1 bg-stone-100 rounded-lg p-0.5 mx-auto">
+            <button
+              onClick={() => { setPreviousView(null); setView('main') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'main' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <Wand2 className="w-3.5 h-3.5" /> Generate
+            </button>
+            <button
+              onClick={() => { setPreviousView(null); setView('library') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'library' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <LibraryIcon className="w-3.5 h-3.5" /> Library
+            </button>
+            <button
+              onClick={() => { setPreviousView(null); setView('diagrams') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'diagrams' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Diagrams
+            </button>
+          </nav>
+
+          {/* Right: new + user */}
+          <div className="flex items-center gap-1.5 ml-auto shrink-0">
             <button
               onClick={() => setShowNewAssessmentModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium bg-stone-100 text-stone-600 hover:bg-stone-200"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
               title="Create blank assessment"
             >
               <FilePlus className="w-3.5 h-3.5" /> New
             </button>
-            <button
-              onClick={() => setView(v => v === 'library' ? 'main' : 'library')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium ${view === 'library' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
-            >
-              <LibraryIcon className="w-3.5 h-3.5" />
-              Library
-            </button>
-            <button
-              onClick={() => setView(v => v === 'diagrams' ? 'main' : 'diagrams')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium ${view === 'diagrams' ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Diagrams
-            </button>
-            <span className="text-xs text-stone-500">{user.displayName}</span>
+            <span className="text-xs text-stone-400 px-1">{user.displayName}</span>
             <button
               onClick={() => setShowDeleteModal(true)}
               className="p-1.5 text-stone-300 hover:text-red-500 transition-colors"
               title="Delete account"
-              aria-label="Delete account"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -718,7 +741,6 @@ export default function App() {
               onClick={logout}
               className="p-1.5 text-stone-400 hover:text-stone-600"
               title="Sign out"
-              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -768,7 +790,7 @@ export default function App() {
             questions={library.questions}
             folders={library.folders}
             loading={library.loading}
-            onSelect={a => { generation.setGeneratedAssessment(a); setView('main') }}
+            onSelect={a => { generation.setGeneratedAssessment(a); setPreviousView('library'); setView('main') }}
             onDeleteAssessment={library.deleteAssessment}
             onMoveAssessment={library.moveAssessment}
             onRenameAssessment={(id, topic) => library.updateAssessment(id, { topic })}
