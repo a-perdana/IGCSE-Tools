@@ -81,19 +81,24 @@ No `.env` values are required for local development. Users provide API keys in-b
 
 | File | Purpose |
 |---|---|
-| `src/lib/gemini.ts` | Gemini generation, audit, feedback, file upload; all prompts; `DIFFICULTY_GUIDANCE`, `SUBJECT_SPECIFIC_RULES`, `MARK_SCHEME_FORMAT`, `CAMBRIDGE_COMMAND_WORDS`, `ASSESSMENT_OBJECTIVES` |
+| `src/lib/gemini.ts` | Gemini generation, audit, feedback, file upload. Imports constants/validators from `prompts.ts` and `validation.ts` and re-exports them for backward compat. |
+| `src/lib/prompts.ts` | All prompt constants: `IGCSE_SUBJECTS`, `IGCSE_TOPICS`, `DIFFICULTY_LEVELS`, `DIFFICULTY_GUIDANCE`, `CAMBRIDGE_COMMAND_WORDS`, `ASSESSMENT_OBJECTIVES`, `SUBJECT_SPECIFIC_RULES`, `MARK_SCHEME_FORMAT`, etc. |
+| `src/lib/validation.ts` | Question quality validators extracted from gemini.ts: `enforceQuestionQuality`, `isTooEasy`, `hasMultiStepStructure`, `requiresGeometricUse`, etc. |
+| `src/lib/pricing.ts` | Cost estimation: `estimateCostUSD()`, `estimateCostIDR()`, `formatCost(usd, currency)` (supports `'IDR'`\|`'USD'`), `MODEL_PRICING` |
 | `src/lib/providers.ts` | Provider configs, model lists, `FREE_TIER_INFO` (free/paid badge + setup steps) |
 | `src/lib/ai.ts` | Provider router (Gemini / OpenAI / Anthropic) |
 | `src/lib/firebase.ts` | Firebase SDK init, all Firestore + Storage operations incl. GDPR `deleteUserData` |
-| `src/lib/types.ts` | TypeScript interfaces — `QuestionItem` has `assessmentObjective`, `options` fields; `TikzSpec` has `diagramType:'tikz'`, `code`, `maxWidth` |
-| `src/lib/sanitize.ts` | Post-generation question sanitization, normalises `assessmentObjective` |
+| `src/lib/types.ts` | TypeScript interfaces — `QuestionItem` has `assessmentObjective`, `options` fields; `TikzSpec` has `diagramType:'tikz'`, `code`, `maxWidth`; `geminiFileUploadedAt` is `Timestamp \| number` |
+| `src/lib/sanitize.ts` | Post-generation question sanitization — MCQ downgrades to `short_answer` if < 4 valid options; normalises `assessmentObjective`; extracts TikZ from fenced blocks |
 | `src/lib/quicklatex.ts` | TikZ render client — sends code to `/api/latex` proxy; in-memory cache keyed on code string |
-| `src/hooks/useGeneration.ts` | React hook: generation state + orchestration |
+| `src/lib/__tests__/` | Vitest unit tests: `pricing.test.ts`, `sanitize.test.ts`, `svg.test.ts`, `clipboard.test.ts` |
+| `src/hooks/useGeneration.ts` | React hook: generation state + orchestration. Handles `Timestamp \| number` union for `geminiFileUploadedAt`. |
 | `src/hooks/useResources.ts` | React hook: resource upload, caching, management |
-| `src/components/Sidebar/` | Config sidebar, resource manager, API settings (free tier guidance) |
+| `src/components/Sidebar/` | Config sidebar, resource manager, API settings. Has currency toggle (IDR/USD, persisted to `localStorage`), API key test button (pings provider REST endpoint). |
 | `src/components/AssessmentView/` | Main question editor and viewer |
 | `src/components/Library/` | Assessment / question library browser |
-| `src/components/DiagramRenderer/` | Renders `TikzSpec` via Railway microservice; shows collapsible error+source on failure |
+| `src/components/Library/modals.tsx` | Extracted modal components: `ImportedPreviewModal`, `QuestionPreviewModal`, `ConfirmDeleteModal`, `ExamViewImportModal`. Also exports `QMarkdown`, `importedToQuestionItem`, `DeleteTarget`. |
+| `src/components/DiagramRenderer/` | Renders `TikzSpec` via Railway microservice; shows visible warning banner (not collapsed) on render failure |
 | `api/latex.ts` | Vercel Serverless Function (Node.js runtime, 60s timeout) — proxies to Railway |
 | `latex-renderer/server.js` | **Separate git repo** (`a-perdana/Latex-Renderer`) deployed on Railway — pdflatex + pdftoppm → PNG |
 
@@ -172,6 +177,10 @@ Questions are generated in `src/lib/gemini.ts` via `generateTest()`:
 7. **`api/latex.ts` must use Node.js runtime** (not Edge) — `export const config = { maxDuration: 60 }` enables 60s timeout needed for pdflatex.
 8. **latex-renderer is a separate git repo** — changes to `latex-renderer/server.js` must be committed and pushed from inside that directory, NOT from the IGCSE Tools repo root.
 9. **Old assessments may have broken `diagram.code`** from the DSL era — use the Regenerate button (↻) in Library to fix them.
+10. **`geminiFileUploadedAt` is `Timestamp | number`** — always use `typeof val === 'number' ? val : val.toMillis()` before arithmetic. Never do `Date.now() - Timestamp` directly.
+11. **Prompt constants live in `prompts.ts`, validators in `validation.ts`** — do NOT add them back to `gemini.ts`. Both are re-exported from `gemini.ts` for backward compat.
+12. **MCQ questions require exactly 4 non-empty options** — `sanitize.ts` downgrades to `short_answer` otherwise. The `options` field is only present on `QuestionItem` when `type === 'mcq'` and all 4 options are valid.
+13. **Modal components live in `Library/modals.tsx`** — do not inline new modals in `Library/index.tsx`.
 
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel
