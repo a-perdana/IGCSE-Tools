@@ -665,6 +665,22 @@ function ExamViewImportModal({ onClose, onDone, folders }: {
   const { state, pickAndParse, setSubject, setFolderId, confirmImport, reset } = useExamViewImport()
   const fileRef = React.useRef<HTMLInputElement>(null)
 
+  const flattenedFolderOptions = useMemo(() => {
+    const result: { id: string; label: string }[] = []
+    const childrenByParent: Record<string, Folder[]> = {}
+    folders.forEach(f => {
+      const key = f.parentId ?? '__root__'
+      if (!childrenByParent[key]) childrenByParent[key] = []
+      childrenByParent[key].push(f)
+    })
+    const visit = (f: Folder, depth: number) => {
+      result.push({ id: f.id, label: '\u00a0'.repeat(depth * 4) + (depth > 0 ? '→ ' : '') + f.name })
+      ;(childrenByParent[f.id] ?? []).forEach(child => visit(child, depth + 1))
+    }
+    ;(childrenByParent['__root__'] ?? []).forEach(f => visit(f, 0))
+    return result
+  }, [folders])
+
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) pickAndParse(file)
