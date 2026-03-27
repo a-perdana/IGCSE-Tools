@@ -57,10 +57,11 @@ service cloud.firestore {
     }
 
     function isValidFolder(data) {
-      return hasOnlyAllowedFields(['name', 'userId', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'userId', 'createdAt', 'parentId']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.userId == request.auth.uid &&
-             data.createdAt is timestamp;
+             data.createdAt is timestamp &&
+             (!('parentId' in data) || data.parentId == null || data.parentId is string);
     }
 
     function isValidResource(data) {

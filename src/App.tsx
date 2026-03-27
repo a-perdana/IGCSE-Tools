@@ -281,8 +281,8 @@ export default function App() {
   }, [config.subject, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (user && view === 'library') library.loadAll(selectedFolderId ?? undefined)
-  }, [view, selectedFolderId, user]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (user && view === 'library') library.loadAll()
+  }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (user && config.useDiagramPool) {

@@ -73,6 +73,7 @@ export interface Folder {
   name: string;
   userId: string;
   createdAt: Timestamp;
+  parentId?: string;
 }
 
 export type ResourceType = 'past_paper' | 'syllabus' | 'other';

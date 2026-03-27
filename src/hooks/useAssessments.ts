@@ -29,15 +29,15 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
   const [loading, setLoading] = useState(false);
 
   const loadAll = useCallback(
-    async (folderId?: string) => {
+    async () => {
       if (!user) return;
       setLoading(true);
       setAssessments([]);
       setQuestions([]);
       try {
         const [a, q, f] = await Promise.all([
-          getSavedAssessments(folderId),
-          getQuestions(folderId),
+          getSavedAssessments(),
+          getQuestions(),
           getFolders(),
         ]);
         setAssessments(a);
@@ -209,9 +209,9 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
   );
 
   const createFolder = useCallback(
-    async (name: string) => {
+    async (name: string, parentId?: string) => {
       try {
-        await fbCreateFolder(name);
+        await fbCreateFolder(name, parentId);
         await loadAll();
         notify(`Folder "${name}" created`, "success");
       } catch (e) {

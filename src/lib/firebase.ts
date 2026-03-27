@@ -207,14 +207,15 @@ export const deleteAssessment = async (id: string) => {
   }
 };
 
-export const createFolder = async (name: string) => {
+export const createFolder = async (name: string, parentId?: string) => {
   if (!auth.currentUser) throw new Error("User must be authenticated to create folder");
-  const foldersRef = collection(db, 'folders');
-  return addDoc(foldersRef, {
+  const payload: Record<string, unknown> = {
     name,
     userId: auth.currentUser.uid,
-    createdAt: serverTimestamp()
-  });
+    createdAt: serverTimestamp(),
+  };
+  if (parentId) payload.parentId = parentId;
+  return addDoc(collection(db, 'folders'), payload);
 };
 
 export const getFolders = async () => {

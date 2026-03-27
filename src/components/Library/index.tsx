@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
-import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid, Upload } from 'lucide-react'
+import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, Bold, Italic, List, LayoutGrid, Upload, ChevronRight, ChevronDown } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
@@ -22,7 +22,7 @@ interface Props {
   onRenameAssessment: (id: string, topic: string) => void
   onDeleteQuestion: (id: string) => void
   onMoveQuestion: (id: string, folderId: string | null) => void
-  onCreateFolder: (name: string) => void
+  onCreateFolder: (name: string, parentId?: string) => void
   onDeleteFolder: (id: string) => void
   onRenameFolder: (id: string, name: string) => void
   selectedFolderId: string | null | undefined
@@ -742,7 +742,7 @@ function ExamViewImportModal({ onClose, onDone, folders }: {
                     className="text-sm border border-stone-300 rounded-lg px-3 py-1.5 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                   >
                     <option value="">No folder</option>
-                    {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    {flattenedFolderOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                   </select>
                 </div>
               )}
@@ -845,6 +845,9 @@ export function Library({
   const [previewImported, setPreviewImported] = useState<ImportedQuestion | null>(null)
   const importedLoaded = importedQuestions.length > 0 || importedLoading
   const [showExamViewImport, setShowExamViewImport] = useState(false)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [newSubfolderParentId, setNewSubfolderParentId] = useState<string | null>(null)
+  const [newSubfolderName, setNewSubfolderName] = useState('')
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
@@ -877,8 +880,38 @@ export function Library({
     return Array.from(set).sort()
   }, [assessments, questions])
 
+  const { rootFolders, childrenByParent } = useMemo(() => {
+    const root: typeof folders = []
+    const children: Record<string, typeof folders> = {}
+    folders.forEach(f => {
+      if (!f.parentId) root.push(f)
+      else { if (!children[f.parentId]) children[f.parentId] = []; children[f.parentId].push(f) }
+    })
+    return { rootFolders: root, childrenByParent: children }
+  }, [folders])
+
+  const itemCountByFolder = useMemo(() => {
+    const counts: Record<string, number> = {}
+    questions.forEach(q => { if (q.folderId) counts[q.folderId] = (counts[q.folderId] ?? 0) + 1 })
+    assessments.forEach(a => { if (a.folderId) counts[a.folderId] = (counts[a.folderId] ?? 0) + 1 })
+    return counts
+  }, [questions, assessments])
+
+  const flattenedFolderOptions = useMemo(() => {
+    const result: { id: string; label: string }[] = []
+    const visit = (f: (typeof folders)[0], depth: number) => {
+      result.push({ id: f.id, label: '\u00a0'.repeat(depth * 4) + (depth > 0 ? '→ ' : '') + f.name })
+      childrenByParent[f.id]?.forEach(child => visit(child, depth + 1))
+    }
+    rootFolders.forEach(f => visit(f, 0))
+    return result
+  }, [rootFolders, childrenByParent])
+
   const filteredAssessments = useMemo(() => {
-    let as = subjectFilter ? assessments.filter(a => a.subject === subjectFilter) : assessments
+    let as = assessments
+    if (selectedFolderId === null) as = as.filter(a => !a.folderId)
+    else if (selectedFolderId !== undefined) as = as.filter(a => a.folderId === selectedFolderId)
+    if (subjectFilter) as = as.filter(a => a.subject === subjectFilter)
     if (assessmentSearch.trim()) {
       const s = assessmentSearch.trim().toLowerCase()
       as = as.filter(a =>
@@ -887,10 +920,13 @@ export function Library({
       )
     }
     return as
-  }, [assessments, subjectFilter, assessmentSearch])
+  }, [assessments, subjectFilter, assessmentSearch, selectedFolderId])
 
   const filteredQuestions = useMemo(() => {
-    let qs = subjectFilter ? questions.filter(q => q.subject === subjectFilter) : questions
+    let qs = questions
+    if (selectedFolderId === null) qs = qs.filter(q => !q.folderId)
+    else if (selectedFolderId !== undefined) qs = qs.filter(q => q.folderId === selectedFolderId)
+    if (subjectFilter) qs = qs.filter(q => q.subject === subjectFilter)
     if (questionSearch.trim()) {
       const s = questionSearch.trim().toLowerCase()
       qs = qs.filter(q =>
@@ -899,7 +935,7 @@ export function Library({
       )
     }
     return qs
-  }, [questions, subjectFilter, questionSearch])
+  }, [questions, subjectFilter, questionSearch, selectedFolderId])
 
   // ── Imported questions derived state ─────────────────────────────────────
   const importedTopics = useMemo(() => {
@@ -981,6 +1017,69 @@ export function Library({
     setAddToAssessmentId('')
   }
 
+  const renderFolderRow = (folder: (typeof folders)[0], depth: number): React.ReactNode => {
+    const isSelected = selectedFolderId === folder.id
+    const hasChildren = (childrenByParent[folder.id]?.length ?? 0) > 0
+    const isExpanded = expandedFolders.has(folder.id)
+    const count = itemCountByFolder[folder.id] ?? 0
+    const isRenamingThis = renamingFolderId === folder.id
+    const isAddingSubfolder = newSubfolderParentId === folder.id
+
+    return (
+      <div key={folder.id}>
+        <div className="flex items-center gap-0.5 group" style={{ paddingLeft: depth * 12 }}>
+          <button
+            onClick={() => setExpandedFolders(prev => { const n = new Set(prev); n.has(folder.id) ? n.delete(folder.id) : n.add(folder.id); return n })}
+            className={`shrink-0 w-4 h-4 flex items-center justify-center text-stone-400 ${hasChildren ? '' : 'invisible pointer-events-none'}`}
+          >
+            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {isRenamingThis ? (
+            <>
+              <input value={renameFolderValue} onChange={e => setRenameFolderValue(e.target.value)}
+                className="flex-1 text-xs px-1.5 py-1 border border-emerald-400 rounded min-w-0" autoFocus
+                onKeyDown={e => { if (e.key === 'Enter' && renameFolderValue.trim()) { onRenameFolder(folder.id, renameFolderValue.trim()); setRenamingFolderId(null) } if (e.key === 'Escape') setRenamingFolderId(null) }} />
+              <button onClick={() => { if (renameFolderValue.trim()) { onRenameFolder(folder.id, renameFolderValue.trim()); setRenamingFolderId(null) } }} className="text-emerald-600 shrink-0"><Check className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setRenamingFolderId(null)} className="text-stone-400 shrink-0"><X className="w-3.5 h-3.5" /></button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => onSelectFolder(folder.id)}
+                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 ${isSelected ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}>
+                <FolderIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{folder.name}</span>
+                <span className={`text-[10px] shrink-0 ml-auto ${count > 0 ? 'text-stone-400' : 'text-stone-300'}`}>({count})</span>
+              </button>
+              <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-emerald-600 shrink-0" title="Add subfolder">
+                <FolderPlus className="w-3 h-3" />
+              </button>
+              <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0">
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name })}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 shrink-0">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </>
+          )}
+        </div>
+        {isAddingSubfolder && (
+          <div className="flex gap-1 mt-1 pr-1" style={{ paddingLeft: (depth + 1) * 12 + 16 }}>
+            <input value={newSubfolderName} onChange={e => setNewSubfolderName(e.target.value)}
+              placeholder="Subfolder name..." className="flex-1 text-xs px-2 py-1 border border-stone-300 rounded" autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && newSubfolderName.trim()) { onCreateFolder(newSubfolderName.trim(), folder.id); setNewSubfolderParentId(null); setNewSubfolderName('') } if (e.key === 'Escape') setNewSubfolderParentId(null) }} />
+            <button onClick={() => { if (newSubfolderName.trim()) { onCreateFolder(newSubfolderName.trim(), folder.id); setNewSubfolderParentId(null); setNewSubfolderName('') } }}
+              className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Plus className="w-3.5 h-3.5" /></button>
+            <button onClick={() => setNewSubfolderParentId(null)} className="p-1 text-stone-400 hover:bg-stone-100 rounded"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
+        {isExpanded && childrenByParent[folder.id]?.map(child => renderFolderRow(child, depth + 1))}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Folder Sidebar */}
@@ -1011,51 +1110,9 @@ export function Library({
         >
           <LibraryIcon className="w-3.5 h-3.5" /> All
         </button>
-        {folders.map(f => (
-          <div key={f.id} className="flex items-center gap-1 group">
-            {renamingFolderId === f.id ? (
-              <>
-                <input
-                  value={renameFolderValue}
-                  onChange={e => setRenameFolderValue(e.target.value)}
-                  className="flex-1 text-xs px-1.5 py-1 border border-emerald-400 rounded min-w-0"
-                  autoFocus
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && renameFolderValue.trim()) {
-                      onRenameFolder(f.id, renameFolderValue.trim())
-                      setRenamingFolderId(null)
-                    }
-                    if (e.key === 'Escape') setRenamingFolderId(null)
-                  }}
-                />
-                <button onClick={() => { if (renameFolderValue.trim()) { onRenameFolder(f.id, renameFolderValue.trim()); setRenamingFolderId(null) } }} className="text-emerald-600 shrink-0"><Check className="w-3.5 h-3.5" /></button>
-                <button onClick={() => setRenamingFolderId(null)} className="text-stone-400 shrink-0"><X className="w-3.5 h-3.5" /></button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => onSelectFolder(f.id)}
-                  className={`flex-1 text-left text-xs px-2 py-1.5 rounded flex items-center gap-1 min-w-0 ${selectedFolderId === f.id ? 'bg-emerald-100 text-emerald-800 font-medium' : 'hover:bg-stone-100 text-stone-600'}`}
-                >
-                  <FolderIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{f.name}</span>
-                </button>
-                <button
-                  onClick={() => { setRenamingFolderId(f.id); setRenameFolderValue(f.name) }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 text-stone-400 hover:text-stone-600 shrink-0"
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => setConfirmDelete({ type: 'folder', id: f.id, label: f.name })}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 shrink-0"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </>
-            )}
-          </div>
-        ))}
+        <div className="overflow-y-auto flex flex-col gap-0.5">
+          {rootFolders.map(f => renderFolderRow(f, 0))}
+        </div>
       </div>
 
       {/* Main Content */}
@@ -1367,7 +1424,7 @@ export function Library({
                             className="text-xs border border-stone-200 rounded px-1 py-0.5 text-stone-600"
                           >
                             <option value="">No folder</option>
-                            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                            {flattenedFolderOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                           </select>
                           <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                         </>
@@ -1496,7 +1553,7 @@ export function Library({
                             className="text-xs border border-stone-200 rounded px-1 py-0.5 text-stone-600"
                           >
                             <option value="">No folder</option>
-                            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                            {flattenedFolderOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                           </select>
                           <button onClick={() => setConfirmDelete({ type: 'question', id: q.id, label: q.code ?? q.text.substring(0, 40) })} className="p-1 text-red-400 hover:text-red-600">
                             <Trash2 className="w-3 h-3" />
