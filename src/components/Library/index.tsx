@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
@@ -911,11 +911,32 @@ export function Library({
   }, [folders])
 
   const itemCountByFolder = useMemo(() => {
-    const counts: Record<string, number> = {}
-    questions.forEach(q => { if (q.folderId) counts[q.folderId] = (counts[q.folderId] ?? 0) + 1 })
-    assessments.forEach(a => { if (a.folderId) counts[a.folderId] = (counts[a.folderId] ?? 0) + 1 })
-    return counts
-  }, [questions, assessments])
+    // Direct counts first
+    const direct: Record<string, number> = {}
+    questions.forEach(q => { if (q.folderId) direct[q.folderId] = (direct[q.folderId] ?? 0) + 1 })
+    assessments.forEach(a => { if (a.folderId) direct[a.folderId] = (direct[a.folderId] ?? 0) + 1 })
+    // Recursive totals (includes all descendants)
+    const total: Record<string, number> = {}
+    const sumDescendants = (id: string): number => {
+      if (id in total) return total[id]
+      const children = childrenByParent[id] ?? []
+      total[id] = (direct[id] ?? 0) + children.reduce((s, c) => s + sumDescendants(c.id), 0)
+      return total[id]
+    }
+    folders.forEach(f => sumDescendants(f.id))
+    return total
+  }, [questions, assessments, folders, childrenByParent])
+
+  // Returns all folder ids that are the given folder or its descendants
+  const getDescendantIds = useCallback((folderId: string): Set<string> => {
+    const ids = new Set<string>([folderId])
+    const queue = [folderId]
+    while (queue.length) {
+      const cur = queue.shift()!
+      ;(childrenByParent[cur] ?? []).forEach(c => { ids.add(c.id); queue.push(c.id) })
+    }
+    return ids
+  }, [childrenByParent])
 
   const flattenedFolderOptions = useMemo(() => {
     const result: { id: string; label: string }[] = []
@@ -930,7 +951,7 @@ export function Library({
   const filteredAssessments = useMemo(() => {
     let as = assessments
     if (selectedFolderId === null) as = as.filter(a => !a.folderId)
-    else if (selectedFolderId !== undefined) as = as.filter(a => a.folderId === selectedFolderId)
+    else if (selectedFolderId !== undefined) { const ids = getDescendantIds(selectedFolderId); as = as.filter(a => a.folderId && ids.has(a.folderId)) }
     if (subjectFilter) as = as.filter(a => a.subject === subjectFilter)
     if (assessmentSearch.trim()) {
       const s = assessmentSearch.trim().toLowerCase()
@@ -940,12 +961,12 @@ export function Library({
       )
     }
     return as
-  }, [assessments, subjectFilter, assessmentSearch, selectedFolderId])
+  }, [assessments, subjectFilter, assessmentSearch, selectedFolderId, getDescendantIds])
 
   const filteredQuestions = useMemo(() => {
     let qs = questions
     if (selectedFolderId === null) qs = qs.filter(q => !q.folderId)
-    else if (selectedFolderId !== undefined) qs = qs.filter(q => q.folderId === selectedFolderId)
+    else if (selectedFolderId !== undefined) { const ids = getDescendantIds(selectedFolderId); qs = qs.filter(q => q.folderId && ids.has(q.folderId)) }
     if (subjectFilter) qs = qs.filter(q => q.subject === subjectFilter)
     if (questionSearch.trim()) {
       const s = questionSearch.trim().toLowerCase()
@@ -955,7 +976,7 @@ export function Library({
       )
     }
     return qs
-  }, [questions, subjectFilter, questionSearch, selectedFolderId])
+  }, [questions, subjectFilter, questionSearch, selectedFolderId, getDescendantIds])
 
   // ── Imported questions derived state ─────────────────────────────────────
   const importedTopics = useMemo(() => {
