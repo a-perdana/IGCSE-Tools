@@ -99,6 +99,7 @@ function parseFormattedText(raw: string): { text: string; imageFilenames: string
   // Get text content, collapse whitespace
   let text = body.textContent ?? ''
   text = text
+    .replace(/\[diagram:[^\]]*\]/g, '')  // strip internal diagram placeholders
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+/g, ' ')
     .trim()
