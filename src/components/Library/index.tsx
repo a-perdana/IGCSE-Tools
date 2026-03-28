@@ -44,6 +44,8 @@ interface Props {
   onExam?: (assessment: Assessment) => void
   onShare?: (assessment: Assessment) => void
   onNewAssessment?: () => void
+  /** When set, renders this panel in place of the main content (keeps left sidebar). */
+  editPanel?: React.ReactNode
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
   importedLoading?: boolean
@@ -127,6 +129,7 @@ export function Library({
   onExam,
   onShare,
   onNewAssessment,
+  editPanel,
   importedQuestions = [],
   importedLoading = false,
   onLoadImported,
@@ -641,6 +644,7 @@ export function Library({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {editPanel ? editPanel : (<>
         {/* Tab switcher + subject filter */}
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
           <button
@@ -1333,6 +1337,7 @@ export function Library({
             </div>
           )}
         </div>
+        </>)}
       </div>
 
       {/* ExamView Import Modal */}
