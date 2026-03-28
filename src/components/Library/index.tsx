@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, List, LayoutGrid, Upload, ChevronRight, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion } from '../../lib/types'
 import { cleanExamViewPlaceholders } from '../../lib/firebase'
@@ -46,14 +46,6 @@ interface Props {
   onNewAssessment?: () => void
   /** When set, renders this panel in place of the main content (keeps left sidebar). */
   editPanel?: React.ReactNode
-  /** Paginated question loading — called when filters change (reloads from page 1) */
-  onLoadQuestions?: (filters: { folderId?: string | null; subject?: string; topic?: string }) => void
-  /** Append next page of questions */
-  onLoadMoreQuestions?: () => void
-  /** True while a paginated question fetch is in flight */
-  questionsLoading?: boolean
-  /** True if more pages are available beyond what's currently loaded */
-  hasMoreQuestions?: boolean
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
   importedLoading?: boolean
@@ -138,15 +130,12 @@ export function Library({
   onShare,
   onNewAssessment,
   editPanel,
-  onLoadQuestions,
-  onLoadMoreQuestions,
-  questionsLoading = false,
-  hasMoreQuestions = false,
   importedQuestions = [],
   importedLoading = false,
   onLoadImported,
   onUpdateImported,
 }: Props) {
+  const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
   const IMPORTED_PER_PAGE = 25
   const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('questions')
@@ -165,6 +154,7 @@ export function Library({
   const [questionSearch, setQuestionSearch] = useState('')
   const [questionTopicFilter, setQuestionTopicFilter] = useState<string>('')
   const [assessmentSearch, setAssessmentSearch] = useState('')
+  const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
   // ── Past Papers state ───────────────────────────────────────────────────
   const [importedTopicFilter, setImportedTopicFilter] = useState<string>('')
@@ -332,31 +322,21 @@ export function Library({
     return [...set].sort()
   }, [questions])
 
-  // Questions are loaded server-side with filters applied.
-  // Only text search is client-side (Firestore doesn't support full-text).
   const filteredQuestions = useMemo(() => {
-    if (!questionSearch.trim()) return questions
-    const s = questionSearch.trim().toLowerCase()
-    return questions.filter(q =>
-      (q.code && q.code.toLowerCase().includes(s)) ||
-      q.text.toLowerCase().includes(s)
-    )
-  }, [questions, questionSearch])
-
-  // When server-side filters change (or after initial load completes), reload questions from page 1.
-  // We skip while loading=true (assessments/folders still being fetched) to avoid a race.
-  const prevQuestionFilters = useRef<string>('__INIT__')
-  useEffect(() => {
-    if (!onLoadQuestions || loading) return
-    const key = JSON.stringify({ selectedFolderId, subjectFilter, questionTopicFilter })
-    if (key === prevQuestionFilters.current) return
-    prevQuestionFilters.current = key
-    onLoadQuestions({
-      folderId: selectedFolderId,
-      subject: subjectFilter || undefined,
-      topic: questionTopicFilter || undefined,
-    })
-  }, [selectedFolderId, subjectFilter, questionTopicFilter, onLoadQuestions, loading])
+    let qs = questions
+    if (selectedFolderId === null) qs = qs.filter(q => !q.folderId)
+    else if (selectedFolderId !== undefined) { const ids = getDescendantIds(selectedFolderId); qs = qs.filter(q => q.folderId && ids.has(q.folderId)) }
+    if (subjectFilter) qs = qs.filter(q => q.subject === subjectFilter)
+    if (questionTopicFilter) qs = qs.filter(q => q.topic === questionTopicFilter)
+    if (questionSearch.trim()) {
+      const s = questionSearch.trim().toLowerCase()
+      qs = qs.filter(q =>
+        (q.code && q.code.toLowerCase().includes(s)) ||
+        q.text.toLowerCase().includes(s)
+      )
+    }
+    return qs
+  }, [questions, subjectFilter, questionTopicFilter, questionSearch, selectedFolderId, getDescendantIds])
 
   // ── Imported questions derived state ─────────────────────────────────────
   const importedTopics = useMemo(() => {
@@ -390,8 +370,14 @@ export function Library({
   const assessmentStart = (safeAssessmentPage - 1) * ASSESSMENTS_PER_PAGE
   const pagedAssessments = filteredAssessments.slice(assessmentStart, assessmentStart + ASSESSMENTS_PER_PAGE)
 
-  // Questions are paginated server-side; filteredQuestions is already one page (+ client text filter)
-  const pagedQuestions = filteredQuestions
+  const totalQuestionPages = Math.max(1, Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE))
+  const safeQuestionPage = Math.min(questionPage, totalQuestionPages)
+  const questionStart = (safeQuestionPage - 1) * QUESTIONS_PER_PAGE
+  const pagedQuestions = filteredQuestions.slice(questionStart, questionStart + QUESTIONS_PER_PAGE)
+
+  useEffect(() => {
+    if (questionPage > totalQuestionPages) setQuestionPage(totalQuestionPages)
+  }, [questionPage, totalQuestionPages])
 
   useEffect(() => {
     if (assessmentPage > totalAssessmentPages) setAssessmentPage(totalAssessmentPages)
@@ -662,7 +648,7 @@ export function Library({
         {/* Tab switcher + subject filter */}
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
           <button
-            onClick={() => { setBankView('questions'); setSelectedIds(new Set()); setAssessmentPage(1) }}
+            onClick={() => { setBankView('questions'); setSelectedIds(new Set()); setQuestionPage(1); setAssessmentPage(1) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'questions' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
             Questions ({filteredQuestions.length})
@@ -680,7 +666,7 @@ export function Library({
             Past Papers {importedQuestions.length > 0 ? `(${filteredImported.length})` : ''}
           </button>
           <button
-            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()); setAssessmentPage(1) }}
+            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()); setQuestionPage(1); setAssessmentPage(1) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'assessments' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
           >
             Assessments ({filteredAssessments.length})
@@ -708,7 +694,7 @@ export function Library({
               </div>
               <select
                 value={subjectFilter}
-                onChange={e => { setSubjectFilter(e.target.value); setAssessmentPage(1) }}
+                onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
                 className="text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600"
               >
                 <option value="">All subjects</option>
@@ -729,7 +715,7 @@ export function Library({
             <>
               <select
                 value={questionTopicFilter}
-                onChange={e => { setQuestionTopicFilter(e.target.value) }}
+                onChange={e => { setQuestionTopicFilter(e.target.value); setQuestionPage(1) }}
                 className="text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600 max-w-[180px]"
               >
                 <option value="">All topics</option>
@@ -738,7 +724,7 @@ export function Library({
               <input
                 type="text"
                 value={questionSearch}
-                onChange={e => { setQuestionSearch(e.target.value) }}
+                onChange={e => { setQuestionSearch(e.target.value); setQuestionPage(1) }}
                 placeholder="Search by code or text…"
                 className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-44 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
@@ -766,7 +752,7 @@ export function Library({
           {bankView !== 'assessments' && (
             <select
               value={subjectFilter}
-              onChange={e => { setSubjectFilter(e.target.value); setAssessmentPage(1) }}
+              onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
               className={`${bankView === 'questions' ? '' : 'ml-auto'} text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600`}
             >
               <option value="">All subjects</option>
@@ -1208,21 +1194,32 @@ export function Library({
                   </div>
                 )
               })}
-              {filteredQuestions.length === 0 && !loading && !questionsLoading && (
+              {filteredQuestions.length === 0 && !loading && (
                 <div className="text-stone-400 text-sm text-center py-8">
                   {questionSearch.trim() ? `No questions matching "${questionSearch.trim()}".` : subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
                 </div>
               )}
-              {(hasMoreQuestions || questionsLoading) && (
-                <div className="flex justify-center mt-3">
-                  <button
-                    onClick={onLoadMoreQuestions}
-                    disabled={questionsLoading}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs bg-stone-100 text-stone-600 rounded-lg hover:bg-stone-200 disabled:opacity-50 transition-colors"
-                  >
-                    {questionsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                    {questionsLoading ? 'Loading…' : 'Load more questions'}
-                  </button>
+              {filteredQuestions.length > 0 && totalQuestionPages > 1 && (
+                <div className="flex items-center justify-between mt-2 px-1">
+                  <span className="text-xs text-stone-500">
+                    Page {safeQuestionPage} / {totalQuestionPages}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setQuestionPage(p => Math.max(1, p - 1))}
+                      disabled={safeQuestionPage === 1}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => setQuestionPage(p => Math.min(totalQuestionPages, p + 1))}
+                      disabled={safeQuestionPage === totalQuestionPages}
+                      className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
