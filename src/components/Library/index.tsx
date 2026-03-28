@@ -201,6 +201,22 @@ export function Library({
     return { rootFolders: root, childrenByParent: children }
   }, [folders])
 
+  // Effective public status: a folder is effectively public if it or any ancestor is public.
+  const effectivePublicByFolder = useMemo(() => {
+    const folderById: Record<string, (typeof folders)[0]> = {}
+    folders.forEach(f => { folderById[f.id] = f })
+    const result: Record<string, boolean> = {}
+    const compute = (f: (typeof folders)[0]): boolean => {
+      if (f.id in result) return result[f.id]
+      if (f.isPublic) { result[f.id] = true; return true }
+      const parent = f.parentId ? folderById[f.parentId] : undefined
+      result[f.id] = parent ? compute(parent) : false
+      return result[f.id]
+    }
+    folders.forEach(f => compute(f))
+    return result
+  }, [folders])
+
   const itemCountByFolder = useMemo(() => {
     // Direct counts first
     const direct: Record<string, number> = {}
@@ -392,6 +408,10 @@ export function Library({
       ;[newSiblings[idx], newSiblings[idx + delta]] = [newSiblings[idx + delta], newSiblings[idx]]
       onReorderFolders(newSiblings.map(s => s.id))
     }
+    const isOwnerFolder = folder.userId === currentUserId
+    const isDirectlyPublic = !!folder.isPublic
+    const isEffectivelyPublic = effectivePublicByFolder[folder.id] ?? false
+    const isInheritedPublic = isEffectivelyPublic && !isDirectlyPublic
 
     return (
       <div key={folder.id}>
@@ -413,7 +433,7 @@ export function Library({
           ) : (
             <>
               <button onClick={() => onSelectFolder(folder.id)}
-                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 pr-16 transition-colors ${isSelected ? 'font-medium' : 'text-stone-700'}`}
+                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 transition-colors ${isSelected ? 'font-medium' : 'text-stone-700'} ${isEffectivelyPublic ? 'pr-[72px]' : 'pr-16'}`}
                 style={sc ? {
                   backgroundColor: isSelected ? sc.rawSelectedBg : undefined,
                   borderLeft: `3px solid ${sc.rawAccent}`,
@@ -424,6 +444,11 @@ export function Library({
               >
                 <FolderIcon className="w-3.5 h-3.5 shrink-0" style={sc ? { color: sc.rawAccent } : undefined} />
                 <span className="truncate">{folder.name}</span>
+                {isEffectivelyPublic && (
+                  <span title={isDirectlyPublic ? 'Public' : 'Public (inherited from parent)'} className="shrink-0 ml-1 flex items-center">
+                    <Globe className={`w-3 h-3 ${isDirectlyPublic ? 'text-emerald-500' : 'text-sky-400'}`} />
+                  </span>
+                )}
                 <span className={`text-[10px] shrink-0 ml-auto ${count > 0 ? 'text-stone-400' : 'text-stone-300'}`}>({count})</span>
               </button>
               <div className="absolute right-0 flex items-center gap-0 opacity-0 group-hover:opacity-100 bg-white/90 rounded pl-0.5">
@@ -435,29 +460,31 @@ export function Library({
                   className="p-0.5 text-stone-400 hover:text-stone-600" title="Move down">
                   <ArrowDown className="w-3 h-3" />
                 </button>}
-                <button
-                  onClick={() => onTogglePublicFolder(folder.id, !folder.isPublic)}
-                  className={`p-0.5 rounded ${folder.isPublic ? 'text-emerald-600 hover:text-emerald-700' : 'text-stone-300 hover:text-stone-500'}`}
-                  title={folder.isPublic ? 'Public — click to make private' : 'Make public'}
-                >
-                  <Globe className="w-3 h-3" />
-                </button>
-                <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
+                {isOwnerFolder && (
+                  <button
+                    onClick={() => onTogglePublicFolder(folder.id, !folder.isPublic)}
+                    className={`p-0.5 rounded ${isDirectlyPublic ? 'text-emerald-600 hover:text-emerald-700' : isInheritedPublic ? 'text-sky-400 hover:text-emerald-600' : 'text-stone-300 hover:text-stone-500'}`}
+                    title={isDirectlyPublic ? 'Public — click to make private' : isInheritedPublic ? 'Public via parent — click to also make directly public' : 'Private — click to make public'}
+                  >
+                    <Globe className="w-3 h-3" />
+                  </button>
+                )}
+                {isOwnerFolder && <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
                   className="p-0.5 text-stone-400 hover:text-emerald-600" title="Add subfolder">
                   <FolderPlus className="w-3 h-3" />
-                </button>
-                <button onClick={() => setMovingFolderId(isMovingThis ? null : folder.id)}
+                </button>}
+                {isOwnerFolder && <button onClick={() => setMovingFolderId(isMovingThis ? null : folder.id)}
                   className="p-0.5 text-stone-400 hover:text-violet-600" title="Move to…">
                   <FilePlus className="w-3 h-3" />
-                </button>
-                <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
+                </button>}
+                {isOwnerFolder && <button onClick={() => { setRenamingFolderId(folder.id); setRenameFolderValue(folder.name) }}
                   className="p-0.5 text-stone-400 hover:text-stone-600">
                   <Pencil className="w-3 h-3" />
-                </button>
-                <button onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name })}
+                </button>}
+                {isOwnerFolder && <button onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name })}
                   className="p-0.5 text-red-400 hover:text-red-600">
                   <Trash2 className="w-3 h-3" />
-                </button>
+                </button>}
               </div>
             </>
           )}

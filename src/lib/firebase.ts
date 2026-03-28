@@ -220,23 +220,31 @@ export const createFolder = async (name: string, parentId?: string) => {
 
 export const getFolders = async () => {
   if (!auth.currentUser) return [];
+  const uid = auth.currentUser.uid;
   const foldersRef = collection(db, 'folders');
-  const q = query(
-    foldersRef,
-    where('userId', '==', auth.currentUser.uid),
-    orderBy('createdAt', 'asc')
-  );
+  const ownQuery = query(foldersRef, where('userId', '==', uid), orderBy('createdAt', 'asc'));
+  const publicQuery = query(foldersRef, where('isPublic', '==', true));
+  const sortFolders = (folders: Folder[]) => folders.sort((a, b) => {
+    const aHas = a.order !== undefined, bHas = b.order !== undefined
+    if (aHas && bHas) return (a.order as number) - (b.order as number)
+    if (aHas) return -1
+    if (bHas) return 1
+    return 0
+  });
   try {
-    const querySnapshot = await getDocs(q);
-    const folders = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Folder[];
-    // Sort by explicit order field if present, otherwise by createdAt (already ordered)
-    return folders.sort((a, b) => {
-      const aHas = a.order !== undefined, bHas = b.order !== undefined
-      if (aHas && bHas) return (a.order as number) - (b.order as number)
-      if (aHas) return -1
-      if (bHas) return 1
-      return 0
-    })
+    const ownSnap = await getDocs(ownQuery);
+    const own = ownSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Folder[];
+    let pub: Folder[] = [];
+    try {
+      const publicSnap = await getDocs(publicQuery);
+      pub = publicSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as Folder))
+        .filter(f => f.userId !== uid);
+    } catch {
+      // Public query may fail if rules are still propagating
+    }
+    const ownIds = new Set(own.map(f => f.id));
+    return sortFolders([...own, ...pub.filter(f => !ownIds.has(f.id))]);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'folders');
     return [];
