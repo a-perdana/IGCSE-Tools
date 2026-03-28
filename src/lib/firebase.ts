@@ -169,28 +169,38 @@ export const getSavedAssessments = async (folderId?: string): Promise<Assessment
   if (!auth.currentUser) return []
   const uid = auth.currentUser.uid
   const assessmentsRef = collection(db, 'assessments')
+  const foldersRef = collection(db, 'folders')
 
   const ownQuery = folderId
     ? query(assessmentsRef, where('userId', '==', uid), where('folderId', '==', folderId), orderBy('createdAt', 'desc'))
     : query(assessmentsRef, where('userId', '==', uid), orderBy('createdAt', 'desc'))
-  const publicQuery = query(assessmentsRef, where('isPublic', '==', true))
 
   try {
     const ownSnap = await getDocs(ownQuery)
     const own = ownSnap.docs.map(d => ({ id: d.id, ...d.data() } as Assessment)).filter(a => Array.isArray(a.questions))
 
-    let pub: Assessment[] = []
+    let shared: Assessment[] = []
     try {
-      const publicSnap = await getDocs(publicQuery)
-      pub = publicSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as Assessment))
-        .filter(a => Array.isArray(a.questions) && a.userId !== uid)
+      // Find users who have public folders, then fetch all their assessments
+      const publicFolderSnap = await getDocs(query(foldersRef, where('isPublic', '==', true)))
+      const sharedUserIds = [...new Set(
+        publicFolderSnap.docs
+          .map(d => (d.data() as Folder).userId)
+          .filter(id => id !== uid)
+      )]
+      const chunks = await Promise.all(
+        sharedUserIds.map(sharedUid =>
+          getDocs(query(assessmentsRef, where('userId', '==', sharedUid), orderBy('createdAt', 'desc')))
+            .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as Assessment)).filter(a => Array.isArray(a.questions)))
+        )
+      )
+      shared = chunks.flat()
     } catch {
-      // Public query may fail if no public items exist or rules are still propagating
+      // Shared query may fail if rules are still propagating
     }
 
     const ownIds = new Set(own.map(a => a.id))
-    return [...own, ...pub.filter(a => !ownIds.has(a.id))]
+    return [...own, ...shared.filter(a => !ownIds.has(a.id))]
       .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'assessments')
@@ -223,7 +233,7 @@ export const getFolders = async () => {
   const uid = auth.currentUser.uid;
   const foldersRef = collection(db, 'folders');
   const ownQuery = query(foldersRef, where('userId', '==', uid), orderBy('createdAt', 'asc'));
-  const publicQuery = query(foldersRef, where('isPublic', '==', true));
+  const publicRootQuery = query(foldersRef, where('isPublic', '==', true));
   const sortFolders = (folders: Folder[]) => folders.sort((a, b) => {
     const aHas = a.order !== undefined, bHas = b.order !== undefined
     if (aHas && bHas) return (a.order as number) - (b.order as number)
@@ -234,17 +244,27 @@ export const getFolders = async () => {
   try {
     const ownSnap = await getDocs(ownQuery);
     const own = ownSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Folder[];
-    let pub: Folder[] = [];
+    let sharedAll: Folder[] = [];
     try {
-      const publicSnap = await getDocs(publicQuery);
-      pub = publicSnap.docs
+      // Step 1: find which users have public root folders
+      const publicRootSnap = await getDocs(publicRootQuery);
+      const publicRootFolders = publicRootSnap.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Folder))
         .filter(f => f.userId !== uid);
+      // Step 2: for each such user fetch ALL their folders (so child folders are included)
+      const sharedUserIds = [...new Set(publicRootFolders.map(f => f.userId))];
+      const chunks: Folder[][] = await Promise.all(
+        sharedUserIds.map(async sharedUid => {
+          const snap = await getDocs(query(foldersRef, where('userId', '==', sharedUid), orderBy('createdAt', 'asc')));
+          return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Folder));
+        })
+      );
+      sharedAll = chunks.flat();
     } catch {
-      // Public query may fail if rules are still propagating
+      // Shared query may fail if rules are still propagating
     }
     const ownIds = new Set(own.map(f => f.id));
-    return sortFolders([...own, ...pub.filter(f => !ownIds.has(f.id))]);
+    return sortFolders([...own, ...sharedAll.filter(f => !ownIds.has(f.id))]);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'folders');
     return [];
@@ -467,28 +487,38 @@ export const getQuestions = async (folderId?: string): Promise<Question[]> => {
   if (!auth.currentUser) return []
   const uid = auth.currentUser.uid
   const questionsRef = collection(db, 'questions')
+  const foldersRef = collection(db, 'folders')
 
   const ownQuery = folderId
     ? query(questionsRef, where('userId', '==', uid), where('folderId', '==', folderId), orderBy('createdAt', 'desc'))
     : query(questionsRef, where('userId', '==', uid), orderBy('createdAt', 'desc'))
-  const publicQuery = query(questionsRef, where('isPublic', '==', true))
 
   try {
     const ownSnap = await getDocs(ownQuery)
     const own = ownSnap.docs.map(d => ({ id: d.id, ...d.data() } as Question)).filter(q => typeof (q as any).text === 'string')
 
-    let pub: Question[] = []
+    let shared: Question[] = []
     try {
-      const publicSnap = await getDocs(publicQuery)
-      pub = publicSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as Question))
-        .filter(q => typeof (q as any).text === 'string' && q.userId !== uid)
+      // Find users who have public folders, then fetch all their questions
+      const publicFolderSnap = await getDocs(query(foldersRef, where('isPublic', '==', true)))
+      const sharedUserIds = [...new Set(
+        publicFolderSnap.docs
+          .map(d => (d.data() as Folder).userId)
+          .filter(id => id !== uid)
+      )]
+      const chunks = await Promise.all(
+        sharedUserIds.map(sharedUid =>
+          getDocs(query(questionsRef, where('userId', '==', sharedUid), orderBy('createdAt', 'desc')))
+            .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as Question)).filter(q => typeof (q as any).text === 'string'))
+        )
+      )
+      shared = chunks.flat()
     } catch {
-      // Public query may fail if no public items exist or rules are still propagating
+      // Shared query may fail if rules are still propagating
     }
 
     const ownIds = new Set(own.map(q => q.id))
-    return [...own, ...pub.filter(q => !ownIds.has(q.id))]
+    return [...own, ...shared.filter(q => !ownIds.has(q.id))]
       .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'questions')

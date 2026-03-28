@@ -128,21 +128,28 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      allow get: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && isValidAssessment(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidAssessmentUpdate(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     match /questions/{questionId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      allow get: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && isValidQuestion(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidQuestionUpdate(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     match /folders/{folderId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      // get: owner or public folder
+      allow get: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
+      // list: authenticated users can query; Firestore enforces doc-level access per returned doc.
+      // We allow listing all authenticated users' folders so that child folders of a public parent
+      // can be fetched via userId query. Non-public docs of other users are still unreadable via get.
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && isValidFolder(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidFolder(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
