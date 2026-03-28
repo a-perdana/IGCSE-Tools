@@ -10,6 +10,7 @@ import {
   ImportedPreviewModal,
   QuestionPreviewModal,
   ExamViewImportModal,
+  AssessmentViewModal,
 } from './modals'
 
 interface Props {
@@ -167,6 +168,7 @@ export function Library({
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [uncatAddingFolder, setUncatAddingFolder] = useState(false)
   const [uncatNewFolderName, setUncatNewFolderName] = useState('')
+  const [viewAssessment, setViewAssessment] = useState<Assessment | null>(null)
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
@@ -895,6 +897,7 @@ export function Library({
                             {isGlobal && a.preparedBy && <div className="text-[10px] text-emerald-600 mt-0.5">by {a.preparedBy}</div>}
                             <div className="flex items-center justify-between mt-2" onClick={e => e.stopPropagation()}>
                               <div className="flex gap-1">
+                                <button onClick={() => setViewAssessment(a)} className="p-1 text-stone-400 hover:text-blue-600" title="View questions"><Eye className="w-3 h-3" /></button>
                                 <button onClick={() => onSelect(a)} className="p-1 text-stone-400 hover:text-emerald-600" title="Open in editor"><Pencil className="w-3 h-3" /></button>
                                 {a.userId === currentUserId && (
                                   <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
@@ -988,6 +991,13 @@ export function Library({
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setViewAssessment(a)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200"
+                        title="View questions"
+                      >
+                        <Eye className="w-3 h-3" /> View
+                      </button>
                       <button
                         onClick={() => onSelect(a)}
                         className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 rounded border border-stone-200"
@@ -1350,6 +1360,17 @@ export function Library({
           question={previewImported}
           onClose={() => setPreviewImported(null)}
           onUpdate={onUpdateImported}
+        />
+      )}
+
+      {/* Assessment View Modal */}
+      {viewAssessment && (
+        <AssessmentViewModal
+          assessment={viewAssessment}
+          onClose={() => setViewAssessment(null)}
+          onPractice={onPractice}
+          onExam={onExam}
+          onShare={onShare}
         />
       )}
 

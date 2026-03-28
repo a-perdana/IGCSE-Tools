@@ -4,8 +4,8 @@ import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
-import { Pencil, X, Check, Loader2, Bold, Italic, List, Upload, RefreshCw } from 'lucide-react'
-import type { Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
+import { Pencil, X, Check, Loader2, Bold, Italic, List, Upload, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import type { Question, Folder, ImportedQuestion, RasterSpec, Assessment, QuestionItem } from '../../lib/types'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { DiagramRenderer } from '../DiagramRenderer'
@@ -757,6 +757,151 @@ export function ExamViewImportModal({ onClose, onDone, folders }: {
               <button onClick={reset} className="text-xs text-stone-600 underline">Try again</button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Assessment View Modal (read-only) ────────────────────────────────────────
+
+function QuestionCard({ q, index }: { q: QuestionItem; index: number }) {
+  const [tab, setTab] = useState<'question' | 'answer'>('question')
+  return (
+    <div className="border border-stone-100 rounded-xl overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-stone-50 border-b border-stone-100">
+        <span className="text-xs font-bold text-stone-500">Q{index + 1}</span>
+        <span className="text-xs text-stone-400">{q.marks}m</span>
+        {q.type && <span className="text-[10px] bg-stone-200 text-stone-600 px-1.5 py-0.5 rounded capitalize">{q.type.replace('_', ' ')}</span>}
+        {q.commandWord && <span className="text-[10px] text-stone-500 italic">{q.commandWord}</span>}
+        <div className="ml-auto flex rounded-md overflow-hidden border border-stone-200 text-[10px]">
+          <button onClick={() => setTab('question')} className={`px-2 py-0.5 ${tab === 'question' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>Question</button>
+          <button onClick={() => setTab('answer')} className={`px-2 py-0.5 border-l border-stone-200 ${tab === 'answer' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>Answer</button>
+        </div>
+      </div>
+      <div className="p-3 text-sm text-stone-800 prose prose-sm max-w-none">
+        {tab === 'question' ? (
+          <>
+            {q.diagram && <DiagramRenderer spec={q.diagram} />}
+            <QMarkdown content={q.text} />
+            {q.options && q.type === 'mcq' && (
+              <div className="mt-2 space-y-1">
+                {q.options.map((opt, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs">
+                    <span className="font-semibold shrink-0 text-stone-500">{['A','B','C','D'][i]}.</span>
+                    <QMarkdown content={opt} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-2">
+            {q.answer && (
+              <div>
+                <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wide mb-1">Answer</p>
+                <QMarkdown content={q.answer} />
+              </div>
+            )}
+            {q.markScheme && (
+              <div>
+                <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wide mb-1">Mark Scheme</p>
+                <QMarkdown content={q.markScheme} />
+              </div>
+            )}
+            {!q.answer && !q.markScheme && <p className="text-xs text-stone-300 italic">No answer recorded.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function AssessmentViewModal({
+  assessment,
+  onClose,
+  onPractice,
+  onExam,
+  onShare,
+}: {
+  assessment: Assessment
+  onClose: () => void
+  onPractice?: (a: Assessment) => void
+  onExam?: (a: Assessment) => void
+  onShare?: (a: Assessment) => void
+}) {
+  const [page, setPage] = useState(0)
+  const qs = assessment.questions
+  const total = qs.length
+  const PER_PAGE = 5
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
+  const pageQs = qs.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white w-full sm:max-w-2xl sm:mx-4 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-stone-100 shrink-0">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {assessment.subject && (
+                <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">{assessment.subject}</span>
+              )}
+              {assessment.code && (
+                <span className="font-mono text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">{assessment.code}</span>
+              )}
+            </div>
+            <p className="text-sm font-semibold text-stone-800 mt-1 truncate">{assessment.topic}</p>
+            <p className="text-xs text-stone-400">{assessment.difficulty} · {total} question{total !== 1 ? 's' : ''} · {qs.reduce((s, q) => s + q.marks, 0)} marks</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-600 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Questions */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {pageQs.map((q, i) => (
+            <QuestionCard key={q.id} q={q} index={page * PER_PAGE + i} />
+          ))}
+          {total === 0 && (
+            <p className="text-sm text-stone-400 text-center py-8">No questions in this assessment.</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 border-t border-stone-100 px-5 py-3 flex items-center gap-2 flex-wrap">
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1 mr-auto">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-1 text-stone-400 hover:text-stone-600 disabled:opacity-30">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs text-stone-500">{page + 1}/{totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="p-1 text-stone-400 hover:text-stone-600 disabled:opacity-30">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 ml-auto">
+            {onPractice && (
+              <button onClick={() => { onClose(); onPractice(assessment) }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-200">
+                ▶ Practice
+              </button>
+            )}
+            {onExam && (
+              <button onClick={() => { onClose(); onExam(assessment) }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
+                ⏱ Exam
+              </button>
+            )}
+            {onShare && (
+              <button onClick={() => { onClose(); onShare(assessment) }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200">
+                ↗ Share
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

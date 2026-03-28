@@ -260,6 +260,7 @@ export default function App() {
   const [practiceAttempts, setPracticeAttempts] = useState<PracticeAttempt[]>([])
   const [examAttempts, setExamAttempts] = useState<ExamAttempt[]>([])
   const [shareAssessment, setShareAssessment] = useState<Assessment | null>(null)
+  const [libraryEditAssessment, setLibraryEditAssessment] = useState<Assessment | null>(null)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -798,7 +799,7 @@ export default function App() {
             questions={library.questions}
             folders={library.folders}
             loading={library.loading}
-            onSelect={a => { generation.setGeneratedAssessment(a); setPreviousView('library'); setView('main') }}
+            onSelect={a => { generation.setGeneratedAssessment(a); setLibraryEditAssessment(a); setIsEditing(false) }}
             onDeleteAssessment={library.deleteAssessment}
             onMoveAssessment={library.moveAssessment}
             onRenameAssessment={(id, topic) => library.updateAssessment(id, { topic })}
@@ -1009,6 +1010,48 @@ export default function App() {
           notify={notify}
           onClose={() => setShareAssessment(null)}
         />
+      )}
+
+      {/* Assessment editor overlay — opens from Library without leaving the Library tab */}
+      {libraryEditAssessment && (
+        <div className="fixed inset-0 z-40 bg-white flex flex-col">
+          {/* Overlay header */}
+          <div className="shrink-0 border-b border-stone-200 bg-white px-4 py-2 flex items-center gap-3">
+            <button
+              onClick={() => { setLibraryEditAssessment(null); setIsEditing(false) }}
+              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to Library
+            </button>
+            <span className="text-xs text-stone-400 truncate">
+              {libraryEditAssessment.subject} · {libraryEditAssessment.topic}
+            </span>
+          </div>
+          {/* AssessmentView fills the rest */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <AssessmentView
+              assessment={displayAssessment}
+              analysisText={null}
+              isEditing={isEditing}
+              studentMode={false}
+              isGenerating={false}
+              onEdit={() => setIsEditing(true)}
+              onCancelEdit={() => setIsEditing(false)}
+              onSaveToLibrary={async () => { await handleSave(); notify('Saved', 'success') }}
+              onSave={async () => { await handleSave(); notify('Saved', 'success') }}
+              onCopy={handleCopy}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onRemoveQuestion={handleRemoveQuestion}
+              onMoveQuestion={handleMoveQuestion}
+              bankQuestions={library.questions}
+              onAddQuestions={handleAddQuestionsToCurrentAssessment}
+              onUpdateQuestion={handleUpdateQuestion}
+              onRegenerateDiagrams={handleRegenerateDiagrams}
+              onRepairQuestion={handleRepairQuestion}
+            />
+          </div>
+        </div>
       )}
     </div>
   )
