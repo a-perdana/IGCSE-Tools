@@ -686,6 +686,14 @@ export function Library({
                   title="Gallery view"
                 ><LayoutGrid className="w-3.5 h-3.5" /></button>
               </div>
+              <select
+                value={subjectFilter}
+                onChange={e => { setSubjectFilter(e.target.value); setAssessmentPage(1) }}
+                className="text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600"
+              >
+                <option value="">All subjects</option>
+                {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
               {onNewAssessment && (
                 <button
                   onClick={onNewAssessment}
@@ -735,14 +743,16 @@ export function Library({
               />
             </>
           )}
-          <select
-            value={subjectFilter}
-            onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
-            className={`${bankView === 'questions' ? '' : 'ml-auto'} text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600`}
-          >
-            <option value="">All subjects</option>
-            {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {bankView !== 'assessments' && (
+            <select
+              value={subjectFilter}
+              onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
+              className={`${bankView === 'questions' ? '' : 'ml-auto'} text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600`}
+            >
+              <option value="">All subjects</option>
+              {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           {bankView === 'questions' && (
             <button
               onClick={() => setShowExamViewImport(true)}
