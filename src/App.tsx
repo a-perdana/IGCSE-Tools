@@ -644,16 +644,16 @@ export default function App() {
               <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
             </button>
             <button
-              onClick={() => { setPreviousView(null); setView('main') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'main' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <Wand2 className="w-3.5 h-3.5" /> Generate
-            </button>
-            <button
               onClick={() => { setPreviousView(null); setView('library') }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'library' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
             >
               <LibraryIcon className="w-3.5 h-3.5" /> Library
+            </button>
+            <button
+              onClick={() => { setPreviousView(null); setView('main') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'main' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <Wand2 className="w-3.5 h-3.5" /> Generate
             </button>
             <button
               onClick={() => { setPreviousView(null); setView('diagrams') }}
