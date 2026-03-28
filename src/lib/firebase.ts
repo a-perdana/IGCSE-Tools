@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -942,6 +942,42 @@ export async function savePracticeAttempt(
     return ref.id
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, 'practiceAttempts')
+    throw error
+  }
+}
+
+export async function saveExamAttempt(
+  data: Omit<ExamAttempt, 'id' | 'completedAt' | 'userId'>
+): Promise<string> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  try {
+    const payload: Record<string, unknown> = {
+      ...stripUndefined(data as unknown as Record<string, unknown>),
+      userId: uid,
+      completedAt: serverTimestamp(),
+    }
+    const ref = await addDoc(collection(db, 'examAttempts'), payload)
+    return ref.id
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'examAttempts')
+    throw error
+  }
+}
+
+export async function getExamAttempts(assessmentId?: string): Promise<ExamAttempt[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const constraints = [
+      where('userId', '==', uid),
+      ...(assessmentId ? [where('assessmentId', '==', assessmentId)] : []),
+      orderBy('completedAt', 'desc'),
+    ]
+    const snap = await getDocs(query(collection(db, 'examAttempts'), ...constraints))
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ExamAttempt))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'examAttempts')
     throw error
   }
 }

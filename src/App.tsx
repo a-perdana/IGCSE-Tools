@@ -19,6 +19,7 @@ import { DiagramLibrary } from './components/DiagramLibrary'
 import { Dashboard } from './components/Dashboard'
 import { Notifications } from './components/Notifications'
 import { PracticeMode } from './components/PracticeMode'
+import { ExamMode } from './components/ExamMode'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
@@ -239,8 +240,9 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam'>('dashboard')
   const [practiceAssessment, setPracticeAssessment] = useState<Assessment | null>(null)
+  const [examAssessment, setExamAssessment] = useState<Assessment | null>(null)
   const [previousView, setPreviousView] = useState<'library' | null>(null)
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
@@ -414,6 +416,15 @@ export default function App() {
     }
     setPracticeAssessment(assessment)
     setView('practice')
+  }, [notify])
+
+  const handleStartExam = useCallback((assessment: Assessment) => {
+    if (assessment.questions.length === 0) {
+      notify('This assessment has no questions.', 'error')
+      return
+    }
+    setExamAssessment(assessment)
+    setView('exam')
   }, [notify])
 
   const handleLoadImported = useCallback(async () => {
@@ -791,8 +802,23 @@ export default function App() {
               if (results.length) await library.updateQuestion(q.id, { diagram: results[0].diagram, hasDiagram: true, diagramMissing: undefined })
             }}
             onPractice={handleStartPractice}
+            onExam={handleStartExam}
           />
           </div>
+        ) : view === 'exam' && examAssessment ? (
+          <ExamMode
+            assessment={examAssessment}
+            provider={provider}
+            apiKey={currentApiKey}
+            model={customModel.trim() || defaultModel}
+            onExit={() => { setExamAssessment(null); setView('library') }}
+            onComplete={(attempt) => {
+              notify(`Exam complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks (${Math.round(attempt.marksAwarded / Math.max(attempt.totalMarks, 1) * 100)}%)`, 'success')
+              setExamAssessment(null)
+              setView('library')
+            }}
+            notify={notify}
+          />
         ) : view === 'practice' && practiceAssessment ? (
           <PracticeMode
             assessment={practiceAssessment}

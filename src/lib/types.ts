@@ -202,6 +202,30 @@ export interface DiagramPoolEntry {
   createdAt: Timestamp;
 }
 
+// ─── Exam Mode ───────────────────────────────────────────────────────────────
+
+export interface ExamAnswerRecord {
+  userAnswer: string
+  isCorrect: boolean
+  marksAwarded: number
+  aiFeedback?: string
+}
+
+export interface ExamAttempt {
+  id: string
+  userId: string
+  assessmentId: string
+  subject: string
+  topic: string
+  timeLimitSeconds: number
+  answers: Record<string, ExamAnswerRecord>   // keyed by QuestionItem.id
+  totalMarks: number
+  marksAwarded: number
+  completedAt: Timestamp
+  durationSeconds: number
+  autoSubmitted: boolean                       // true if timer ran out
+}
+
 // ─── Practice Mode ───────────────────────────────────────────────────────────
 
 export interface PracticeAnswerRecord {

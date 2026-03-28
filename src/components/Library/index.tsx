@@ -40,6 +40,7 @@ interface Props {
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
   onRegenerateDiagram?: (question: Question) => Promise<void>
   onPractice?: (assessment: Assessment) => void
+  onExam?: (assessment: Assessment) => void
   onNewAssessment?: () => void
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
@@ -121,6 +122,7 @@ export function Library({
   onTogglePublicAssessment, onTogglePublicQuestion,
   onRegenerateDiagram,
   onPractice,
+  onExam,
   onNewAssessment,
   importedQuestions = [],
   importedLoading = false,
@@ -835,13 +837,22 @@ export function Library({
                                   <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                 </div>
                               )}
-                              <button
-                                onClick={() => onPractice?.(a)}
-                                className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded border border-violet-200 ml-auto mr-1"
-                                title="Practice this assessment"
-                              >
-                                ▶ Practice
-                              </button>
+                              <div className="flex items-center gap-1 ml-auto">
+                                <button
+                                  onClick={() => onPractice?.(a)}
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded border border-violet-200"
+                                  title="Practice this assessment"
+                                >
+                                  ▶ Practice
+                                </button>
+                                <button
+                                  onClick={() => onExam?.(a)}
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200"
+                                  title="Timed exam mode"
+                                >
+                                  ⏱ Exam
+                                </button>
+                              </div>
                               <span className="text-[10px] text-stone-400">
                                 {a.createdAt.toDate().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                               </span>
@@ -927,6 +938,13 @@ export function Library({
                         title="Practice this assessment"
                       >
                         ▶ Practice
+                      </button>
+                      <button
+                        onClick={() => onExam?.(a)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200"
+                        title="Timed exam mode"
+                      >
+                        ⏱ Exam
                       </button>
                     </div>
                   </div>
