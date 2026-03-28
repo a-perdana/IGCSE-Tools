@@ -38,6 +38,7 @@ interface Props {
   onTogglePublicAssessment: (id: string, isPublic: boolean) => void
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
   onRegenerateDiagram?: (question: Question) => Promise<void>
+  onNewAssessment?: () => void
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
   importedLoading?: boolean
@@ -116,6 +117,7 @@ export function Library({
   currentUserId, currentUserName,
   onTogglePublicAssessment, onTogglePublicQuestion,
   onRegenerateDiagram,
+  onNewAssessment,
   importedQuestions = [],
   importedLoading = false,
   onLoadImported,
@@ -559,7 +561,7 @@ export function Library({
                 placeholder="Search by code or topic…"
                 className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
-              <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto">
+              <div className="flex rounded-lg border border-stone-200 overflow-hidden shrink-0">
                 <button
                   onClick={() => setAssessmentLayout('list')}
                   className={`p-1.5 transition-colors ${assessmentLayout === 'list' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
@@ -571,6 +573,15 @@ export function Library({
                   title="Gallery view"
                 ><LayoutGrid className="w-3.5 h-3.5" /></button>
               </div>
+              {onNewAssessment && (
+                <button
+                  onClick={onNewAssessment}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium bg-emerald-600 text-white hover:bg-emerald-700 shrink-0"
+                  title="Create blank assessment"
+                >
+                  <FilePlus className="w-3.5 h-3.5" /> New Assessment
+                </button>
+              )}
             </>
           )}
           {bankView === 'questions' && (
@@ -584,7 +595,7 @@ export function Library({
               />
               <button
                 onClick={() => setShowExamViewImport(true)}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 shrink-0"
                 title="Import questions from ExamView"
               >
                 <Upload className="w-3.5 h-3.5" /> Import ExamView

@@ -663,15 +663,8 @@ export default function App() {
             </button>
           </nav>
 
-          {/* Right: new + user */}
+          {/* Right: user */}
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
-            <button
-              onClick={() => setShowNewAssessmentModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
-              title="Create blank assessment"
-            >
-              <FilePlus className="w-3.5 h-3.5" /> New
-            </button>
             <span className="text-xs text-stone-400 px-1">{user.displayName}</span>
             <button
               onClick={() => setShowDeleteModal(true)}
@@ -767,6 +760,7 @@ export default function App() {
             importedLoading={importedLoading}
             onLoadImported={handleLoadImported}
             onUpdateImported={handleUpdateImported}
+            onNewAssessment={() => setShowNewAssessmentModal(true)}
             onRegenerateDiagram={async (q) => {
               const results = await (await import('./lib/gemini')).regenerateDiagramsForQuestions(
                 [q], q.subject,

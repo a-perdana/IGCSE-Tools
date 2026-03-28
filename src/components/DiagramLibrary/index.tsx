@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { X, Pencil, Trash2, Plus, Check, Loader2, Upload, Search, Image as ImageIcon, FileText, Sparkles, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { X, Pencil, Trash2, Plus, Check, Loader2, Upload, Search, Image as ImageIcon, FileText, Sparkles, Eye, EyeOff, AlertCircle, List, LayoutGrid } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -572,6 +572,7 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
   const [page, setPage] = useState(1)
   const [editEntry, setEditEntry] = useState<DiagramPoolEntry | null>(null)
   const [generateEntry, setGenerateEntry] = useState<DiagramPoolEntry | null>(null)
+  const [layout, setLayout] = useState<'gallery' | 'list'>('gallery')
   const [showUpload, setShowUpload] = useState(false)
   const [showPdfExtractor, setShowPdfExtractor] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -665,7 +666,20 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
           ))}
         </select>
 
-        <span className="text-xs text-stone-400 ml-auto">{filtered.length} diagrams</span>
+        <span className="text-xs text-stone-400">{filtered.length} diagrams</span>
+
+        <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto shrink-0">
+          <button
+            onClick={() => setLayout('gallery')}
+            className={`p-1.5 transition-colors ${layout === 'gallery' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+            title="Gallery view"
+          ><LayoutGrid className="w-3.5 h-3.5" /></button>
+          <button
+            onClick={() => setLayout('list')}
+            className={`p-1.5 border-l border-stone-200 transition-colors ${layout === 'list' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+            title="List view"
+          ><List className="w-3.5 h-3.5" /></button>
+        </div>
 
         {/* Sort order */}
         <button
@@ -711,7 +725,8 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {layout === 'gallery' ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {paged.map(entry => (
             <div key={entry.id} className="group relative border border-stone-200 rounded-xl overflow-hidden bg-white hover:shadow-md transition-shadow">
               {/* Image */}
@@ -781,6 +796,56 @@ export function DiagramLibrary({ entries, loading, onLoad, onUpdate, onDelete, o
             </div>
           ))}
         </div>
+        ) : (
+          /* ── List view ── */
+          <div className="flex flex-col gap-1">
+            {paged.map(entry => (
+              <div key={entry.id} className="group flex items-center gap-3 px-3 py-2 border border-stone-200 rounded-xl bg-white hover:shadow-sm transition-shadow">
+                <img
+                  src={entry.imageURL}
+                  alt={entry.description || entry.imageName}
+                  className="w-12 h-12 object-contain rounded-lg border border-stone-100 bg-stone-50 shrink-0"
+                  loading="lazy"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CATEGORY_COLORS[entry.category] ?? CATEGORY_COLORS.other}`}>
+                      {CATEGORY_LABELS[entry.category] ?? 'Other'}
+                    </span>
+                    <span className="text-[10px] text-stone-400">{entry.subject}</span>
+                    {entry.usedInQuestionUids?.length > 0 && (
+                      <span className="text-[10px] text-stone-400">{entry.usedInQuestionUids.length}q</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-stone-700 truncate mt-0.5">
+                    {entry.description || <span className="text-stone-300 italic">No description</span>}
+                  </p>
+                  {entry.topics.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-0.5">
+                      {entry.topics.slice(0, 3).map(t => (
+                        <span key={t} className="text-[9px] bg-stone-100 text-stone-500 px-1 py-0.5 rounded">{t}</span>
+                      ))}
+                      {entry.topics.length > 3 && <span className="text-[9px] text-stone-400">+{entry.topics.length - 3}</span>}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {geminiApiKey && onSaveQuestions && (
+                    <button onClick={() => setGenerateEntry(entry)} className="p-1.5 rounded-lg text-stone-400 hover:text-violet-600 hover:bg-violet-50" title="Generate question">
+                      <Sparkles className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button onClick={() => setEditEntry(entry)} className="p-1.5 rounded-lg text-stone-400 hover:text-emerald-600 hover:bg-emerald-50" title="Edit">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => setConfirmDeleteId(entry.id)} className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50" title="Remove">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (
