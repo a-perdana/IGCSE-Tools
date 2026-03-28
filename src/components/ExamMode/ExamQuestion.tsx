@@ -1,6 +1,7 @@
 import type { QuestionItem } from '../../lib/types'
 import { QMarkdown } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
+import { Pencil } from 'lucide-react'
 
 interface Props {
   question: QuestionItem
@@ -16,6 +17,7 @@ interface Props {
   answeredCount: number
   allDraftAnswers: Record<string, string>
   questions: QuestionItem[]
+  onEdit?: () => void
 }
 
 export function ExamQuestion({
@@ -31,6 +33,7 @@ export function ExamQuestion({
   onGoTo,
   allDraftAnswers,
   questions,
+  onEdit,
 }: Props) {
   return (
     <div className="flex flex-col gap-6">
@@ -39,8 +42,19 @@ export function ExamQuestion({
         <span className="font-medium text-slate-700">
           Question {questionNumber} <span className="text-slate-400">/ {totalQuestions}</span>
         </span>
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
-          {question.marks} mark{question.marks !== 1 ? 's' : ''}
+        <span className="flex items-center gap-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+            {question.marks} mark{question.marks !== 1 ? 's' : ''}
+          </span>
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="p-1 text-slate-300 hover:text-blue-500 transition-colors rounded"
+              title="Quick edit this question"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
         </span>
       </div>
 
@@ -79,9 +93,9 @@ export function ExamQuestion({
                   onChange={() => onAnswerChange(opt)}
                   className="mt-0.5 accent-blue-600 shrink-0"
                 />
-                <span className="text-sm leading-relaxed">
-                  <span className="font-semibold mr-1">{['A', 'B', 'C', 'D'][i]}.</span>
-                  {opt}
+                <span className="text-sm leading-relaxed flex items-baseline gap-1">
+                  <span className="font-semibold shrink-0">{['A', 'B', 'C', 'D'][i]}.</span>
+                  <QMarkdown content={opt} />
                 </span>
               </label>
             )

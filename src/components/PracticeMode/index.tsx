@@ -1,7 +1,9 @@
-import type { Assessment, PracticeAttempt, GenerationConfig } from '../../lib/types'
+import { useState } from 'react'
+import type { Assessment, PracticeAttempt, GenerationConfig, QuestionItem } from '../../lib/types'
 import { usePractice } from '../../hooks/usePractice'
 import { PracticeQuestion } from './PracticeQuestion'
 import { PracticeResults } from './PracticeResults'
+import { QuickEditModal } from '../Library/modals'
 
 interface Props {
   assessment: Assessment
@@ -14,6 +16,9 @@ interface Props {
 }
 
 export function PracticeMode({ assessment, provider, apiKey, model, onExit, onComplete, notify }: Props) {
+  const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null)
+  const [questionOverrides, setQuestionOverrides] = useState<Record<string, Partial<QuestionItem>>>({})
+
   const { session, setDraftAnswer, checkAnswer, goToNext, goToPrev, finishSession, reset } = usePractice(
     assessment,
     provider,
@@ -23,10 +28,17 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
     notify,
   )
 
-  const questions = assessment.questions
+  const questions = assessment.questions.map(q =>
+    questionOverrides[q.id] ? { ...q, ...questionOverrides[q.id] } : q
+  )
   const currentQuestion = questions[session.currentIndex]
   const progress = session.checkedQuestions.size / Math.max(questions.length, 1)
   const allChecked = session.checkedQuestions.size === questions.length
+
+  function handleQuickSave(updates: Partial<QuestionItem>) {
+    if (!editingQuestion) return
+    setQuestionOverrides(prev => ({ ...prev, [editingQuestion.id]: { ...(prev[editingQuestion.id] ?? {}), ...updates } }))
+  }
 
   return (
     <div className="fixed inset-0 z-40 bg-white flex flex-col">
@@ -94,10 +106,19 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
               onFinish={finishSession}
               isLastQuestion={session.currentIndex === questions.length - 1}
               allChecked={allChecked}
+              onEdit={() => setEditingQuestion(currentQuestion)}
             />
           ) : null}
         </div>
       </div>
+
+      {editingQuestion && (
+        <QuickEditModal
+          question={editingQuestion}
+          onClose={() => setEditingQuestion(null)}
+          onSave={handleQuickSave}
+        />
+      )}
     </div>
   )
 }

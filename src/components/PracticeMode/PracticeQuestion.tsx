@@ -1,6 +1,7 @@
 import type { QuestionItem, PracticeAnswerRecord } from '../../lib/types'
 import { QMarkdown } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
+import { Pencil } from 'lucide-react'
 
 interface Props {
   question: QuestionItem
@@ -19,6 +20,7 @@ interface Props {
   onFinish: () => void
   isLastQuestion: boolean
   allChecked: boolean
+  onEdit?: () => void
 }
 
 export function PracticeQuestion({
@@ -38,6 +40,7 @@ export function PracticeQuestion({
   onFinish,
   isLastQuestion,
   allChecked,
+  onEdit,
 }: Props) {
   const isChecked = checkedResult !== undefined
   const canCheck = draftAnswer.trim() !== '' && !isChecking && !isChecked
@@ -55,6 +58,15 @@ export function PracticeQuestion({
           </span>
           {question.syllabusObjective && (
             <span className="hidden sm:inline text-xs text-slate-400">{question.syllabusObjective}</span>
+          )}
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="p-1 text-slate-300 hover:text-violet-500 transition-colors rounded"
+              title="Quick edit this question"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
           )}
         </span>
       </div>
@@ -103,9 +115,9 @@ export function PracticeQuestion({
                   onChange={() => onAnswerChange(opt)}
                   className="mt-0.5 accent-violet-600 shrink-0"
                 />
-                <span className="text-sm leading-relaxed">
-                  <span className="font-semibold mr-1">{['A', 'B', 'C', 'D'][i]}.</span>
-                  {opt}
+                <span className="text-sm leading-relaxed flex items-baseline gap-1">
+                  <span className="font-semibold shrink-0">{['A', 'B', 'C', 'D'][i]}.</span>
+                  <QMarkdown content={opt} />
                 </span>
                 {isChecked && isCorrectOpt && (
                   <span className="ml-auto text-emerald-600 text-xs font-medium shrink-0">✓ Correct</span>

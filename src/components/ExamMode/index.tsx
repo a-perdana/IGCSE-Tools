@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import type { Assessment, ExamAttempt, GenerationConfig } from '../../lib/types'
+import type { Assessment, ExamAttempt, GenerationConfig, QuestionItem } from '../../lib/types'
 import { useExamMode } from '../../hooks/useExamMode'
 import { ExamQuestion } from './ExamQuestion'
 import { ExamResults } from './ExamResults'
 import { ExamTimer } from './ExamTimer'
+import { QuickEditModal } from '../Library/modals'
 
 interface Props {
   assessment: Assessment
@@ -116,6 +117,8 @@ function SetupScreen({ assessment, onStart, onExit }: {
 export function ExamMode({ assessment, provider, apiKey, model, onExit, onComplete, notify, forcedTimeLimitSeconds }: Props) {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState<number | null>(forcedTimeLimitSeconds ?? null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null)
+  const [questionOverrides, setQuestionOverrides] = useState<Record<string, Partial<QuestionItem>>>({})
 
   const exam = useExamMode(
     assessment,
@@ -138,7 +141,9 @@ export function ExamMode({ assessment, provider, apiKey, model, onExit, onComple
     )
   }
 
-  const questions = assessment.questions
+  const questions = assessment.questions.map(q =>
+    questionOverrides[q.id] ? { ...q, ...questionOverrides[q.id] } : q
+  )
   const currentQuestion = questions[exam.session.currentIndex]
   const answeredCount = Object.values(exam.session.draftAnswers).filter(v => v.trim() !== '').length
 
@@ -242,10 +247,19 @@ export function ExamMode({ assessment, provider, apiKey, model, onExit, onComple
               answeredCount={answeredCount}
               allDraftAnswers={exam.session.draftAnswers}
               questions={questions}
+              onEdit={() => setEditingQuestion(currentQuestion)}
             />
           )}
         </div>
       </div>
+
+      {editingQuestion && (
+        <QuickEditModal
+          question={editingQuestion}
+          onClose={() => setEditingQuestion(null)}
+          onSave={updates => setQuestionOverrides(prev => ({ ...prev, [editingQuestion.id]: { ...(prev[editingQuestion.id] ?? {}), ...updates } }))}
+        />
+      )}
 
       {/* Submit confirm modal */}
       {showSubmitConfirm && (

@@ -907,3 +907,98 @@ export function AssessmentViewModal({
     </div>
   )
 }
+
+// ─── QuickEditModal ───────────────────────────────────────────────────────────
+
+export function QuickEditModal({
+  question,
+  onClose,
+  onSave,
+}: {
+  question: QuestionItem
+  onClose: () => void
+  onSave: (updates: Partial<QuestionItem>) => void
+}) {
+  const [text, setText] = useState(question.text)
+  const [markScheme, setMarkScheme] = useState(question.markScheme)
+  const [options, setOptions] = useState<string[]>(
+    question.options ? [...question.options] : ['', '', '', ''],
+  )
+
+  function handleSave() {
+    const updates: Partial<QuestionItem> = { text, markScheme }
+    if (question.type === 'mcq') updates.options = options
+    onSave(updates)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 shrink-0">
+          <div className="flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-violet-500" />
+            <span className="text-sm font-semibold text-stone-700">Quick Edit</span>
+            <span className="text-xs text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">
+              {question.marks}m · {question.commandWord} · {question.type}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleSave}
+              className="px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              Save
+            </button>
+            <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-600 rounded-lg hover:bg-stone-100 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto p-4 flex flex-col gap-4">
+          {/* Question text */}
+          <div>
+            <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Question</label>
+            <RichEditor value={text} onChange={setText} minRows={6} />
+          </div>
+
+          {/* MCQ options */}
+          {question.type === 'mcq' && (
+            <div>
+              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Options (A–D)</label>
+              <div className="flex flex-col gap-1.5">
+                {(['A', 'B', 'C', 'D'] as const).map((letter, i) => (
+                  <div key={letter} className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-stone-400 w-4 shrink-0">{letter}</span>
+                    <input
+                      value={options[i] ?? ''}
+                      onChange={e => {
+                        const next = [...options]
+                        next[i] = e.target.value
+                        setOptions(next)
+                      }}
+                      className="flex-1 text-sm border border-stone-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                      placeholder={`Option ${letter}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mark scheme */}
+          <div>
+            <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Mark Scheme</label>
+            <RichEditor value={markScheme} onChange={setMarkScheme} minRows={4} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
