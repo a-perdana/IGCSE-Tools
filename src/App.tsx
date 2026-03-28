@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
-import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2 } from 'lucide-react'
+import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard } from 'lucide-react'
 import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory } from './lib/types'
 import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
@@ -16,6 +16,7 @@ import { Sidebar } from './components/Sidebar'
 import { AssessmentView } from './components/AssessmentView'
 import { Library as LibraryView } from './components/Library'
 import { DiagramLibrary } from './components/DiagramLibrary'
+import { Dashboard } from './components/Dashboard'
 import { Notifications } from './components/Notifications'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
@@ -237,7 +238,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [view, setView] = useState<'main' | 'library' | 'diagrams'>('main')
+  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams'>('dashboard')
   const [previousView, setPreviousView] = useState<'library' | null>(null)
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
@@ -282,7 +283,7 @@ export default function App() {
   }, [config.subject, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (user && view === 'library') library.loadAll()
+    if (user && (view === 'library' || view === 'dashboard')) library.loadAll()
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -290,6 +291,12 @@ export default function App() {
       getDiagramPool(config.subject).then(setDiagramPool).catch(console.error)
     }
   }, [config.subject, config.useDiagramPool, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (user && view === 'dashboard') {
+      getDiagramPool().then(setDiagramPool).catch(console.error)
+    }
+  }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = useCallback(async () => {
     if (!currentApiKey) {
@@ -630,6 +637,12 @@ export default function App() {
           {/* Centre: tab nav */}
           <nav className="flex items-center gap-1 bg-stone-100 rounded-lg p-0.5 mx-auto">
             <button
+              onClick={() => { setPreviousView(null); setView('dashboard') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'dashboard' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
+            </button>
+            <button
               onClick={() => { setPreviousView(null); setView('main') }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'main' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
             >
@@ -687,7 +700,17 @@ export default function App() {
         )}
 
         {/* Main content */}
-        {view === 'diagrams' ? (
+        {view === 'dashboard' ? (
+          <Dashboard
+            assessments={library.assessments}
+            questions={library.questions}
+            importedQuestions={importedQuestions}
+            diagramPool={diagramPool}
+            resources={resources.resources}
+            currentUserName={user.displayName ?? user.email ?? ''}
+            onNavigate={v => { setPreviousView(null); setView(v) }}
+          />
+        ) : view === 'diagrams' ? (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <DiagramLibrary
               entries={diagramPool}

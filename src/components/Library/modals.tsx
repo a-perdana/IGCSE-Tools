@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
 import { Pencil, X, Check, Loader2, Bold, Italic, List, Upload, RefreshCw } from 'lucide-react'
 import type { Question, Folder, ImportedQuestion, RasterSpec } from '../../lib/types'
@@ -15,7 +16,7 @@ import { useExamViewImport } from '../../hooks/useExamViewImport'
 export function QMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkMath, remarkGfm]}
+      remarkPlugins={[remarkMath, remarkGfm, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
     >
       {preprocessLatex(content)}
@@ -547,7 +548,7 @@ export function QuestionPreviewModal({
                 </div>
               )}
               {((question as any).syllabusObjective || question.topic || question.difficulty) && (
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500 border-t border-stone-100 pt-3">
+                <div className="mt-3 flex flex-col gap-1 text-xs text-stone-500 border-t border-stone-100 pt-3">
                   {question.topic && <span><span className="font-semibold">Topic:</span> {question.topic}</span>}
                   {question.difficulty && <span><span className="font-semibold">Difficulty:</span> {question.difficulty}</span>}
                   {(question as any).syllabusObjective && <span><span className="font-semibold">Objective:</span> {(question as any).syllabusObjective}</span>}
