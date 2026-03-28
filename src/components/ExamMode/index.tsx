@@ -113,6 +113,7 @@ function SetupScreen({ assessment, onStart, onExit }: {
 
 export function ExamMode({ assessment, provider, apiKey, model, onExit, onComplete, notify }: Props) {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState<number | null>(null)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const exam = useExamMode(
     assessment,
@@ -138,7 +139,6 @@ export function ExamMode({ assessment, provider, apiKey, model, onExit, onComple
   const questions = assessment.questions
   const currentQuestion = questions[exam.session.currentIndex]
   const answeredCount = Object.values(exam.session.draftAnswers).filter(v => v.trim() !== '').length
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   // Grading overlay
   if (exam.session.isSubmitted && (exam.session.isGrading || exam.session.isSaving)) {

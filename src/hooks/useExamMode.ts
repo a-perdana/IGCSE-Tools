@@ -42,6 +42,7 @@ export function useExamMode(
 
   // ── countdown timer ──────────────────────────────────────────────────────
   useEffect(() => {
+    if (timeLimitSeconds <= 0) return  // not started yet (setup screen still showing)
     timerRef.current = setInterval(() => {
       setSession(s => {
         if (s.isSubmitted) {
@@ -57,11 +58,11 @@ export function useExamMode(
       })
     }, 1000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, []) // run once on mount
+  }, [timeLimitSeconds]) // restart when time limit is set
 
   // ── auto-submit when timer hits 0 ────────────────────────────────────────
   useEffect(() => {
-    if (session.timeRemainingSeconds === 0 && !session.isSubmitted) {
+    if (timeLimitSeconds > 0 && session.timeRemainingSeconds === 0 && !session.isSubmitted) {
       handleSubmit(true)
     }
   }, [session.timeRemainingSeconds]) // eslint-disable-line react-hooks/exhaustive-deps
