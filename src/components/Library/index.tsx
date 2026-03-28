@@ -861,8 +861,7 @@ export function Library({
                 const sc = subjectColors(a.subject)
                 if (assessmentLayout === 'gallery') {
                   return (
-                    <div key={a.id} className={`border rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer ${isGlobal ? 'border-sky-300' : sc.border}`}
-                      onClick={() => { if (renamingId !== a.id) onSelect(a) }}
+                    <div key={a.id} className={`border rounded-xl overflow-hidden hover:shadow-md transition-all ${isGlobal ? 'border-sky-300' : sc.border}`}
                     >
                       <div className={`h-2 w-full ${isGlobal ? 'bg-sky-400' : sc.accentBar}`} />
                       <div className={`p-3 ${isGlobal ? 'bg-sky-50' : sc.bg}`}>
@@ -895,12 +894,12 @@ export function Library({
                             <div className="text-[11px] text-stone-500 mt-1">{a.difficulty} · {a.questions.length}q</div>
                             {isGlobal && a.preparedBy && <div className="text-[10px] text-emerald-600 mt-0.5">by {a.preparedBy}</div>}
                             <div className="flex items-center justify-between mt-2" onClick={e => e.stopPropagation()}>
-                              {a.userId === currentUserId && (
-                                <div className="flex gap-1">
-                                  <button onClick={() => { setRenamingId(a.id); setRenameValue(a.topic) }} className="p-1 text-stone-400 hover:text-stone-600"><Pencil className="w-3 h-3" /></button>
+                              <div className="flex gap-1">
+                                <button onClick={() => onSelect(a)} className="p-1 text-stone-400 hover:text-emerald-600" title="Open in editor"><Pencil className="w-3 h-3" /></button>
+                                {a.userId === currentUserId && (
                                   <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                </div>
-                              )}
+                                )}
+                              </div>
                               <div className="flex items-center gap-1 ml-auto">
                                 <button
                                   onClick={() => onPractice?.(a)}
@@ -952,7 +951,7 @@ export function Library({
                           <button onClick={() => setRenamingId(null)} className="text-stone-400"><X className="w-4 h-4" /></button>
                         </div>
                       ) : (
-                        <button onClick={() => onSelect(a)} className="text-left w-full">
+                        <div className="text-left w-full">
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
                             {a.subject && (
                               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{a.subject}</span>
@@ -985,13 +984,20 @@ export function Library({
                               {a.createdAt.toDate().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                        </button>
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => onSelect(a)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 rounded border border-stone-200"
+                        title="Open in editor"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
                       {a.userId === currentUserId && (
                         <>
-                          <button onClick={() => { setRenamingId(a.id); setRenameValue(a.topic) }} className="p-1 text-stone-400 hover:text-stone-600"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { setRenamingId(a.id); setRenameValue(a.topic) }} className="p-1 text-stone-400 hover:text-stone-600" title="Rename"><Pencil className="w-3.5 h-3.5" /></button>
                           <select
                             value={a.folderId ?? ''}
                             onChange={e => onMoveAssessment(a.id, e.target.value || null)}
