@@ -163,6 +163,8 @@ export function Library({
   const [newSubfolderName, setNewSubfolderName] = useState('')
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [uncatAddingFolder, setUncatAddingFolder] = useState(false)
+  const [uncatNewFolderName, setUncatNewFolderName] = useState('')
 
   // Keep previewQuestion in sync when the question is updated externally (e.g. after diagram regenerate)
   // One-time migration: strip legacy [diagram:...] placeholders from existing ExamView questions
@@ -220,6 +222,21 @@ export function Library({
     folders.forEach(f => compute(f))
     return result
   }, [folders])
+
+  // Flat id→folder lookup (used for ribbon display)
+  const folderById = useMemo(() => {
+    const m: Record<string, (typeof folders)[0]> = {}
+    folders.forEach(f => { m[f.id] = f })
+    return m
+  }, [folders])
+
+  // Walk up to the root folder for a given folderId
+  const getRootFolderName = useCallback((folderId: string): string | null => {
+    let cur = folderById[folderId]
+    if (!cur) return null
+    while (cur.parentId && folderById[cur.parentId]) cur = folderById[cur.parentId]
+    return cur.name
+  }, [folderById])
 
   const itemCountByFolder = useMemo(() => {
     // Direct counts first
@@ -567,17 +584,52 @@ export function Library({
             >
               <LibraryIcon className="w-3.5 h-3.5" /> All
             </button>
-            {/* Uncategorized virtual folder */}
-            <button
-              onClick={() => onSelectFolder(null)}
-              className={`text-left text-xs px-2 py-1.5 rounded flex items-center gap-1 ${selectedFolderId === null ? 'bg-stone-200 text-stone-800 font-medium' : 'hover:bg-stone-100 text-stone-500'}`}
-            >
-              <FolderIcon className="w-3.5 h-3.5 text-stone-400" />
-              <span className="truncate italic">Uncategorized</span>
-              <span className="text-[10px] shrink-0 ml-auto text-stone-300">
-                ({(questions.filter(q => !q.folderId).length + assessments.filter(a => !a.folderId).length)})
-              </span>
-            </button>
+            {/* Uncategorized virtual folder — full edit actions */}
+            <div className="flex items-center gap-0.5 group relative">
+              <span className="shrink-0 w-4 h-4 invisible" />
+              <button
+                onClick={() => onSelectFolder(null)}
+                className={`flex-1 text-left text-xs px-1.5 py-1.5 rounded flex items-center gap-1 min-w-0 pr-16 transition-colors ${selectedFolderId === null ? 'bg-stone-200 text-stone-800 font-medium' : 'hover:bg-stone-100 text-stone-500'}`}
+              >
+                <FolderIcon className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                <span className="truncate italic">Uncategorized</span>
+                <span className="text-[10px] shrink-0 ml-auto text-stone-300">
+                  ({(questions.filter(q => !q.folderId).length + assessments.filter(a => !a.folderId).length)})
+                </span>
+              </button>
+              <div className="absolute right-0 flex items-center gap-0 opacity-0 group-hover:opacity-100 bg-white/90 rounded pl-0.5">
+                <button
+                  onClick={() => { setUncatAddingFolder(true); setUncatNewFolderName('') }}
+                  className="p-0.5 text-stone-400 hover:text-emerald-600" title="New folder here"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+            {uncatAddingFolder && (
+              <div className="flex gap-1 mt-0.5 pr-1 pl-5">
+                <input
+                  value={uncatNewFolderName}
+                  onChange={e => setUncatNewFolderName(e.target.value)}
+                  placeholder="Folder name..."
+                  className="flex-1 text-xs px-2 py-1 border border-stone-300 rounded"
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && uncatNewFolderName.trim()) {
+                      onCreateFolder(uncatNewFolderName.trim())
+                      setUncatAddingFolder(false)
+                      setUncatNewFolderName('')
+                    }
+                    if (e.key === 'Escape') setUncatAddingFolder(false)
+                  }}
+                />
+                <button
+                  onClick={() => { if (uncatNewFolderName.trim()) { onCreateFolder(uncatNewFolderName.trim()); setUncatAddingFolder(false); setUncatNewFolderName('') } }}
+                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                ><Plus className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setUncatAddingFolder(false)} className="p-1 text-stone-400 hover:bg-stone-100 rounded"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
             {visibleRootFolders.map(f => renderFolderRow(f, 0, visibleRootFolders, folderSubjectMap[f.id]))}
           </div>
         )}
@@ -989,6 +1041,8 @@ export function Library({
                 const isGlobal = q.userId !== currentUserId && q.isPublic
                 const sc = subjectColors(q.subject)
                 const displayCode = q.code || autoCode(q)
+                const isAiGenerated = !(q as any).source
+                const rootFolderName = q.folderId ? getRootFolderName(q.folderId) : null
                 return (
                   <div
                     key={q.id}
@@ -1015,6 +1069,16 @@ export function Library({
                           {displayCode}
                         </div>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{q.subject}</span>
+                        {isAiGenerated && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm" title="AI-generated question">
+                            ✦ AI-Gen
+                          </span>
+                        )}
+                        {!isAiGenerated && rootFolderName && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-stone-200 text-stone-600 border border-stone-300" title={`In folder: ${rootFolderName}`}>
+                            📁 {rootFolderName}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-stone-700 truncate">
                         {q.text
