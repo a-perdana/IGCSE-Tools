@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard } from 'lucide-react'
-import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage } from './lib/firebase'
+import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -253,6 +253,7 @@ export default function App() {
   const [importedLoading, setImportedLoading] = useState(false)
   const [diagramPool, setDiagramPool] = useState<DiagramPoolEntry[]>([])
   const [diagramPoolLoading, setDiagramPoolLoading] = useState(false)
+  const [practiceAttempts, setPracticeAttempts] = useState<PracticeAttempt[]>([])
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -286,6 +287,12 @@ export default function App() {
 
   useEffect(() => {
     if (user && (view === 'library' || view === 'dashboard')) library.loadAll()
+  }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (user && view === 'dashboard') {
+      getPracticeAttempts().then(setPracticeAttempts).catch(console.error)
+    }
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -712,6 +719,8 @@ export default function App() {
             importedQuestions={importedQuestions}
             diagramPool={diagramPool}
             resources={resources.resources}
+            practiceAttempts={practiceAttempts}
+            currentUserId={user.uid}
             currentUserName={user.displayName ?? user.email ?? ''}
             onNavigate={v => { setPreviousView(null); setView(v) }}
           />
@@ -793,6 +802,7 @@ export default function App() {
             onExit={() => { setPracticeAssessment(null); setView('library') }}
             onComplete={(attempt) => {
               notify(`Practice complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks`, 'success')
+              setPracticeAttempts(prev => [attempt, ...prev])
               setPracticeAssessment(null)
               setView('library')
             }}

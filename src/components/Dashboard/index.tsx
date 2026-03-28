@@ -3,7 +3,7 @@ import {
   BookOpen, Brain, FileQuestion, ImageIcon, Wand2, Trophy,
   TrendingUp, Layers, ChevronRight, Star, Zap, Upload,
 } from 'lucide-react'
-import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource } from '../../lib/types'
+import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt } from '../../lib/types'
 
 // ─── Subject colour palette ───────────────────────────────────────────────────
 
@@ -101,8 +101,8 @@ function SubjectCard({
 
 // ─── Leaderboard row ──────────────────────────────────────────────────────────
 
-function LeaderboardRow({ rank, name, score, correct, total }: {
-  rank: number; name: string; score: number; correct: number; total: number
+function LeaderboardRow({ rank, name, score, correct, total, attempts }: {
+  rank: number; name: string; score: number; correct: number; total: number; attempts?: number
 }) {
   const isTop3 = rank <= 3
   const medals = ['🥇', '🥈', '🥉']
@@ -113,11 +113,14 @@ function LeaderboardRow({ rank, name, score, correct, total }: {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-stone-700 truncate">{name}</p>
-        <p className="text-[10px] text-stone-400">{correct}/{total} correct</p>
+        <p className="text-[10px] text-stone-400">
+          {correct}/{total} marks
+          {attempts !== undefined && attempts > 1 && <span className="ml-1">· {attempts} attempts</span>}
+        </p>
       </div>
       <div className="text-right shrink-0">
-        <p className={`text-sm font-bold ${isTop3 ? 'text-amber-700' : 'text-stone-600'}`}>{score}</p>
-        <p className="text-[10px] text-stone-400">pts</p>
+        <p className={`text-sm font-bold ${isTop3 ? 'text-amber-700' : 'text-stone-600'}`}>{score}%</p>
+        <p className="text-[10px] text-stone-400">avg</p>
       </div>
     </div>
   )
@@ -158,6 +161,8 @@ export function Dashboard({
   questions,
   importedQuestions,
   diagramPool,
+  practiceAttempts,
+  currentUserId,
   currentUserName,
   onNavigate,
 }: {
@@ -166,6 +171,8 @@ export function Dashboard({
   importedQuestions: ImportedQuestion[]
   diagramPool: DiagramPoolEntry[]
   resources: Resource[]
+  practiceAttempts: PracticeAttempt[]
+  currentUserId: string
   currentUserName: string
   onNavigate: (view: 'main' | 'library' | 'diagrams') => void
 }) {
@@ -272,9 +279,31 @@ export function Dashboard({
     { label: 'Past Paper',   count: pastPaperCount, color: 'bg-violet-400',  legend: 'bg-violet-400' },
   ].filter(s => s.count > 0)
 
-  const leaderboard = [
-    { rank: 1, name: currentUserName || 'You', score: 0, correct: 0, total: 0 },
-  ]
+  // ── Leaderboard from practice attempts ──────────────────────────────────
+  const leaderboard = useMemo(() => {
+    if (practiceAttempts.length === 0) return []
+    // Aggregate per user: sum marksAwarded and totalMarks across all attempts
+    const byUser: Record<string, { name: string; marksAwarded: number; totalMarks: number; attempts: number }> = {}
+    practiceAttempts.forEach(a => {
+      const uid = a.userId || currentUserId
+      const displayName = uid === currentUserId ? (currentUserName || 'You') : uid
+      if (!byUser[uid]) byUser[uid] = { name: displayName, marksAwarded: 0, totalMarks: 0, attempts: 0 }
+      byUser[uid].marksAwarded += a.marksAwarded
+      byUser[uid].totalMarks += a.totalMarks
+      byUser[uid].attempts++
+    })
+    return Object.entries(byUser)
+      .map(([, v]) => ({
+        name: v.name,
+        score: Math.round(v.totalMarks > 0 ? (v.marksAwarded / v.totalMarks) * 100 : 0),
+        correct: v.marksAwarded,
+        total: v.totalMarks,
+        attempts: v.attempts,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map((row, i) => ({ rank: i + 1, ...row }))
+  }, [practiceAttempts, currentUserId, currentUserName])
 
   return (
     <div className="flex-1 overflow-y-auto bg-gradient-to-br from-stone-50 to-slate-50 min-h-0 w-full">
@@ -575,33 +604,40 @@ export function Dashboard({
           <div className="flex items-start justify-between mb-1">
             <h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-500" />
-              Student Leaderboard
+              Practice Leaderboard
             </h3>
-            <span className="text-[10px] text-stone-300 italic">Coming soon</span>
+            {practiceAttempts.length > 0 && (
+              <span className="text-[10px] text-stone-400">{practiceAttempts.length} attempt{practiceAttempts.length !== 1 ? 's' : ''} total</span>
+            )}
           </div>
           <p className="text-xs text-stone-400 mb-4">
-            Students will earn points by solving practice questions. Top scorers appear here.
+            Ranked by average score across all practice attempts.
           </p>
-          <div className="space-y-1.5">
-            {leaderboard.map(row => <LeaderboardRow key={row.rank} {...row} />)}
-            {[2, 3, 4, 5].map(rank => (
-              <div key={rank} className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-stone-50 opacity-30 select-none">
-                <div className="w-7 h-7 bg-stone-200 rounded-full" />
-                <div className="flex-1 space-y-1">
-                  <div className="h-2.5 bg-stone-200 rounded w-1/3" />
-                  <div className="h-2 bg-stone-100 rounded w-1/4" />
+          {leaderboard.length > 0 ? (
+            <div className="space-y-1.5">
+              {leaderboard.map(row => <LeaderboardRow key={row.rank} {...row} />)}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {[1, 2, 3, 4, 5].map(rank => (
+                <div key={rank} className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-stone-50 opacity-30 select-none">
+                  <div className="w-7 h-7 bg-stone-200 rounded-full" />
+                  <div className="flex-1 space-y-1">
+                    <div className="h-2.5 bg-stone-200 rounded w-1/3" />
+                    <div className="h-2 bg-stone-100 rounded w-1/4" />
+                  </div>
+                  <div className="h-4 bg-stone-200 rounded w-8" />
                 </div>
-                <div className="h-4 bg-stone-200 rounded w-8" />
+              ))}
+              <div className="mt-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 p-3 flex items-center gap-3">
+                <Star className="w-4 h-4 text-amber-500 shrink-0" />
+                <p className="text-xs text-amber-700">
+                  <span className="font-semibold">No practice attempts yet.</span>{' '}
+                  Go to Library → pick an assessment → click <strong>▶ Practice</strong> to get on the board.
+                </p>
               </div>
-            ))}
-          </div>
-          <div className="mt-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 p-3 flex items-center gap-3">
-            <Star className="w-4 h-4 text-amber-500 shrink-0" />
-            <p className="text-xs text-amber-700">
-              <span className="font-semibold">Student mode is coming.</span>{' '}
-              Students will be able to solve questions, track progress, and earn points on this leaderboard.
-            </p>
-          </div>
+            </div>
+          )}
         </section>
 
         {/* ── Quick actions ── */}
