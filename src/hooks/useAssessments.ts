@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { User } from "firebase/auth";
 import type { Assessment, Question, Folder } from "../lib/types";
 import type { NotifyFn } from "./useNotifications";
 import { generateAssessmentCode } from "../lib/gemini";
+import type { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import {
   saveAssessmentWithQuestions,
   getSavedAssessments,
@@ -11,6 +12,7 @@ import {
   moveAssessment as fbMove,
   saveQuestion as fbSaveQ,
   getQuestions,
+  getQuestionPage,
   deleteQuestion as fbDeleteQ,
   moveQuestion as fbMoveQ,
   updateQuestion as fbUpdateQ,
@@ -24,12 +26,21 @@ import {
   togglePublicQuestion as fbTogglePublicQuestion,
   togglePublicFolder as fbTogglePublicFolder,
 } from "../lib/firebase";
+import type { QuestionPageFilters } from "../lib/firebase";
+
+const QUESTIONS_PAGE_SIZE = 20;
 
 export function useAssessments(user: User | null, notify: NotifyFn) {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // ── Paginated question loading ──────────────────────────────────────────────
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [hasMoreQuestions, setHasMoreQuestions] = useState(false);
+  const questionCursor = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const activeFilters = useRef<QuestionPageFilters>({});
 
   const loadAll = useCallback(
     async () => {
@@ -38,19 +49,78 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
       setAssessments([]);
       setQuestions([]);
       try {
-        const [a, q, f] = await Promise.all([
+        const [a, f] = await Promise.all([
           getSavedAssessments(),
-          getQuestions(),
           getFolders(),
         ]);
         setAssessments(a);
-        setQuestions(q);
         setFolders(f);
+        // Questions are now loaded via loadQuestions() with pagination
+        // Reset paginated questions state
+        questionCursor.current = null;
+        activeFilters.current = {};
+        const result = await getQuestionPage({}, QUESTIONS_PAGE_SIZE);
+        setQuestions(result.questions);
+        questionCursor.current = result.cursor;
+        setHasMoreQuestions(result.cursor !== null);
       } catch (e) {
         notify("Failed to load library", "error");
         console.error(e);
       } finally {
         setLoading(false);
+      }
+    },
+    [user, notify],
+  );
+
+  /**
+   * Load (or reload) questions with new filters from page 1.
+   * Call this when subject/topic/folder filters change.
+   */
+  const loadQuestions = useCallback(
+    async (filters: QuestionPageFilters) => {
+      if (!user) return;
+      setQuestionsLoading(true);
+      activeFilters.current = filters;
+      questionCursor.current = null;
+      try {
+        const result = await getQuestionPage(filters, QUESTIONS_PAGE_SIZE);
+        setQuestions(result.questions);
+        questionCursor.current = result.cursor;
+        setHasMoreQuestions(result.cursor !== null);
+      } catch (e) {
+        notify("Failed to load questions", "error");
+      } finally {
+        setQuestionsLoading(false);
+      }
+    },
+    [user, notify],
+  );
+
+  /**
+   * Append the next page of questions to the existing list.
+   * Call this when user clicks "Load more" / next page.
+   */
+  const loadMoreQuestions = useCallback(
+    async () => {
+      if (!user || !questionCursor.current) return;
+      setQuestionsLoading(true);
+      try {
+        const result = await getQuestionPage(
+          activeFilters.current,
+          QUESTIONS_PAGE_SIZE,
+          questionCursor.current,
+        );
+        setQuestions(prev => {
+          const ids = new Set(prev.map(q => q.id));
+          return [...prev, ...result.questions.filter(q => !ids.has(q.id))];
+        });
+        questionCursor.current = result.cursor;
+        setHasMoreQuestions(result.cursor !== null);
+      } catch (e) {
+        notify("Failed to load more questions", "error");
+      } finally {
+        setQuestionsLoading(false);
       }
     },
     [user, notify],
@@ -377,7 +447,11 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     questions,
     folders,
     loading,
+    questionsLoading,
+    hasMoreQuestions,
     loadAll,
+    loadQuestions,
+    loadMoreQuestions,
     saveAssessment,
     saveQuestions,
     deleteAssessment,

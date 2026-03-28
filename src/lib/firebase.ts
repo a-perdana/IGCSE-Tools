@@ -17,6 +17,10 @@ import {
   getDoc,
   setDoc,
   writeBatch,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -523,6 +527,79 @@ export const getQuestions = async (folderId?: string): Promise<Question[]> => {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'questions')
     return []
+  }
+}
+
+export interface QuestionPageFilters {
+  folderId?: string | null  // null = root (no folder), undefined = all folders
+  subject?: string
+  topic?: string
+}
+
+export interface QuestionPageResult {
+  questions: Question[]
+  cursor: QueryDocumentSnapshot<DocumentData> | null  // null = no more pages
+}
+
+/**
+ * Fetches one page of questions from Firestore.
+ * Filters (folderId, subject, topic) run server-side via Firestore where clauses.
+ * Pass `afterCursor` to get the next page; omit for the first page.
+ * Returns `cursor: null` when there are no more results.
+ *
+ * Requires composite indexes:
+ *   questions: userId ASC, subject ASC, createdAt DESC
+ *   questions: userId ASC, topic ASC, createdAt DESC
+ *   questions: userId ASC, folderId ASC, createdAt DESC
+ *   (all combinations you actually use)
+ */
+export const getQuestionPage = async (
+  filters: QuestionPageFilters,
+  pageSize: number,
+  afterCursor?: QueryDocumentSnapshot<DocumentData> | null,
+): Promise<QuestionPageResult> => {
+  if (!auth.currentUser) return { questions: [], cursor: null }
+  const uid = auth.currentUser.uid
+  const questionsRef = collection(db, 'questions')
+
+  const constraints: Parameters<typeof query>[1][] = [
+    where('userId', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(pageSize + 1),  // fetch one extra to know if more pages exist
+  ]
+
+  if (filters.folderId === null) {
+    // root — questions with no folderId field (or folderId == null)
+    constraints.splice(1, 0, where('folderId', '==', null))
+  } else if (filters.folderId) {
+    constraints.splice(1, 0, where('folderId', '==', filters.folderId))
+  }
+
+  if (filters.subject) {
+    constraints.splice(1, 0, where('subject', '==', filters.subject))
+  }
+
+  if (filters.topic) {
+    constraints.splice(1, 0, where('topic', '==', filters.topic))
+  }
+
+  if (afterCursor) {
+    constraints.push(startAfter(afterCursor))
+  }
+
+  try {
+    const snap = await getDocs(query(questionsRef, ...constraints))
+    const docs = snap.docs
+    const hasMore = docs.length > pageSize
+    const pageDocs = hasMore ? docs.slice(0, pageSize) : docs
+    const questions = pageDocs
+      .map(d => ({ id: d.id, ...d.data() } as Question))
+      .filter(q => typeof (q as any).text === 'string')
+    const cursor = hasMore ? pageDocs[pageDocs.length - 1] : null
+    return { questions, cursor }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'questions')
+    return { questions: [], cursor: null }
   }
 }
 
