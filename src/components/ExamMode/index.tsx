@@ -13,6 +13,8 @@ interface Props {
   onExit: () => void
   onComplete: (attempt: ExamAttempt) => void
   notify: (msg: string, type: 'success' | 'error' | 'info') => void
+  /** If provided, skip the setup screen and start immediately with this time limit. */
+  forcedTimeLimitSeconds?: number
 }
 
 const PRESET_MINUTES = [15, 30, 45, 60, 90]
@@ -111,8 +113,8 @@ function SetupScreen({ assessment, onStart, onExit }: {
   )
 }
 
-export function ExamMode({ assessment, provider, apiKey, model, onExit, onComplete, notify }: Props) {
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState<number | null>(null)
+export function ExamMode({ assessment, provider, apiKey, model, onExit, onComplete, notify, forcedTimeLimitSeconds }: Props) {
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState<number | null>(forcedTimeLimitSeconds ?? null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const exam = useExamMode(

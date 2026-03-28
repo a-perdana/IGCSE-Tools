@@ -210,5 +210,29 @@ service cloud.firestore {
       allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
+
+    // ── Shared Assignments (Class Mode) ──────────────────────────────────────
+    // Teachers create assignments; authenticated students can read by code.
+    match /sharedAssignments/{assignmentId} {
+      // Any authenticated user can read (needed for student join-by-code lookup)
+      allow read: if isAuthenticated();
+      // Only the teacher can create / delete
+      allow create: if isAuthenticated() && request.resource.data.teacherId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.teacherId == request.auth.uid;
+      // Students can update only the studentIds array (join); teachers can update freely
+      allow update: if isAuthenticated() && (
+        resource.data.teacherId == request.auth.uid ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentIds']))
+      );
+    }
+
+    // ── Assignment Attempts ───────────────────────────────────────────────────
+    // Students write their own attempt; teacher can read all attempts for their assignment.
+    match /assignmentAttempts/{attemptId} {
+      // Student can read/delete their own attempt
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Student creates their own attempt
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
   }
 }

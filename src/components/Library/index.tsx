@@ -41,6 +41,7 @@ interface Props {
   onRegenerateDiagram?: (question: Question) => Promise<void>
   onPractice?: (assessment: Assessment) => void
   onExam?: (assessment: Assessment) => void
+  onShare?: (assessment: Assessment) => void
   onNewAssessment?: () => void
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
@@ -123,6 +124,7 @@ export function Library({
   onRegenerateDiagram,
   onPractice,
   onExam,
+  onShare,
   onNewAssessment,
   importedQuestions = [],
   importedLoading = false,
@@ -904,6 +906,13 @@ export function Library({
                                 >
                                   ⏱ Exam
                                 </button>
+                                <button
+                                  onClick={() => onShare?.(a)}
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+                                  title="Share with class"
+                                >
+                                  ↗ Share
+                                </button>
                               </div>
                               <span className="text-[10px] text-stone-400">
                                 {a.createdAt.toDate().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
@@ -997,6 +1006,13 @@ export function Library({
                         title="Timed exam mode"
                       >
                         ⏱ Exam
+                      </button>
+                      <button
+                        onClick={() => onShare?.(a)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+                        title="Share with class"
+                      >
+                        ↗ Share
                       </button>
                     </div>
                   </div>

@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -997,4 +997,109 @@ export async function getPracticeAttempts(assessmentId?: string): Promise<Practi
     handleFirestoreError(error, OperationType.LIST, 'practiceAttempts')
     throw error
   }
+}
+
+// ─── Shared Assignments (Class Mode) ─────────────────────────────────────────
+
+/** Generate a short human-readable join code like "BIO-5Q-X7K". */
+function generateJoinCode(subject: string, questionCount: number): string {
+  const subjectCode = subject.replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase()
+  const countPart = `${questionCount}Q`
+  const random = Math.random().toString(36).slice(2, 5).toUpperCase()
+  return `${subjectCode}-${countPart}-${random}`
+}
+
+export async function createSharedAssignment(
+  assessmentId: string,
+  assessment: Assessment,
+  timeLimitSeconds?: number,
+): Promise<{ id: string; code: string }> {
+  const user = auth.currentUser
+  if (!user) throw new Error('Not authenticated')
+  const code = generateJoinCode(assessment.subject, assessment.questions.length)
+  const snapshot: SharedAssignment['assessmentSnapshot'] = {
+    subject: assessment.subject,
+    topic: assessment.topic,
+    difficulty: assessment.difficulty,
+    questions: assessment.questions.map(q => stripUndefined(q as unknown as Record<string, unknown>) as unknown as QuestionItem),
+    code: assessment.code,
+  }
+  const payload: Record<string, unknown> = {
+    code,
+    assessmentId,
+    assessmentSnapshot: stripUndefined(snapshot as unknown as Record<string, unknown>),
+    teacherId: user.uid,
+    teacherName: user.displayName ?? user.email ?? 'Teacher',
+    createdAt: serverTimestamp(),
+    studentIds: [],
+  }
+  if (timeLimitSeconds) payload.timeLimitSeconds = timeLimitSeconds
+  const ref = await addDoc(collection(db, 'sharedAssignments'), payload)
+  return { id: ref.id, code }
+}
+
+export async function getSharedAssignmentByCode(code: string): Promise<SharedAssignment | null> {
+  const snap = await getDocs(
+    query(collection(db, 'sharedAssignments'), where('code', '==', code.toUpperCase().trim()))
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() } as SharedAssignment
+}
+
+export async function joinSharedAssignment(assignmentId: string): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  const ref = doc(db, 'sharedAssignments', assignmentId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Assignment not found')
+  const data = snap.data() as SharedAssignment
+  if (!data.studentIds.includes(uid)) {
+    await updateDoc(ref, { studentIds: [...data.studentIds, uid] })
+  }
+}
+
+export async function saveAssignmentAttempt(
+  data: Omit<AssignmentAttempt, 'id' | 'completedAt'>
+): Promise<string> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  const payload: Record<string, unknown> = {
+    ...stripUndefined(data as unknown as Record<string, unknown>),
+    completedAt: serverTimestamp(),
+  }
+  const ref = await addDoc(collection(db, 'assignmentAttempts'), payload)
+  return ref.id
+}
+
+/** Fetch all attempts for a given assignment (teacher view). */
+export async function getAssignmentAttempts(assignmentId: string): Promise<AssignmentAttempt[]> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'assignmentAttempts'), where('assignmentId', '==', assignmentId), orderBy('completedAt', 'desc'))
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as AssignmentAttempt))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'assignmentAttempts')
+    throw error
+  }
+}
+
+/** Fetch all shared assignments created by the current teacher. */
+export async function getTeacherAssignments(): Promise<SharedAssignment[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'sharedAssignments'), where('teacherId', '==', uid), orderBy('createdAt', 'desc'))
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as SharedAssignment))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'sharedAssignments')
+    return []
+  }
+}
+
+export async function deleteSharedAssignment(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'sharedAssignments', id))
 }

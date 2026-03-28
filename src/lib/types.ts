@@ -202,6 +202,42 @@ export interface DiagramPoolEntry {
   createdAt: Timestamp;
 }
 
+// ─── Class / Shared Assignments ──────────────────────────────────────────────
+
+export interface SharedAssignment {
+  id: string
+  code: string              // short join code e.g. "BIO-4Q-X7K"
+  assessmentId: string
+  assessmentSnapshot: {     // denormalised copy so students see it even if teacher edits original
+    subject: string
+    topic: string
+    difficulty: string
+    questions: QuestionItem[]
+    code?: string
+  }
+  teacherId: string
+  teacherName: string
+  createdAt: Timestamp
+  expiresAt?: Timestamp     // optional expiry
+  timeLimitSeconds?: number // if set, student is forced into exam mode
+  studentIds: string[]      // uids of students who joined
+}
+
+export interface AssignmentAttempt {
+  id: string
+  assignmentId: string
+  assignmentCode: string
+  userId: string
+  displayName: string
+  subject: string
+  topic: string
+  answers: Record<string, { userAnswer: string; isCorrect: boolean; marksAwarded: number; aiFeedback?: string }>
+  totalMarks: number
+  marksAwarded: number
+  durationSeconds: number
+  completedAt: Timestamp
+}
+
 // ─── Exam Mode ───────────────────────────────────────────────────────────────
 
 export interface ExamAnswerRecord {

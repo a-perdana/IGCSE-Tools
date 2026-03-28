@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
-import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard } from 'lucide-react'
-import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts } from './lib/firebase'
+import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard, TrendingUp, Users } from 'lucide-react'
+import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt, ExamAttempt } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts, getExamAttempts } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -20,6 +20,8 @@ import { Dashboard } from './components/Dashboard'
 import { Notifications } from './components/Notifications'
 import { PracticeMode } from './components/PracticeMode'
 import { ExamMode } from './components/ExamMode'
+import { ProgressDashboard } from './components/ProgressDashboard'
+import { ClassDashboard, ShareAssessmentPanel } from './components/ClassMode'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
@@ -240,7 +242,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam' | 'progress' | 'class'>('dashboard')
   const [practiceAssessment, setPracticeAssessment] = useState<Assessment | null>(null)
   const [examAssessment, setExamAssessment] = useState<Assessment | null>(null)
   const [previousView, setPreviousView] = useState<'library' | null>(null)
@@ -256,6 +258,8 @@ export default function App() {
   const [diagramPool, setDiagramPool] = useState<DiagramPoolEntry[]>([])
   const [diagramPoolLoading, setDiagramPoolLoading] = useState(false)
   const [practiceAttempts, setPracticeAttempts] = useState<PracticeAttempt[]>([])
+  const [examAttempts, setExamAttempts] = useState<ExamAttempt[]>([])
+  const [shareAssessment, setShareAssessment] = useState<Assessment | null>(null)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -292,8 +296,9 @@ export default function App() {
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (user && view === 'dashboard') {
+    if (user && (view === 'dashboard' || view === 'progress')) {
       getPracticeAttempts().then(setPracticeAttempts).catch(console.error)
+      getExamAttempts().then(setExamAttempts).catch(console.error)
     }
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -690,6 +695,18 @@ export default function App() {
             >
               <Sparkles className="w-3.5 h-3.5" /> Diagrams
             </button>
+            <button
+              onClick={() => { setPreviousView(null); setView('progress') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'progress' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> Progress
+            </button>
+            <button
+              onClick={() => { setPreviousView(null); setView('class') }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'class' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+            >
+              <Users className="w-3.5 h-3.5" /> Class
+            </button>
           </nav>
 
           {/* Right: user */}
@@ -723,7 +740,21 @@ export default function App() {
         )}
 
         {/* Main content */}
-        {view === 'dashboard' ? (
+        {view === 'progress' ? (
+          <ProgressDashboard
+            practiceAttempts={practiceAttempts}
+            examAttempts={examAttempts}
+          />
+        ) : view === 'class' ? (
+          <ClassDashboard
+            assessments={library.assessments}
+            currentUser={{ uid: user.uid, displayName: user.displayName, email: user.email }}
+            provider={provider}
+            apiKey={currentApiKey}
+            model={customModel.trim() || defaultModel}
+            notify={notify}
+          />
+        ) : view === 'dashboard' ? (
           <Dashboard
             assessments={library.assessments}
             questions={library.questions}
@@ -803,6 +834,7 @@ export default function App() {
             }}
             onPractice={handleStartPractice}
             onExam={handleStartExam}
+            onShare={setShareAssessment}
           />
           </div>
         ) : view === 'exam' && examAssessment ? (
@@ -814,6 +846,7 @@ export default function App() {
             onExit={() => { setExamAssessment(null); setView('library') }}
             onComplete={(attempt) => {
               notify(`Exam complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks (${Math.round(attempt.marksAwarded / Math.max(attempt.totalMarks, 1) * 100)}%)`, 'success')
+              setExamAttempts(prev => [attempt, ...prev])
               setExamAssessment(null)
               setView('library')
             }}
@@ -967,6 +1000,14 @@ export default function App() {
           onConfirm={handleDeleteAccount}
           onClose={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}
+        />
+      )}
+
+      {shareAssessment && (
+        <ShareAssessmentPanel
+          assessment={shareAssessment}
+          notify={notify}
+          onClose={() => setShareAssessment(null)}
         />
       )}
     </div>
