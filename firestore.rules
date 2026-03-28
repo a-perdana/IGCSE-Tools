@@ -57,12 +57,13 @@ service cloud.firestore {
     }
 
     function isValidFolder(data) {
-      return hasOnlyAllowedFields(['name', 'userId', 'createdAt', 'parentId', 'order']) &&
+      return hasOnlyAllowedFields(['name', 'userId', 'createdAt', 'parentId', 'order', 'isPublic']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.userId == request.auth.uid &&
              data.createdAt is timestamp &&
              (!('parentId' in data) || data.parentId == null || data.parentId is string) &&
-             (!('order' in data) || data.order == null || data.order is number);
+             (!('order' in data) || data.order == null || data.order is number) &&
+             (!('isPublic' in data) || data.isPublic == null || data.isPublic is bool);
     }
 
     function isValidResource(data) {
@@ -141,7 +142,7 @@ service cloud.firestore {
     }
 
     match /folders/{folderId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.isPublic == true);
       allow create: if isAuthenticated() && isValidFolder(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidFolder(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;

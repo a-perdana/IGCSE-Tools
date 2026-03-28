@@ -520,6 +520,15 @@ export const updateQuestion = async (
   }
 }
 
+export const togglePublicFolder = async (id: string, isPublic: boolean) => {
+  const docRef = doc(db, 'folders', id)
+  try {
+    await updateDoc(docRef, { isPublic: isPublic || deleteField() })
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `folders/${id}`)
+  }
+}
+
 export const togglePublicAssessment = async (id: string, isPublic: boolean, preparedBy: string) => {
   const docRef = doc(db, 'assessments', id)
   try {

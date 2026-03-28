@@ -422,7 +422,7 @@ export function QuestionPreviewModal({
 }: {
   question: Question
   onClose: () => void
-  onUpdate?: (updates: { text: string; answer: string; markScheme: string; syllabusObjective: string; topic: string; difficulty: string }) => void
+  onUpdate?: (updates: { text: string; answer: string; markScheme: string; syllabusObjective: string; topic: string; difficulty: string; options?: string[] }) => void
   onRegenerateDiagram?: (q: Question) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
@@ -434,6 +434,7 @@ export function QuestionPreviewModal({
     syllabusObjective: (question as any).syllabusObjective ?? '',
     topic: question.topic ?? '',
     difficulty: question.difficulty ?? '',
+    options: question.options ? [...question.options] : ['', '', '', ''],
   })
 
   return (
@@ -467,13 +468,13 @@ export function QuestionPreviewModal({
               editing ? (
                 <>
                   <button
-                    onClick={() => { onUpdate({ text: draft.text, answer: draft.answer, markScheme: draft.markScheme, syllabusObjective: draft.syllabusObjective, topic: draft.topic, difficulty: draft.difficulty }); setEditing(false) }}
+                    onClick={() => { onUpdate({ text: draft.text, answer: draft.answer, markScheme: draft.markScheme, syllabusObjective: draft.syllabusObjective, topic: draft.topic, difficulty: draft.difficulty, ...(question.type === 'mcq' ? { options: draft.options.filter(Boolean).length >= 4 ? draft.options : question.options } : {}) }); setEditing(false) }}
                     className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
                   >
                     Apply
                   </button>
                   <button
-                    onClick={() => { setDraft({ text: question.text, answer: question.answer, markScheme: question.markScheme, syllabusObjective: (question as any).syllabusObjective ?? '', topic: question.topic ?? '', difficulty: question.difficulty ?? '' }); setEditing(false) }}
+                    onClick={() => { setDraft({ text: question.text, answer: question.answer, markScheme: question.markScheme, syllabusObjective: (question as any).syllabusObjective ?? '', topic: question.topic ?? '', difficulty: question.difficulty ?? '', options: question.options ? [...question.options] : ['', '', '', ''] }); setEditing(false) }}
                     className="px-2.5 py-1 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200"
                   >
                     Cancel
@@ -509,6 +510,27 @@ export function QuestionPreviewModal({
                 <label className="text-xs font-medium text-stone-600 mb-1 block">Mark Scheme</label>
                 <RichEditor value={draft.markScheme} onChange={v => setDraft(d => ({ ...d, markScheme: v }))} minRows={6} />
               </div>
+              {question.type === 'mcq' && (
+                <div>
+                  <label className="text-xs font-medium text-stone-600 mb-1 block">Options (A–D)</label>
+                  <div className="space-y-1.5">
+                    {(['A', 'B', 'C', 'D'] as const).map((letter, i) => (
+                      <div key={letter} className="flex items-center gap-2">
+                        <span className="font-semibold text-stone-500 w-4 text-xs shrink-0">{letter}</span>
+                        <input
+                          value={draft.options[i] ?? ''}
+                          onChange={e => {
+                            const opts = [...draft.options]
+                            opts[i] = e.target.value
+                            setDraft(d => ({ ...d, options: opts }))
+                          }}
+                          className="flex-1 text-xs border border-stone-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-stone-600 mb-1 block">Topic</label>

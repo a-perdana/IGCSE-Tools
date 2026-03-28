@@ -28,6 +28,7 @@ interface Props {
   onRenameFolder: (id: string, name: string) => void
   onMoveFolder: (id: string, parentId: string | null) => void
   onReorderFolders: (orderedIds: string[]) => void
+  onTogglePublicFolder: (id: string, isPublic: boolean) => void
   selectedFolderId: string | null | undefined
   onSelectFolder: (id: string | null | undefined) => void
   onCreateAssessmentFromQuestions: (questions: Question[]) => void
@@ -111,6 +112,7 @@ export function Library({
   onSelect, onDeleteAssessment, onMoveAssessment, onRenameAssessment,
   onDeleteQuestion, onMoveQuestion,
   onCreateFolder, onDeleteFolder, onRenameFolder, onMoveFolder, onReorderFolders,
+  onTogglePublicFolder,
   selectedFolderId, onSelectFolder,
   onCreateAssessmentFromQuestions, onAddQuestionsToAssessment,
   onUpdateQuestion,
@@ -126,7 +128,7 @@ export function Library({
   const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
   const IMPORTED_PER_PAGE = 25
-  const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('assessments')
+  const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('questions')
   const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('list')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -140,6 +142,7 @@ export function Library({
   const [isDeleting, setIsDeleting] = useState(false)
   const [subjectFilter, setSubjectFilter] = useState<string>('')
   const [questionSearch, setQuestionSearch] = useState('')
+  const [questionTopicFilter, setQuestionTopicFilter] = useState<string>('')
   const [assessmentSearch, setAssessmentSearch] = useState('')
   const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
@@ -269,11 +272,18 @@ export function Library({
     return as
   }, [assessments, subjectFilter, assessmentSearch, selectedFolderId, getDescendantIds])
 
+  const questionTopics = useMemo(() => {
+    const set = new Set<string>()
+    questions.forEach(q => { if (q.topic) set.add(q.topic) })
+    return [...set].sort()
+  }, [questions])
+
   const filteredQuestions = useMemo(() => {
     let qs = questions
     if (selectedFolderId === null) qs = qs.filter(q => !q.folderId)
     else if (selectedFolderId !== undefined) { const ids = getDescendantIds(selectedFolderId); qs = qs.filter(q => q.folderId && ids.has(q.folderId)) }
     if (subjectFilter) qs = qs.filter(q => q.subject === subjectFilter)
+    if (questionTopicFilter) qs = qs.filter(q => q.topic === questionTopicFilter)
     if (questionSearch.trim()) {
       const s = questionSearch.trim().toLowerCase()
       qs = qs.filter(q =>
@@ -282,7 +292,7 @@ export function Library({
       )
     }
     return qs
-  }, [questions, subjectFilter, questionSearch, selectedFolderId, getDescendantIds])
+  }, [questions, subjectFilter, questionTopicFilter, questionSearch, selectedFolderId, getDescendantIds])
 
   // ── Imported questions derived state ─────────────────────────────────────
   const importedTopics = useMemo(() => {
@@ -425,6 +435,13 @@ export function Library({
                   className="p-0.5 text-stone-400 hover:text-stone-600" title="Move down">
                   <ArrowDown className="w-3 h-3" />
                 </button>}
+                <button
+                  onClick={() => onTogglePublicFolder(folder.id, !folder.isPublic)}
+                  className={`p-0.5 rounded ${folder.isPublic ? 'text-emerald-600 hover:text-emerald-700' : 'text-stone-300 hover:text-stone-500'}`}
+                  title={folder.isPublic ? 'Public — click to make private' : 'Make public'}
+                >
+                  <Globe className="w-3 h-3" />
+                </button>
                 <button onClick={() => { setNewSubfolderParentId(folder.id); setNewSubfolderName('') }}
                   className="p-0.5 text-stone-400 hover:text-emerald-600" title="Add subfolder">
                   <FolderPlus className="w-3 h-3" />
@@ -519,6 +536,17 @@ export function Library({
             >
               <LibraryIcon className="w-3.5 h-3.5" /> All
             </button>
+            {/* Uncategorized virtual folder */}
+            <button
+              onClick={() => onSelectFolder(null)}
+              className={`text-left text-xs px-2 py-1.5 rounded flex items-center gap-1 ${selectedFolderId === null ? 'bg-stone-200 text-stone-800 font-medium' : 'hover:bg-stone-100 text-stone-500'}`}
+            >
+              <FolderIcon className="w-3.5 h-3.5 text-stone-400" />
+              <span className="truncate italic">Uncategorized</span>
+              <span className="text-[10px] shrink-0 ml-auto text-stone-300">
+                ({(questions.filter(q => !q.folderId).length + assessments.filter(a => !a.folderId).length)})
+              </span>
+            </button>
             {visibleRootFolders.map(f => renderFolderRow(f, 0, visibleRootFolders, folderSubjectMap[f.id]))}
           </div>
         )}
@@ -528,12 +556,6 @@ export function Library({
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Tab switcher + subject filter */}
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-wrap">
-          <button
-            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()); setQuestionPage(1); setAssessmentPage(1) }}
-            className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'assessments' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
-          >
-            Assessments ({filteredAssessments.length})
-          </button>
           <button
             onClick={() => { setBankView('questions'); setSelectedIds(new Set()); setQuestionPage(1); setAssessmentPage(1) }}
             className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'questions' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
@@ -551,6 +573,12 @@ export function Library({
           >
             <BookOpen className="w-3.5 h-3.5" />
             Past Papers {importedQuestions.length > 0 ? `(${filteredImported.length})` : ''}
+          </button>
+          <button
+            onClick={() => { setBankView('assessments'); setSelectedIds(new Set()); setQuestionPage(1); setAssessmentPage(1) }}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium ${bankView === 'assessments' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+          >
+            Assessments ({filteredAssessments.length})
           </button>
           {bankView === 'assessments' && (
             <>
@@ -586,20 +614,21 @@ export function Library({
           )}
           {bankView === 'questions' && (
             <>
+              <select
+                value={questionTopicFilter}
+                onChange={e => { setQuestionTopicFilter(e.target.value); setQuestionPage(1) }}
+                className="text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600 max-w-[180px]"
+              >
+                <option value="">All topics</option>
+                {questionTopics.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
               <input
                 type="text"
                 value={questionSearch}
                 onChange={e => { setQuestionSearch(e.target.value); setQuestionPage(1) }}
                 placeholder="Search by code or text…"
-                className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-52 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-44 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
-              <button
-                onClick={() => setShowExamViewImport(true)}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 shrink-0"
-                title="Import questions from ExamView"
-              >
-                <Upload className="w-3.5 h-3.5" /> Import ExamView
-              </button>
             </>
           )}
           {bankView === 'pastpapers' && (
@@ -624,11 +653,20 @@ export function Library({
           <select
             value={subjectFilter}
             onChange={e => { setSubjectFilter(e.target.value); setQuestionPage(1); setAssessmentPage(1) }}
-            className="ml-auto text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600"
+            className={`${bankView === 'questions' ? '' : 'ml-auto'} text-xs border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-600`}
           >
             <option value="">All subjects</option>
             {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          {bankView === 'questions' && (
+            <button
+              onClick={() => setShowExamViewImport(true)}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 shrink-0"
+              title="Import questions from ExamView"
+            >
+              <Upload className="w-3.5 h-3.5" /> Import ExamView
+            </button>
+          )}
         </div>
 
         {/* Past papers selection action bar */}
@@ -938,6 +976,9 @@ export function Library({
                           }`} title={q.difficultyStars === 1 ? 'Easy' : q.difficultyStars === 2 ? 'Medium' : 'Challenging'}>
                             {'★'.repeat(q.difficultyStars)}{'☆'.repeat(3 - q.difficultyStars)}
                           </span>
+                        )}
+                        {q.topic && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 truncate max-w-[160px]" title={q.topic}>{q.topic}</span>
                         )}
                         {q.userId !== currentUserId && q.isPublic && q.preparedBy && (
                           <span className="ml-1 text-emerald-600">by {q.preparedBy}</span>

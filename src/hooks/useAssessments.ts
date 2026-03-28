@@ -22,6 +22,7 @@ import {
   reorderFolders as fbReorderFolders,
   togglePublicAssessment as fbTogglePublicAssessment,
   togglePublicQuestion as fbTogglePublicQuestion,
+  togglePublicFolder as fbTogglePublicFolder,
 } from "../lib/firebase";
 
 export function useAssessments(user: User | null, notify: NotifyFn) {
@@ -283,6 +284,20 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     [notify, folders],
   );
 
+  const togglePublicFolder = useCallback(
+    async (id: string, isPublic: boolean) => {
+      const original = folders.find((x) => x.id === id)
+      setFolders((f) => f.map((x) => (x.id === id ? { ...x, isPublic } : x)))
+      try {
+        await fbTogglePublicFolder(id, isPublic)
+      } catch (e) {
+        setFolders((f) => f.map((x) => (x.id === id ? (original ?? x) : x)))
+        notify("Failed to update folder visibility", "error")
+      }
+    },
+    [notify, folders],
+  )
+
   const togglePublicAssessment = useCallback(
     async (id: string, isPublic: boolean, preparedBy: string) => {
       const original = assessments.find((x) => x.id === id);
@@ -376,6 +391,7 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
     renameFolder,
     moveFolder,
     reorderFolders,
+    togglePublicFolder,
     togglePublicAssessment,
     togglePublicQuestion,
     toggleAssessmentLike,
