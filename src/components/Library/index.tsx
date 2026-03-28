@@ -343,20 +343,20 @@ export function Library({
     )
   }, [questions, questionSearch])
 
-  // When server-side filters change, reload questions from page 1
-  const prevQuestionFilters = useRef<string>('')
+  // When server-side filters change (or after initial load completes), reload questions from page 1.
+  // We skip while loading=true (assessments/folders still being fetched) to avoid a race.
+  const prevQuestionFilters = useRef<string>('__INIT__')
   useEffect(() => {
+    if (!onLoadQuestions || loading) return
     const key = JSON.stringify({ selectedFolderId, subjectFilter, questionTopicFilter })
     if (key === prevQuestionFilters.current) return
     prevQuestionFilters.current = key
-    if (onLoadQuestions) {
-      onLoadQuestions({
-        folderId: selectedFolderId,
-        subject: subjectFilter || undefined,
-        topic: questionTopicFilter || undefined,
-      })
-    }
-  }, [selectedFolderId, subjectFilter, questionTopicFilter, onLoadQuestions])
+    onLoadQuestions({
+      folderId: selectedFolderId,
+      subject: subjectFilter || undefined,
+      topic: questionTopicFilter || undefined,
+    })
+  }, [selectedFolderId, subjectFilter, questionTopicFilter, onLoadQuestions, loading])
 
   // ── Imported questions derived state ─────────────────────────────────────
   const importedTopics = useMemo(() => {
@@ -1208,7 +1208,7 @@ export function Library({
                   </div>
                 )
               })}
-              {filteredQuestions.length === 0 && !loading && (
+              {filteredQuestions.length === 0 && !loading && !questionsLoading && (
                 <div className="text-stone-400 text-sm text-center py-8">
                   {questionSearch.trim() ? `No questions matching "${questionSearch.trim()}".` : subjectFilter ? `No ${subjectFilter} questions found.` : 'No questions saved yet.'}
                 </div>

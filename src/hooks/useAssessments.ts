@@ -47,7 +47,6 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
       if (!user) return;
       setLoading(true);
       setAssessments([]);
-      setQuestions([]);
       try {
         const [a, f] = await Promise.all([
           getSavedAssessments(),
@@ -55,14 +54,10 @@ export function useAssessments(user: User | null, notify: NotifyFn) {
         ]);
         setAssessments(a);
         setFolders(f);
-        // Questions are now loaded via loadQuestions() with pagination
-        // Reset paginated questions state
+        // Questions are loaded on-demand via loadQuestions() triggered by Library filters.
+        // Reset cursor so the next loadQuestions call starts fresh.
         questionCursor.current = null;
         activeFilters.current = {};
-        const result = await getQuestionPage({}, QUESTIONS_PAGE_SIZE);
-        setQuestions(result.questions);
-        questionCursor.current = result.cursor;
-        setHasMoreQuestions(result.cursor !== null);
       } catch (e) {
         notify("Failed to load library", "error");
         console.error(e);
