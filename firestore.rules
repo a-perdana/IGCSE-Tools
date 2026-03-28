@@ -198,5 +198,12 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    // ── Practice attempts ────────────────────────────────────────────────────
+    // Each user can read/write only their own practice attempts.
+    match /practiceAttempts/{attemptId} {
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
   }
 }

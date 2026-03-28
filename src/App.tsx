@@ -18,6 +18,7 @@ import { Library as LibraryView } from './components/Library'
 import { DiagramLibrary } from './components/DiagramLibrary'
 import { Dashboard } from './components/Dashboard'
 import { Notifications } from './components/Notifications'
+import { PracticeMode } from './components/PracticeMode'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
@@ -238,7 +239,8 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice'>('dashboard')
+  const [practiceAssessment, setPracticeAssessment] = useState<Assessment | null>(null)
   const [previousView, setPreviousView] = useState<'library' | null>(null)
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG)
   const [syllabusContext, setSyllabusContext] = useState('')
@@ -397,6 +399,15 @@ export default function App() {
       questions: [...assessment.questions, ...questions],
     })
   }, [generation])
+
+  const handleStartPractice = useCallback((assessment: Assessment) => {
+    if (assessment.questions.length === 0) {
+      notify('This assessment has no questions to practice.', 'error')
+      return
+    }
+    setPracticeAssessment(assessment)
+    setView('practice')
+  }, [notify])
 
   const handleLoadImported = useCallback(async () => {
     if (!user || importedLoading) return
@@ -770,8 +781,23 @@ export default function App() {
               )
               if (results.length) await library.updateQuestion(q.id, { diagram: results[0].diagram, hasDiagram: true, diagramMissing: undefined })
             }}
+            onPractice={handleStartPractice}
           />
           </div>
+        ) : view === 'practice' && practiceAssessment ? (
+          <PracticeMode
+            assessment={practiceAssessment}
+            provider={provider}
+            apiKey={currentApiKey}
+            model={customModel.trim() || defaultModel}
+            onExit={() => { setPracticeAssessment(null); setView('library') }}
+            onComplete={(attempt) => {
+              notify(`Practice complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks`, 'success')
+              setPracticeAssessment(null)
+              setView('library')
+            }}
+            notify={notify}
+          />
         ) : (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-row">
           <Sidebar

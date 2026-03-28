@@ -39,6 +39,7 @@ interface Props {
   onTogglePublicAssessment: (id: string, isPublic: boolean) => void
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
   onRegenerateDiagram?: (question: Question) => Promise<void>
+  onPractice?: (assessment: Assessment) => void
   onNewAssessment?: () => void
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
@@ -119,6 +120,7 @@ export function Library({
   currentUserId, currentUserName,
   onTogglePublicAssessment, onTogglePublicQuestion,
   onRegenerateDiagram,
+  onPractice,
   onNewAssessment,
   importedQuestions = [],
   importedLoading = false,
@@ -833,7 +835,14 @@ export function Library({
                                   <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                 </div>
                               )}
-                              <span className="text-[10px] text-stone-400 ml-auto">
+                              <button
+                                onClick={() => onPractice?.(a)}
+                                className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded border border-violet-200 ml-auto mr-1"
+                                title="Practice this assessment"
+                              >
+                                ▶ Practice
+                              </button>
+                              <span className="text-[10px] text-stone-400">
                                 {a.createdAt.toDate().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                               </span>
                             </div>
@@ -912,6 +921,13 @@ export function Library({
                           <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                         </>
                       )}
+                      <button
+                        onClick={() => onPractice?.(a)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded border border-violet-200"
+                        title="Practice this assessment"
+                      >
+                        ▶ Practice
+                      </button>
                     </div>
                   </div>
                   </div>

@@ -202,6 +202,28 @@ export interface DiagramPoolEntry {
   createdAt: Timestamp;
 }
 
+// ─── Practice Mode ───────────────────────────────────────────────────────────
+
+export interface PracticeAnswerRecord {
+  userAnswer: string
+  isCorrect: boolean
+  marksAwarded: number
+  aiFeedback?: string
+}
+
+export interface PracticeAttempt {
+  id: string
+  userId: string
+  assessmentId: string
+  subject: string
+  topic: string
+  answers: Record<string, PracticeAnswerRecord>  // keyed by QuestionItem.id
+  totalMarks: number
+  marksAwarded: number
+  completedAt: Timestamp
+  durationSeconds: number
+}
+
 export interface SyllabusCache {
   resourceId: string;
   subject: string;

@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -923,4 +923,42 @@ export const importExamViewQuestions = async (
   }
 
   return saved
+}
+
+// ─── Practice Attempts ────────────────────────────────────────────────────────
+
+export async function savePracticeAttempt(
+  data: Omit<PracticeAttempt, 'id' | 'completedAt' | 'userId'>
+): Promise<string> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  try {
+    const payload: Record<string, unknown> = {
+      ...stripUndefined(data as unknown as Record<string, unknown>),
+      userId: uid,
+      completedAt: serverTimestamp(),
+    }
+    const ref = await addDoc(collection(db, 'practiceAttempts'), payload)
+    return ref.id
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'practiceAttempts')
+    throw error
+  }
+}
+
+export async function getPracticeAttempts(assessmentId?: string): Promise<PracticeAttempt[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const constraints = [
+      where('userId', '==', uid),
+      ...(assessmentId ? [where('assessmentId', '==', assessmentId)] : []),
+      orderBy('completedAt', 'desc'),
+    ]
+    const snap = await getDocs(query(collection(db, 'practiceAttempts'), ...constraints))
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as PracticeAttempt))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'practiceAttempts')
+    throw error
+  }
 }
