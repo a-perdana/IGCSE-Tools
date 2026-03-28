@@ -295,6 +295,7 @@ export default function App() {
   useEffect(() => {
     if (user && view === 'dashboard') {
       getDiagramPool().then(setDiagramPool).catch(console.error)
+      if (importedQuestions.length === 0 && !importedLoading) handleLoadImported()
     }
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
