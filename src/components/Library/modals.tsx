@@ -24,10 +24,11 @@ export function QMarkdown({ content }: { content: string }) {
   )
 }
 
-// Renders an MCQ option that may be plain text, markdown, or an image-only
-// markdown snippet like "![](<url>)" or "![A](<url>)".
-// preprocessLatex can corrupt image URLs so we handle the image case directly.
-const MCQ_IMAGE_RE = /^!\[[^\]]*\]\(<?(https?:\/\/[^)>]+?)>?\)\s*$/
+// Renders an MCQ option that may be plain text, markdown, or an image wrapped
+// in dollar signs by the import process: "$![](url)$" or bare "![](url)".
+// We extract the URL and render an <img> directly to avoid preprocessLatex
+// corrupting the Firebase Storage URL.
+const MCQ_IMAGE_RE = /^\$?!\[[^\]]*\]\(<?(https?:\/\/[^)\s>]+)>?\)\$?\s*$/
 
 export function OptionContent({ opt }: { opt: string }) {
   const m = opt.trim().match(MCQ_IMAGE_RE)
