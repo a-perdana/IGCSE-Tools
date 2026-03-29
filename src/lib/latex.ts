@@ -7,6 +7,11 @@ const BARE_LATEX_RE = /(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alph
  *    (handles MCQ options where question stem has $ but options don't)
  */
 export function preprocessLatex(text: string): string {
+  // Step -1: unwrap image markdown wrapped in dollar signs by the import process.
+  // "$![](url)$" → "![](url)" so remarkGfm can render them as <img> tags
+  // without the $ signs causing KaTeX to try to parse the URL as math.
+  text = text.replace(/\$!\[([^\]]*)\]\(([^)]+)\)\$/g, '![$1]($2)')
+
   // Step 0: escape currency dollar signs so they don't get parsed as LaTeX math delimiters.
   // Uses HTML entity &#36; (renders as $) instead of \$ (shows backslash in some renderers).
   //
