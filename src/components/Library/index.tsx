@@ -140,6 +140,8 @@ export function Library({
   const IMPORTED_PER_PAGE = 25
   const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('questions')
   const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('list')
+  const [questionLayout, setQuestionLayout] = useState<'list' | 'gallery'>('list')
+  const [importedLayout, setImportedLayout] = useState<'list' | 'gallery'>('list')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -728,6 +730,18 @@ export function Library({
                 placeholder="Search by code or text…"
                 className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-44 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
+              <div className="flex rounded-lg border border-stone-200 overflow-hidden shrink-0">
+                <button
+                  onClick={() => setQuestionLayout('list')}
+                  className={`p-1.5 transition-colors ${questionLayout === 'list' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="List view"
+                ><List className="w-3.5 h-3.5" /></button>
+                <button
+                  onClick={() => setQuestionLayout('gallery')}
+                  className={`p-1.5 border-l border-stone-200 transition-colors ${questionLayout === 'gallery' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="Gallery view"
+                ><LayoutGrid className="w-3.5 h-3.5" /></button>
+              </div>
             </>
           )}
           {bankView === 'pastpapers' && (
@@ -747,6 +761,18 @@ export function Library({
                 placeholder="Search code or text…"
                 className="text-xs border border-stone-300 rounded-lg px-2.5 py-1.5 bg-white text-stone-700 placeholder-stone-400 w-44 focus:outline-none focus:ring-1 focus:ring-amber-400"
               />
+              <div className="flex rounded-lg border border-stone-200 overflow-hidden shrink-0">
+                <button
+                  onClick={() => setImportedLayout('list')}
+                  className={`p-1.5 transition-colors ${importedLayout === 'list' ? 'bg-amber-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="List view"
+                ><List className="w-3.5 h-3.5" /></button>
+                <button
+                  onClick={() => setImportedLayout('gallery')}
+                  className={`p-1.5 border-l border-stone-200 transition-colors ${importedLayout === 'gallery' ? 'bg-amber-600 text-white' : 'bg-white text-stone-400 hover:bg-stone-50'}`}
+                  title="Gallery view"
+                ><LayoutGrid className="w-3.5 h-3.5" /></button>
+              </div>
             </>
           )}
           {bankView !== 'assessments' && (
@@ -1081,7 +1107,7 @@ export function Library({
           )}
 
           {bankView === 'questions' && (
-            <div className="grid grid-cols-1 gap-2">
+            <div className={questionLayout === 'gallery' ? 'grid grid-cols-2 lg:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-2'}>
               {pagedQuestions.map(q => {
                 const isSelected = selectedIds.has(q.id)
                 const isGlobal = q.userId !== currentUserId && q.isPublic
@@ -1089,6 +1115,88 @@ export function Library({
                 const displayCode = q.code || autoCode(q)
                 const isAiGenerated = !(q as any).source
                 const rootFolderName = q.folderId ? getRootFolderName(q.folderId) : null
+                const previewText = q.text.replace(/```svg[\s\S]*?```/g, '[diagram]').replace(/\*\*/g, '')
+
+                if (questionLayout === 'gallery') {
+                  return (
+                    <div
+                      key={q.id}
+                      className={`border rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all group
+                        ${isSelected
+                          ? 'border-emerald-400 shadow-sm'
+                          : isGlobal
+                            ? 'border-sky-300'
+                            : sc.border
+                        }`}
+                      onClick={() => toggleSelect(q.id)}
+                    >
+                      <div className={`h-2 w-full ${isSelected ? 'bg-emerald-400' : isGlobal ? 'bg-sky-400' : sc.accentBar}`} />
+                      <div className={`p-3 ${isSelected ? 'bg-emerald-50' : isGlobal ? 'bg-sky-50' : sc.bg}`}>
+                        {/* Selection indicator + badges */}
+                        <div className="flex items-start justify-between gap-1 mb-1.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors
+                              ${isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-stone-300 group-hover:border-emerald-400'}`}>
+                              {isSelected && <Check className="w-2 h-2 text-white" strokeWidth={3} />}
+                            </div>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{q.subject}</span>
+                            <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>{displayCode}</span>
+                            {isAiGenerated && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm">✦ AI</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => setPreviewQuestion(q)} className="p-1 text-stone-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Preview">
+                              <Eye className="w-3 h-3" />
+                            </button>
+                            {q.userId === currentUserId && (
+                              <button onClick={e => { e.stopPropagation(); onTogglePublicQuestion(q.id, !q.isPublic) }}
+                                className={`p-0.5 rounded ${q.isPublic ? 'text-emerald-600' : 'text-stone-300'}`}>
+                                <Globe className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-xs text-stone-700 line-clamp-3 leading-tight mb-1.5">
+                          {previewText.substring(0, 150)}{previewText.length > 150 ? '…' : ''}
+                        </div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            q.type === 'mcq' ? 'bg-blue-100 text-blue-700' :
+                            q.type === 'structured' ? 'bg-violet-100 text-violet-700' :
+                            'bg-stone-100 text-stone-500'
+                          }`}>{q.type === 'mcq' ? 'MCQ' : q.type === 'structured' ? 'Struct.' : 'Short'}</span>
+                          <span className="text-[10px] text-stone-400">{q.marks}m</span>
+                          {q.difficultyStars && (
+                            <span className={`text-[10px] font-medium ${
+                              q.difficultyStars === 1 ? 'text-emerald-500' :
+                              q.difficultyStars === 2 ? 'text-amber-500' : 'text-red-500'
+                            }`}>{'★'.repeat(q.difficultyStars)}</span>
+                          )}
+                          {q.topic && (
+                            <span className="text-[10px] px-1 py-0.5 rounded bg-stone-100 text-stone-500 truncate max-w-[100px]" title={q.topic}>{q.topic}</span>
+                          )}
+                        </div>
+                        {q.userId === currentUserId && (
+                          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-stone-100" onClick={e => e.stopPropagation()}>
+                            <select
+                              value={q.folderId ?? ''}
+                              onChange={e => onMoveQuestion(q.id, e.target.value || null)}
+                              className="text-[10px] border border-stone-200 rounded px-1 py-0.5 text-stone-600 flex-1 min-w-0"
+                            >
+                              <option value="">No folder</option>
+                              {flattenedFolderOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                            </select>
+                            <button onClick={() => setConfirmDelete({ type: 'question', id: q.id, label: q.code ?? q.text.substring(0, 40) })} className="p-1 text-red-400 hover:text-red-600">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+
                 return (
                   <div
                     key={q.id}
@@ -1127,10 +1235,7 @@ export function Library({
                         )}
                       </div>
                       <div className="text-xs text-stone-700 truncate">
-                        {q.text
-                        .replace(/```svg[\s\S]*?```/g, '[diagram]')
-                        .replace(/\*\*/g, '')
-                        .substring(0, 120)}...
+                        {previewText.substring(0, 120)}...
                       </div>
                       <div className="text-xs text-stone-400 mt-0.5 flex items-center gap-1 flex-wrap">
                         <span>{q.marks}m · {q.commandWord}</span>
@@ -1226,14 +1331,14 @@ export function Library({
           )}
           {/* ── Past Papers tab ─────────────────────────────────────────────── */}
           {bankView === 'pastpapers' && (
-            <div className="grid grid-cols-1 gap-2">
+            <div className={importedLayout === 'gallery' ? 'grid grid-cols-2 lg:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-2'}>
               {importedLoading && (
-                <div className="flex items-center gap-2 text-stone-400 text-sm py-8 justify-center">
+                <div className="col-span-full flex items-center gap-2 text-stone-400 text-sm py-8 justify-center">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading past paper questions…
                 </div>
               )}
               {!importedLoading && !importedLoaded && (
-                <div className="text-stone-400 text-sm text-center py-8">
+                <div className="col-span-full text-stone-400 text-sm text-center py-8">
                   <button
                     onClick={() => onLoadImported?.()}
                     className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
@@ -1245,6 +1350,53 @@ export function Library({
               {pagedImported.map(q => {
                 const isSelected = importedSelectedIds.has(q.uid)
                 const sc = subjectColors(q.subject)
+                const toggleSelected = () => setImportedSelectedIds(prev => {
+                  const next = new Set(prev)
+                  next.has(q.uid) ? next.delete(q.uid) : next.add(q.uid)
+                  return next
+                })
+
+                if (importedLayout === 'gallery') {
+                  return (
+                    <div
+                      key={q.uid}
+                      className={`border rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all group
+                        ${isSelected ? `${sc.border} shadow-sm` : `border-stone-200 ${sc.hoverBorder} hover:shadow-sm`}`}
+                      onClick={toggleSelected}
+                    >
+                      <div className={`h-2 w-full ${isSelected ? sc.accentBar : 'bg-stone-200 group-hover:' + sc.accentBar}`} />
+                      <div className={`p-3 ${isSelected ? sc.bg : 'bg-white'}`}>
+                        <div className="flex items-start justify-between gap-1 mb-1.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors
+                              ${isSelected ? `${sc.accentBar} border-transparent` : 'border-stone-300'}`}>
+                              {isSelected && <Check className="w-2 h-2 text-white" strokeWidth={3} />}
+                            </div>
+                            {q.subject && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.badge} ${sc.badgeText}`}>{q.subject}</span>}
+                            <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>{q.rawCode}</span>
+                            {q.hasImage && <span className="text-[10px] text-stone-400">📷</span>}
+                          </div>
+                          <button
+                            onClick={e => { e.stopPropagation(); setPreviewImported(q) }}
+                            className="p-1 text-stone-400 hover:text-stone-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Preview"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="text-xs text-stone-700 line-clamp-3 leading-tight mb-1.5">
+                          {q.questionText.substring(0, 150)}{q.questionText.length > 150 ? '…' : ''}
+                        </div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">MCQ</span>
+                          <span className="text-[10px] text-stone-400 truncate">{q.topic}</span>
+                          <span className="text-[10px] text-stone-300">P{q.paper || '?'} · {q.session} {q.year}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
                 return (
                   <div
                     key={q.uid}
@@ -1253,11 +1405,7 @@ export function Library({
                         ? `${sc.border} ${sc.bg} shadow-sm`
                         : `border-stone-200 bg-white ${sc.hoverBorder} hover:shadow-sm ${sc.hoverBg}`
                       }`}
-                    onClick={() => setImportedSelectedIds(prev => {
-                      const next = new Set(prev)
-                      next.has(q.uid) ? next.delete(q.uid) : next.add(q.uid)
-                      return next
-                    })}
+                    onClick={toggleSelected}
                   >
                     <div className={`h-1 w-full ${isSelected ? sc.accentBar : 'bg-stone-200 group-hover:' + sc.accentBar}`} />
                     <div className="p-2.5 flex gap-2 items-start">
@@ -1305,14 +1453,14 @@ export function Library({
                 )
               })}
               {filteredImported.length === 0 && importedLoaded && !importedLoading && (
-                <div className="text-stone-400 text-sm text-center py-8">
+                <div className="col-span-full text-stone-400 text-sm text-center py-8">
                   {importedSearch.trim() || importedTopicFilter
                     ? 'No questions match your filters.'
                     : 'No past paper questions imported yet.'}
                 </div>
               )}
               {filteredImported.length > 0 && totalImportedPages > 1 && (
-                <div className="flex items-center justify-between mt-2 px-1">
+                <div className="col-span-full flex items-center justify-between mt-2 px-1">
                   <span className="text-xs text-stone-500">
                     Page {safeImportedPage} / {totalImportedPages} · {filteredImported.length} questions
                   </span>

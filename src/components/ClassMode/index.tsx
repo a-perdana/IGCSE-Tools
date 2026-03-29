@@ -445,7 +445,7 @@ export function ClassDashboard({
 
   return (
     <div className="flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 to-blue-50 min-h-0 w-full">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <div className="px-4 sm:px-6 lg:px-10 py-8 space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -481,7 +481,7 @@ export function ClassDashboard({
               <RefreshCw className="w-3 h-3 animate-spin" /> Loading…
             </div>
           ) : myAssignments && myAssignments.length > 0 ? (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {myAssignments.map(a => (
                 <div key={a.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
                   <div className="flex-1 min-w-0">
