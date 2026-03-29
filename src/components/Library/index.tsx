@@ -139,9 +139,9 @@ export function Library({
   const ASSESSMENTS_PER_PAGE = 12
   const IMPORTED_PER_PAGE = 25
   const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('questions')
-  const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('list')
-  const [questionLayout, setQuestionLayout] = useState<'list' | 'gallery'>('list')
-  const [importedLayout, setImportedLayout] = useState<'list' | 'gallery'>('list')
+  const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('gallery')
+  const [questionLayout, setQuestionLayout] = useState<'list' | 'gallery'>('gallery')
+  const [importedLayout, setImportedLayout] = useState<'list' | 'gallery'>('gallery')
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
