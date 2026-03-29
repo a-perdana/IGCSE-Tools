@@ -126,13 +126,52 @@ function ErrorBanner({ error, onDismiss, onRetry, onOpenApiSettings }: {
   )
 }
 
-function NewAssessmentModal({ onConfirm, onClose }: {
-  onConfirm: (subject: string, topic: string, difficulty: string) => void
+function NewAssessmentModal({ availableQuestions, folderName, onConfirm, onClose }: {
+  availableQuestions: Question[]
+  folderName: string
+  onConfirm: (questions: Question[]) => void
   onClose: () => void
 }) {
-  const [subject, setSubject] = useState('Mathematics')
-  const [topic, setTopic] = useState(IGCSE_TOPICS['Mathematics'][0])
-  const [difficulty, setDifficulty] = useState('Balanced')
+  const maxCount = availableQuestions.length
+  const defaultCount = Math.min(10, maxCount)
+  const [count, setCount] = useState(defaultCount)
+
+  // Topic breakdown for display
+  const topicCounts = React.useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const q of availableQuestions) {
+      map[q.topic] = (map[q.topic] ?? 0) + 1
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }, [availableQuestions])
+
+  function handleCreate() {
+    const shuffled = [...availableQuestions].sort(() => Math.random() - 0.5)
+    onConfirm(shuffled.slice(0, count))
+  }
+
+  if (maxCount === 0) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+        onClick={onClose}
+        onKeyDown={e => e.key === 'Escape' && onClose()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="New Assessment"
+      >
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+          <h2 className="text-sm font-semibold text-stone-800">New Assessment</h2>
+          <p className="text-xs text-stone-500">
+            No saved questions in <span className="font-medium text-stone-700">{folderName}</span>. Save some questions to the library first.
+          </p>
+          <div className="flex justify-end">
+            <button onClick={onClose} className="px-3 py-1.5 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200">Close</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -144,46 +183,59 @@ function NewAssessmentModal({ onConfirm, onClose }: {
       aria-label="New Assessment"
     >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-stone-800">New Assessment</h2>
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="text-xs font-medium text-stone-600 mb-1 block">Subject</label>
-            <select
-              value={subject}
-              onChange={e => { setSubject(e.target.value); setTopic(IGCSE_TOPICS[e.target.value][0]) }}
-              className="w-full text-sm border border-stone-300 rounded-lg px-2 py-1.5"
-            >
-              {IGCSE_SUBJECTS.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-stone-600 mb-1 block">Topic</label>
-            <select
-              value={topic}
-              onChange={e => setTopic(e.target.value)}
-              className="w-full text-sm border border-stone-300 rounded-lg px-2 py-1.5"
-            >
-              {(IGCSE_TOPICS[subject] ?? []).map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-stone-600 mb-1 block">Difficulty</label>
-            <select
-              value={difficulty}
-              onChange={e => setDifficulty(e.target.value)}
-              className="w-full text-sm border border-stone-300 rounded-lg px-2 py-1.5"
-            >
-              {DIFFICULTY_LEVELS.map(d => <option key={d}>{d}</option>)}
-            </select>
+        <div>
+          <h2 className="text-sm font-semibold text-stone-800">New Assessment</h2>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Random questions from <span className="font-medium text-stone-700">{folderName}</span>
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-stone-600">
+            Number of questions
+            <span className="ml-1 text-stone-400 font-normal">(max {maxCount})</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={maxCount}
+              value={count}
+              onChange={e => setCount(Number(e.target.value))}
+              className="flex-1 accent-emerald-600"
+            />
+            <input
+              type="number"
+              min={1}
+              max={maxCount}
+              value={count}
+              onChange={e => setCount(Math.min(maxCount, Math.max(1, Number(e.target.value))))}
+              className="w-14 text-sm text-center border border-stone-300 rounded-lg px-2 py-1 font-medium"
+            />
           </div>
         </div>
+
+        {topicCounts.length > 1 && (
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-medium text-stone-600">Topics in this folder</p>
+            <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto pr-1">
+              {topicCounts.map(([topic, n]) => (
+                <div key={topic} className="flex items-center justify-between text-xs text-stone-500">
+                  <span className="truncate">{topic}</span>
+                  <span className="ml-2 shrink-0 text-stone-400">{n}q</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1.5 text-xs bg-stone-100 text-stone-600 rounded-lg font-medium hover:bg-stone-200">Cancel</button>
           <button
-            onClick={() => onConfirm(subject, topic, difficulty)}
+            onClick={handleCreate}
             className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
           >
-            Create
+            Create ({count} questions)
           </button>
         </div>
       </div>
@@ -371,20 +423,6 @@ export default function App() {
     }
   }, [generation, library, notify])
 
-  const handleCreateBlankAssessment = useCallback((subject: string, topic: string, difficulty: string) => {
-    const assessment: Assessment = {
-      id: crypto.randomUUID(),
-      subject,
-      topic,
-      difficulty,
-      questions: [],
-      userId: '',
-      createdAt: Timestamp.now(),
-    }
-    generation.setGeneratedAssessment(assessment)
-    setView('main')
-    setShowNewAssessmentModal(false)
-  }, [generation])
 
   const handleRemoveQuestion = useCallback((questionId: string) => {
     const assessment = generation.generatedAssessment
@@ -1027,12 +1065,46 @@ export default function App() {
 
       <Notifications notifications={notifications} onDismiss={dismiss} />
 
-      {showNewAssessmentModal && (
-        <NewAssessmentModal
-          onConfirm={handleCreateBlankAssessment}
-          onClose={() => setShowNewAssessmentModal(false)}
-        />
-      )}
+      {showNewAssessmentModal && (() => {
+        // Collect all folder ids in the selected subtree (selected folder + all descendants)
+        const getDescendantIdSet = (folderId: string): Set<string> => {
+          const ids = new Set<string>([folderId])
+          const stack = [folderId]
+          while (stack.length) {
+            const cur = stack.pop()!
+            for (const f of library.folders) {
+              if (f.parentId === cur) { ids.add(f.id); stack.push(f.id) }
+            }
+          }
+          return ids
+        }
+        const folderIds = selectedFolderId === undefined
+          ? null // "All" — use everything
+          : selectedFolderId === null
+          ? null // "Uncategorized" — filter below
+          : getDescendantIdSet(selectedFolderId)
+
+        const availableQuestions = library.questions.filter(q => {
+          if (selectedFolderId === null) return !q.folderId
+          if (folderIds) return q.folderId != null && folderIds.has(q.folderId)
+          return true
+        })
+
+        const folderName = selectedFolderId === undefined
+          ? 'All Questions'
+          : selectedFolderId === null
+          ? 'Uncategorized'
+          : (library.folders.find(f => f.id === selectedFolderId)?.name ?? 'Selected Folder')
+
+        return (
+          <NewAssessmentModal
+            availableQuestions={availableQuestions}
+            folderName={folderName}
+            onConfirm={qs => { handleCreateAssessmentFromQuestions(qs); setShowNewAssessmentModal(false) }}
+            onClose={() => setShowNewAssessmentModal(false)}
+          />
+        )
+      })()}
 
       {showDeleteModal && (
         <DeleteAccountModal
