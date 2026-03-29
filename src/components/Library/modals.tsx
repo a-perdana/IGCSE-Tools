@@ -24,14 +24,33 @@ export function QMarkdown({ content }: { content: string }) {
   )
 }
 
+// Renders an MCQ option that may be plain text, markdown, or an image-only
+// markdown snippet like "![](<url>)" or "![A](<url>)".
+// preprocessLatex can corrupt image URLs so we handle the image case directly.
+const MCQ_IMAGE_RE = /^!\[[^\]]*\]\(<?(https?:\/\/[^)>]+?)>?\)\s*$/
+
+export function OptionContent({ opt }: { opt: string }) {
+  const m = opt.trim().match(MCQ_IMAGE_RE)
+  if (m) {
+    return <img src={m[1]} alt="" className="max-h-24 object-contain" />
+  }
+  return <QMarkdown content={opt} />
+}
+
 // ─── Helper: ImportedQuestion → Question ─────────────────────────────────────
 
 export function importedToQuestionItem(iq: ImportedQuestion): Question {
   const letterLabels = ['A', 'B', 'C', 'D']
-  const optionsText = iq.options
-    .map((o, i) => `**${letterLabels[i]}** ${o}`)
-    .filter(Boolean)
-    .join('\n\n')
+  // If any option is an image markdown ("![](<url>)"), don't embed options into
+  // q.text — they will be rendered separately via OptionContent which handles
+  // image URLs without running preprocessLatex over them.
+  const hasImageOptions = iq.options.some(o => MCQ_IMAGE_RE.test(o.trim()))
+  const optionsText = hasImageOptions
+    ? ''
+    : iq.options
+        .map((o, i) => `**${letterLabels[i]}** ${o}`)
+        .filter(Boolean)
+        .join('\n\n')
 
   const fullText = optionsText
     ? `${iq.questionText}\n\n${optionsText}`
@@ -389,7 +408,7 @@ export function ImportedPreviewModal({
                         <span className={`font-semibold shrink-0 w-5 ${
                           question.correctAnswer === letterLabels[i] ? 'text-emerald-700' : 'text-stone-600'
                         }`}>{letterLabels[i]}</span>
-                        <span className="text-stone-700">{opt}</span>
+                        <span className="text-stone-700 min-w-0"><OptionContent opt={opt} /></span>
                         {question.correctAnswer === letterLabels[i] && (
                           <Check className="w-3.5 h-3.5 text-emerald-600 ml-auto shrink-0 mt-0.5" />
                         )}

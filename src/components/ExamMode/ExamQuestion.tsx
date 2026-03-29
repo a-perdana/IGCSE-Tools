@@ -1,5 +1,5 @@
 import type { QuestionItem } from '../../lib/types'
-import { QMarkdown } from '../Library/modals'
+import { QMarkdown, OptionContent } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { Pencil } from 'lucide-react'
 
@@ -95,7 +95,7 @@ export function ExamQuestion({
                 />
                 <span className="text-sm leading-relaxed flex items-baseline gap-1">
                   <span className="font-semibold shrink-0">{['A', 'B', 'C', 'D'][i]}.</span>
-                  <QMarkdown content={opt} />
+                  <OptionContent opt={opt} />
                 </span>
               </label>
             )

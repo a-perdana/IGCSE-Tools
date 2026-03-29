@@ -1,5 +1,5 @@
 import type { QuestionItem, PracticeAnswerRecord } from '../../lib/types'
-import { QMarkdown } from '../Library/modals'
+import { QMarkdown, OptionContent } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { Pencil } from 'lucide-react'
 
@@ -117,7 +117,7 @@ export function PracticeQuestion({
                 />
                 <span className="text-sm leading-relaxed flex items-baseline gap-1">
                   <span className="font-semibold shrink-0">{['A', 'B', 'C', 'D'][i]}.</span>
-                  <QMarkdown content={opt} />
+                  <OptionContent opt={opt} />
                 </span>
                 {isChecked && isCorrectOpt && (
                   <span className="ml-auto text-emerald-600 text-xs font-medium shrink-0">✓ Correct</span>
