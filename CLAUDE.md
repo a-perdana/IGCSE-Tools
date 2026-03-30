@@ -46,6 +46,9 @@ firebase deploy --only firestore:rules,storage --project igcse-tools
 | `resources` | Uploaded PDFs (past papers, syllabuses) | Owner RW; shared read if `isShared=true` |
 | `syllabusCache` | Extracted syllabus topics (AI-processed) | Owner only |
 | `pastPaperCache` | Extracted past paper examples | Owner only |
+| `practiceAttempts` | Practice session results | Owner only |
+| `examAttempts` | Exam session results | Owner only |
+| `sharedAssignments` | Teacher-shared assignments (class mode) | Teacher RW; students read by join code |
 
 ---
 
@@ -86,18 +89,23 @@ No `.env` values are required for local development. Users provide API keys in-b
 | `src/lib/validation.ts` | Question quality validators extracted from gemini.ts: `enforceQuestionQuality`, `isTooEasy`, `hasMultiStepStructure`, `requiresGeometricUse`, etc. |
 | `src/lib/pricing.ts` | Cost estimation: `estimateCostUSD()`, `estimateCostIDR()`, `formatCost(usd, currency)` (supports `'IDR'`\|`'USD'`), `MODEL_PRICING` |
 | `src/lib/providers.ts` | Provider configs, model lists, `FREE_TIER_INFO` (free/paid badge + setup steps) |
-| `src/lib/ai.ts` | Provider router (Gemini / OpenAI / Anthropic) |
-| `src/lib/firebase.ts` | Firebase SDK init, all Firestore + Storage operations incl. GDPR `deleteUserData` |
-| `src/lib/types.ts` | TypeScript interfaces — `QuestionItem` has `assessmentObjective`, `options` fields; `TikzSpec` has `diagramType:'tikz'`, `code`, `maxWidth`; `geminiFileUploadedAt` is `Timestamp \| number` |
+| `src/lib/ai.ts` | Provider router (Gemini / OpenAI / Anthropic). Functions: `generateTest`, `auditTest`, `checkPracticeAnswer` (also used for exam grading), `getQuestionHint`, `analyzeFile`. |
+| `src/lib/firebase.ts` | Firebase SDK init, all Firestore + Storage operations incl. GDPR `deleteUserData`, `savePracticeAttempt`, `saveExamAttempt`, `getPracticeAttempts`, `getExamAttempts` |
+| `src/lib/types.ts` | TypeScript interfaces — `QuestionItem`, `PracticeAnswerRecord` / `ExamAnswerRecord` (both have `criteriaBreakdown?: CriterionResult[]` and `syllabusObjective?`), `CriterionResult`, `PracticeAttempt`, `ExamAttempt`, `SharedAssignment`, `AssignmentAttempt` |
 | `src/lib/sanitize.ts` | Post-generation question sanitization — MCQ downgrades to `short_answer` if < 4 valid options; normalises `assessmentObjective`; extracts TikZ from fenced blocks |
 | `src/lib/quicklatex.ts` | TikZ render client — sends code to `/api/latex` proxy; in-memory cache keyed on code string |
 | `src/lib/__tests__/` | Vitest unit tests: `pricing.test.ts`, `sanitize.test.ts`, `svg.test.ts`, `clipboard.test.ts` |
 | `src/hooks/useGeneration.ts` | React hook: generation state + orchestration. Handles `Timestamp \| number` union for `geminiFileUploadedAt`. |
 | `src/hooks/useResources.ts` | React hook: resource upload, caching, management |
+| `src/hooks/usePractice.ts` | Practice session state. Uses `sessionRef` to avoid stale closures. Exports: `checkAnswer`, `getHint`, `finishSession`, `goToQuestion`. Session has `hints`, `isHinting` fields. |
+| `src/hooks/useExamMode.ts` | Exam session state. Countdown timer, auto-submit, parallel grading via `Promise.all` (MCQ instant + AI concurrent). Session has `showCountdownWarning` (≤10s), `dismissCountdownWarning()`. |
 | `src/components/Sidebar/` | Config sidebar, resource manager, API settings. Has currency toggle (IDR/USD, persisted to `localStorage`), API key test button (pings provider REST endpoint). |
 | `src/components/AssessmentView/` | Main question editor and viewer |
-| `src/components/Library/` | Assessment / question library browser |
+| `src/components/Library/` | Assessment / question library browser. Accepts `weakTopicFilter?: {topic, subject}` prop — auto-filters to that topic when set (used by ProgressDashboard spaced repetition). |
 | `src/components/Library/modals.tsx` | Extracted modal components: `ImportedPreviewModal`, `QuestionPreviewModal`, `ConfirmDeleteModal`, `ExamViewImportModal`. Also exports `QMarkdown`, `importedToQuestionItem`, `DeleteTarget`. |
+| `src/components/PracticeMode/` | Practice session UI. `PracticeQuestion` shows: command word badge + guidance box, `~X min` time hint, question grid navigator (violet/green/amber), Check Answer + 💡 Hint buttons, criteria breakdown in feedback. |
+| `src/components/ExamMode/` | Exam session UI. `ExamQuestion` shows command word badge + `~X min` hint. 10-second countdown warning modal. `ExamResults` shows criteria breakdown + comparative answer view (your answer vs correct). |
+| `src/components/ProgressDashboard/` | Progress analytics. Shows topic accuracy, weak/strong topics, recent sessions, **weak syllabus objectives** (from `syllabusObjective` saved on each answer record). `onPracticeWeakTopic` callback navigates Library with filter. |
 | `src/components/DiagramRenderer/` | Renders `TikzSpec` via Railway microservice; shows visible warning banner (not collapsed) on render failure |
 | `api/latex.ts` | Vercel Serverless Function (Node.js runtime, 60s timeout) — proxies to Railway |
 | `latex-renderer/server.js` | **Separate git repo** (`a-perdana/Latex-Renderer`) deployed on Railway — pdflatex + pdftoppm → PNG |
@@ -150,7 +158,8 @@ Questions are generated in `src/lib/gemini.ts` via `generateTest()`:
 **Question fields:**
 - `assessmentObjective`: `'AO1'` | `'AO2'` | `'AO3'` — Cambridge Assessment Objective
 - `difficultyStars`: `1` | `2` | `3` — cognitive demand rating
-- `syllabusObjective`: `"REF – statement"` format (e.g. `"C4.1 – Define the term acid"`)
+- `syllabusObjective`: `"REF – statement"` format (e.g. `"C4.1 – Define the term acid"`) — also saved on `PracticeAnswerRecord` / `ExamAnswerRecord` at finish time for analytics
+- `commandWord`: Cambridge command word (e.g. `"Explain"`, `"Calculate"`) — shown as badge in Practice/Exam with a one-line guidance hint
 - `type`: `'mcq'` | `'short_answer'` | `'structured'`
 - Structured questions use **(a)**, **(b)**, **(c)** sub-part format with a shared context stem
 - `diagram?: TikzSpec` — present when `hasDiagram: true`
@@ -166,6 +175,33 @@ Questions are generated in `src/lib/gemini.ts` via `generateTest()`:
 
 ---
 
+## Practice & Exam Mode Architecture
+
+### Practice Mode (`usePractice` + `PracticeMode/`)
+- **Session state** uses `sessionRef` (useRef) to mirror `useState` — all async callbacks (`checkAnswer`, `getHint`, `finishSession`) read from `sessionRef.current` to avoid stale closure bugs.
+- **`setSessionSafe`** wraps `setSession` to keep `sessionRef` in sync on every update.
+- **`checkAnswer`**: MCQ → client-side instant; short_answer/structured → `checkPracticeAnswer()` from `ai.ts`.
+- **`getHint`**: calls `getQuestionHint()` from `ai.ts` — returns a 2-3 sentence nudge without revealing the mark scheme.
+- **`finishSession`**: auto-checks unchecked MCQ drafts; tags `syllabusObjective` on all answer records before saving.
+- **Submit flow**: "Submit All & Finish" button appears when all questions have a draft answer (even if not AI-checked).
+
+### Exam Mode (`useExamMode` + `ExamMode/`)
+- **Grading is parallel**: MCQ + empty answers graded instantly (client-side), then all AI questions run via `Promise.all`.
+- **`showCountdownWarning`** becomes `true` when ≤10 seconds remain; dismissed by `dismissCountdownWarning()`.
+- **`syllabusObjective`** is attached to every `ExamAnswerRecord` at grading time.
+
+### Answer Records (`PracticeAnswerRecord` / `ExamAnswerRecord`)
+Both types share these optional fields (added 2026-03-30):
+- `criteriaBreakdown?: CriterionResult[]` — per-mark AI breakdown (`{criterion, awarded}`)
+- `syllabusObjective?: string` — copied from `QuestionItem` at save time; used by `ProgressDashboard` for objective-level analytics
+
+### ProgressDashboard
+- **Topic accuracy**: aggregate marks per topic across all attempts.
+- **Syllabus objective accuracy**: per-`syllabusObjective` accuracy (only for attempts saved after 2026-03-30 — older attempts lack this field).
+- **Spaced repetition**: "Practice →" button on weak topics calls `onPracticeWeakTopic(topic, subject)` → `App.tsx` sets `libraryWeakTopicFilter` → `Library` auto-applies topic + subject filter.
+
+---
+
 ## Common Mistakes
 
 1. **Never add a shared/fallback API key** — keys must be user-provided only (security).
@@ -173,7 +209,7 @@ Questions are generated in `src/lib/gemini.ts` via `generateTest()`:
 3. **Firestore rules must be redeployed** after editing `firestore.rules` — changes do NOT take effect automatically.
 4. **Storage rules must be redeployed** separately if `storage.rules` changes.
 5. This Firebase project (`igcse-tools`) is completely separate from `centralhub-8727b`.
-6. **Adding a new AI provider**: update `providers.ts` (labels, models, URLs, `FREE_TIER_INFO`) AND add a new provider file in `src/lib/`, then wire it in `ai.ts`.
+6. **Adding a new AI provider**: update `providers.ts` (labels, models, URLs, `FREE_TIER_INFO`) AND add a new provider file in `src/lib/`, then wire it in `ai.ts`. Also add provider branch to `checkPracticeAnswer` and `getQuestionHint` in `ai.ts`.
 7. **`api/latex.ts` must use Node.js runtime** (not Edge) — `export const config = { maxDuration: 60 }` enables 60s timeout needed for pdflatex.
 8. **latex-renderer is a separate git repo** — changes to `latex-renderer/server.js` must be committed and pushed from inside that directory, NOT from the IGCSE Tools repo root.
 9. **Old assessments may have broken `diagram.code`** from the DSL era — use the Regenerate button (↻) in Library to fix them.
@@ -181,6 +217,9 @@ Questions are generated in `src/lib/gemini.ts` via `generateTest()`:
 11. **Prompt constants live in `prompts.ts`, validators in `validation.ts`** — do NOT add them back to `gemini.ts`. Both are re-exported from `gemini.ts` for backward compat.
 12. **MCQ questions require exactly 4 non-empty options** — `sanitize.ts` downgrades to `short_answer` otherwise. The `options` field is only present on `QuestionItem` when `type === 'mcq'` and all 4 options are valid.
 13. **Modal components live in `Library/modals.tsx`** — do not inline new modals in `Library/index.tsx`.
+14. **`usePractice` callbacks must use `setSessionSafe` not `setSession`** — `setSessionSafe` keeps `sessionRef` in sync; using raw `setSession` breaks `finishSession` and `getHint` which read from ref.
+15. **`criteriaBreakdown` is only present for AI-checked answers** — MCQ answers and "Not checked" answers do not have this field. Always guard with `?`.
+16. **`syllabusObjective` on answer records is only present for attempts saved after 2026-03-30** — older `practiceAttempts`/`examAttempts` documents lack it; handle missing field gracefully in analytics.
 
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel
