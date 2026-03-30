@@ -4,6 +4,7 @@ import { usePractice } from '../../hooks/usePractice'
 import { PracticeQuestion } from './PracticeQuestion'
 import { PracticeResults } from './PracticeResults'
 import { QuickEditModal } from '../Library/modals'
+import { X } from 'lucide-react'
 
 interface Props {
   assessment: Assessment
@@ -32,8 +33,10 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
     questionOverrides[q.id] ? { ...q, ...questionOverrides[q.id] } : q
   )
   const currentQuestion = questions[session.currentIndex]
-  const progress = session.checkedQuestions.size / Math.max(questions.length, 1)
-  const allChecked = session.checkedQuestions.size === questions.length
+  const checkedCount = session.checkedQuestions.size
+  const totalQ = questions.length
+  const progress = checkedCount / Math.max(totalQ, 1)
+  const allChecked = checkedCount === totalQ
   const allAnswered = questions.every(q => (session.draftAnswers[q.id] ?? '').trim() !== '')
 
   function handleQuickSave(updates: Partial<QuestionItem>) {
@@ -42,42 +45,50 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-white flex flex-col">
-      {/* Header */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 flex items-center gap-4">
+    <div className="fixed inset-0 z-40 flex flex-col" style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)' }}>
+
+      {/* ── Quest header ─────────────────────────────────────────────────────── */}
+      <div className="shrink-0 bg-white/90 backdrop-blur border-b border-indigo-100 px-4 sm:px-6 py-3 flex items-center gap-4 shadow-sm">
+
+        {/* Subject + mode label */}
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide truncate">
+          <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider truncate">
             {assessment.subject} · {assessment.topic}
           </p>
-          <p className="text-sm font-semibold text-slate-700 truncate">Practice Mode</p>
+          <p className="text-sm font-black text-slate-800 truncate flex items-center gap-1.5">
+            ⚡ Practice Mode
+          </p>
         </div>
 
-        {/* Progress bar */}
+        {/* Quest progress bar */}
         <div className="flex-1 max-w-xs hidden sm:block">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span>{session.checkedQuestions.size} checked</span>
-            <span>{questions.length} total</span>
+          <div className="flex items-center justify-between text-xs font-semibold mb-1">
+            <span className="text-indigo-500">{checkedCount} / {totalQ} checked</span>
+            <span className="text-slate-400">{Math.round(progress * 100)}%</span>
           </div>
-          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-3 bg-indigo-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-violet-500 rounded-full transition-all duration-300"
-              style={{ width: `${progress * 100}%` }}
+              className="h-full rounded-full quest-bar-fill"
+              style={{
+                width: `${progress * 100}%`,
+                background: 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)',
+              }}
             />
           </div>
         </div>
 
         <button
           onClick={onExit}
-          className="shrink-0 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+          className="shrink-0 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
           title="Exit without saving"
         >
-          Exit
+          <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Body */}
+      {/* ── Body ─────────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
           {session.isComplete ? (
             <PracticeResults
               assessment={assessment}

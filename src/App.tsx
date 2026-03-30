@@ -672,96 +672,104 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="text-center">
-          <BookOpen className="w-12 h-12 text-emerald-600 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-stone-800 mb-2">IGCSE Tools</h1>
-          <p className="text-stone-500 mb-6">Cambridge IGCSE Assessment Designer</p>
+      <div className="min-h-screen flex items-center justify-center p-4"
+        style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 50%, #fdf4ff 100%)' }}>
+        <div className="text-center max-w-sm w-full anim-pop">
+          {/* Logo */}
+          <div className="flex items-center justify-center w-20 h-20 rounded-3xl mx-auto mb-6 shadow-xl"
+            style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed,#a855f7)' }}>
+            <BookOpen className="w-9 h-9 text-white" />
+          </div>
+          <h1 className="text-3xl font-black text-slate-800 mb-2">IGCSE Tools</h1>
+          <p className="text-slate-500 mb-8 text-sm leading-relaxed">
+            AI-powered Cambridge IGCSE assessment platform.<br />Practice smarter. Level up faster.
+          </p>
           <button
             onClick={signInWithGoogle}
-            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium flex items-center gap-2 mx-auto"
+            className="w-full px-6 py-3.5 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 hover:opacity-90 transition-all shadow-xl"
+            style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
           >
-            <LogIn className="w-4 h-4" /> Sign in with Google
+            <LogIn className="w-5 h-5" /> Sign in with Google
           </button>
+          <p className="mt-4 text-xs text-slate-400">Free to use · No credit card required</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex h-screen overflow-hidden" style={{ background: '#f8f9ff' }}>
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-        {/* Top nav */}
-        <header className="border-b border-stone-200 px-4 py-2 flex items-center gap-3">
-          {/* Left: logo + back button */}
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-sm font-semibold text-stone-700 flex items-center gap-1.5 shrink-0">
-              <BookOpen className="w-4 h-4 text-emerald-600" />
-              IGCSE Tools
-            </h1>
+        {/* ── Top nav ─────────────────────────────────────────────────────── */}
+        <header className="shrink-0 bg-white border-b border-indigo-100 px-4 py-2.5 flex items-center gap-3 shadow-sm">
+
+          {/* Logo */}
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <div className="flex items-center justify-center w-7 h-7 rounded-xl shrink-0"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}>
+              <BookOpen className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-sm font-black text-slate-800 hidden sm:block">IGCSE Tools</span>
             {view === 'main' && previousView === 'library' && (
               <button
                 onClick={() => { setPreviousView(null); setView('library') }}
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium ml-1"
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold ml-1"
               >
-                <ChevronLeft className="w-3.5 h-3.5" /> Back to Library
+                <ChevronLeft className="w-3.5 h-3.5" /> Library
               </button>
             )}
           </div>
 
-          {/* Centre: tab nav */}
-          <nav className="flex items-center gap-1 bg-stone-100 rounded-lg p-0.5 mx-auto">
-            <button
-              onClick={() => { setPreviousView(null); setView('dashboard') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'dashboard' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
-            </button>
-            <button
-              onClick={() => { setPreviousView(null); setView('library') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'library' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <LibraryIcon className="w-3.5 h-3.5" /> Library
-            </button>
-            <button
-              onClick={() => { setPreviousView(null); setView('main') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'main' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <Wand2 className="w-3.5 h-3.5" /> Generate
-            </button>
-            <button
-              onClick={() => { setPreviousView(null); setView('diagrams') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'diagrams' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <Sparkles className="w-3.5 h-3.5" /> Diagrams
-            </button>
-            <button
-              onClick={() => { setPreviousView(null); setView('progress') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'progress' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <TrendingUp className="w-3.5 h-3.5" /> Progress
-            </button>
-            <button
-              onClick={() => { setPreviousView(null); setView('class') }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${view === 'class' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              <Users className="w-3.5 h-3.5" /> Class
-            </button>
+          {/* Centre: pill nav */}
+          <nav className="flex items-center gap-1 mx-auto bg-slate-100 rounded-2xl p-1">
+            {([
+              { id: 'dashboard', label: 'Home',     icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+              { id: 'main',      label: 'Generate', icon: <Wand2 className="w-3.5 h-3.5" /> },
+              { id: 'library',   label: 'Library',  icon: <LibraryIcon className="w-3.5 h-3.5" /> },
+              { id: 'diagrams',  label: 'Diagrams', icon: <Sparkles className="w-3.5 h-3.5" /> },
+              { id: 'progress',  label: 'Progress', icon: <TrendingUp className="w-3.5 h-3.5" /> },
+              { id: 'class',     label: 'Class',    icon: <Users className="w-3.5 h-3.5" /> },
+            ] as const).map(tab => {
+              const active = view === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => { setPreviousView(null); setView(tab.id as typeof view) }}
+                  className={[
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all',
+                    active
+                      ? 'text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/60',
+                  ].join(' ')}
+                  style={active ? { background: 'linear-gradient(135deg,#6366f1,#a855f7)' } : {}}
+                >
+                  {tab.icon}
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              )
+            })}
           </nav>
 
           {/* Right: user */}
-          <div className="flex items-center gap-1.5 ml-auto shrink-0">
-            <span className="text-xs text-stone-400 px-1">{user.displayName}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full ring-2 ring-indigo-200" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-black text-indigo-700">
+                {(user.displayName?.[0] ?? '?').toUpperCase()}
+              </div>
+            )}
+            <span className="text-xs text-slate-500 font-semibold hidden md:block max-w-[100px] truncate">{user.displayName}</span>
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="p-1.5 text-stone-300 hover:text-red-500 transition-colors"
+              className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
               title="Delete account"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={logout}
-              className="p-1.5 text-stone-400 hover:text-stone-600"
+              className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors"
               title="Sign out"
             >
               <LogOut className="w-4 h-4" />
