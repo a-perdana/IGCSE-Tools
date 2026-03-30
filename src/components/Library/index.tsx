@@ -46,6 +46,8 @@ interface Props {
   onNewAssessment?: () => void
   /** When set, renders this panel in place of the main content (keeps left sidebar). */
   editPanel?: React.ReactNode
+  /** Pre-fill the assessment search with a topic from the Progress Dashboard. */
+  weakTopicFilter?: { topic: string; subject: string } | null
   // ── Past Papers (imported questions) ───────────────────────────────────────
   importedQuestions?: ImportedQuestion[]
   importedLoading?: boolean
@@ -134,6 +136,7 @@ export function Library({
   importedLoading = false,
   onLoadImported,
   onUpdateImported,
+  weakTopicFilter,
 }: Props) {
   const QUESTIONS_PER_PAGE = 20
   const ASSESSMENTS_PER_PAGE = 12
@@ -152,10 +155,19 @@ export function Library({
   const [addToAssessmentId, setAddToAssessmentId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [subjectFilter, setSubjectFilter] = useState<string>('')
+  const [subjectFilter, setSubjectFilter] = useState<string>(weakTopicFilter?.subject ?? '')
   const [questionSearch, setQuestionSearch] = useState('')
   const [questionTopicFilter, setQuestionTopicFilter] = useState<string>('')
-  const [assessmentSearch, setAssessmentSearch] = useState('')
+  const [assessmentSearch, setAssessmentSearch] = useState(weakTopicFilter?.topic ?? '')
+
+  // Apply weak topic filter when navigated from Progress Dashboard
+  useEffect(() => {
+    if (!weakTopicFilter) return
+    setBankView('assessments')
+    setAssessmentSearch(weakTopicFilter.topic)
+    setSubjectFilter(weakTopicFilter.subject)
+    setAssessmentPage(1)
+  }, [weakTopicFilter])
   const [questionPage, setQuestionPage] = useState(1)
   const [assessmentPage, setAssessmentPage] = useState(1)
   // ── Past Papers state ───────────────────────────────────────────────────

@@ -3,6 +3,41 @@ import { QMarkdown, OptionContent } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { Pencil } from 'lucide-react'
 
+const COMMAND_WORD_HINTS: Record<string, string> = {
+  'State': 'Give a specific name, value or other brief answer — no explanation needed.',
+  'Define': 'Give the precise meaning of a term.',
+  'Describe': 'State the key features or steps — what happens, not why.',
+  'Explain': 'Give a reason or mechanism — state what happens AND why.',
+  'Suggest': 'Apply your knowledge to an unfamiliar situation — more than one answer may be acceptable.',
+  'Calculate': 'Work out a numerical answer and show your working; include units.',
+  'Determine': 'Use given data or information to reach an answer, showing working.',
+  'Identify': 'Name or point out a specific feature, property or item.',
+  'Compare': 'State similarities AND differences between two or more things.',
+  'Contrast': 'State the differences between two or more things.',
+  'Evaluate': 'Weigh up the evidence; come to a conclusion with justification.',
+  'Discuss': 'Present arguments for and against; come to a reasoned conclusion.',
+  'Predict': 'State the likely outcome based on given information.',
+  'Sketch': 'Draw a simple, labelled diagram — accuracy less important than key features.',
+  'Draw': 'Produce a diagram with accurate, labelled lines using a ruler where appropriate.',
+  'Plot': 'Mark data points accurately on a graph and join them.',
+  'Show': 'Present evidence or working that proves the statement given.',
+  'Choose': 'Select one option from those given.',
+  'Deduce': 'Reach a conclusion from given information — show your reasoning.',
+  'Justify': 'Give evidence or reasons to support your answer.',
+  'Outline': 'State the main points briefly — less detail than Describe.',
+}
+
+function CommandWordGuide({ word }: { word: string }) {
+  const hint = COMMAND_WORD_HINTS[word]
+  if (!hint) return null
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-700">
+      <span className="shrink-0 font-bold">{word}:</span>
+      <span>{hint}</span>
+    </div>
+  )
+}
+
 interface Props {
   question: QuestionItem
   questionNumber: number
@@ -46,6 +81,14 @@ export function ExamQuestion({
           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
             {question.marks} mark{question.marks !== 1 ? 's' : ''}
           </span>
+          {question.commandWord && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold" title="Cambridge command word — defines the type of response required">
+              {question.commandWord}
+            </span>
+          )}
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs" title="Suggested time — approx. 1.5 min per mark (Cambridge guideline)">
+            ~{Math.max(1, Math.round(question.marks * 1.5))} min
+          </span>
           {onEdit && (
             <button
               onClick={onEdit}
@@ -57,6 +100,11 @@ export function ExamQuestion({
           )}
         </span>
       </div>
+
+      {/* Command word guidance */}
+      {question.commandWord && (
+        <CommandWordGuide word={question.commandWord} />
+      )}
 
       {/* Question text */}
       <div className="prose prose-sm max-w-none text-slate-800">

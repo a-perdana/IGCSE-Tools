@@ -109,9 +109,19 @@ export function ExamResults({
 
               <div className="px-4 py-3 border-t border-slate-100 bg-white flex flex-col gap-3 text-sm">
                 {r?.userAnswer ? (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Your answer</p>
-                    <p className="text-slate-700 whitespace-pre-wrap">{r.userAnswer}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Your answer</p>
+                      <p className={['text-sm whitespace-pre-wrap', correct ? 'text-emerald-700' : awarded > 0 ? 'text-amber-700' : 'text-red-700'].join(' ')}>
+                        {r.userAnswer}
+                      </p>
+                    </div>
+                    {!correct && q.type === 'mcq' && q.answer && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Correct answer</p>
+                        <p className="text-sm text-emerald-700 font-medium">{q.answer}</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-slate-400 italic">Not answered</p>
@@ -120,6 +130,21 @@ export function ExamResults({
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Feedback</p>
                     <p className="text-slate-600">{r.aiFeedback}</p>
+                  </div>
+                )}
+                {r?.criteriaBreakdown && r.criteriaBreakdown.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Mark breakdown</p>
+                    <div className="flex flex-col gap-1">
+                      {r.criteriaBreakdown.map((c, ci) => (
+                        <div key={ci} className="flex items-start gap-2 text-xs">
+                          <span className={['shrink-0 font-bold mt-0.5', c.awarded ? 'text-emerald-600' : 'text-red-500'].join(' ')}>
+                            {c.awarded ? '✓' : '✗'}
+                          </span>
+                          <span className={c.awarded ? 'text-slate-700' : 'text-slate-500'}>{c.criterion}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <details className="group/ms">

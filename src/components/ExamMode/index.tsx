@@ -261,6 +261,28 @@ export function ExamMode({ assessment, provider, apiKey, model, onExit, onComple
         />
       )}
 
+      {/* 10-second countdown warning */}
+      {exam.session.showCountdownWarning && !exam.session.isSubmitted && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4 border-2 border-red-400">
+            <div className="text-center">
+              <div className="text-4xl mb-2">⏰</div>
+              <h3 className="text-lg font-bold text-red-600">Time's almost up!</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                <span className="font-bold text-red-600 text-2xl tabular-nums">{exam.session.timeRemainingSeconds}</span>
+                {' '}seconds remaining — exam will auto-submit.
+              </p>
+            </div>
+            <button
+              onClick={() => exam.dismissCountdownWarning()}
+              className="w-full px-4 py-2.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              Got it — continue
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Submit confirm modal */}
       {showSubmitConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

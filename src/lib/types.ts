@@ -245,6 +245,8 @@ export interface ExamAnswerRecord {
   isCorrect: boolean
   marksAwarded: number
   aiFeedback?: string
+  criteriaBreakdown?: CriterionResult[]
+  syllabusObjective?: string   // copied from QuestionItem at save time
 }
 
 export interface ExamAttempt {
@@ -264,11 +266,18 @@ export interface ExamAttempt {
 
 // ─── Practice Mode ───────────────────────────────────────────────────────────
 
+export interface CriterionResult {
+  criterion: string   // short description of the mark-scheme point
+  awarded: boolean    // whether the student earned this point
+}
+
 export interface PracticeAnswerRecord {
   userAnswer: string
   isCorrect: boolean
   marksAwarded: number
   aiFeedback?: string
+  criteriaBreakdown?: CriterionResult[]
+  syllabusObjective?: string   // copied from QuestionItem at save time
 }
 
 export interface PracticeAttempt {

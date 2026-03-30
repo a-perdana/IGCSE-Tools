@@ -313,6 +313,7 @@ export default function App() {
   const [examAttempts, setExamAttempts] = useState<ExamAttempt[]>([])
   const [shareAssessment, setShareAssessment] = useState<Assessment | null>(null)
   const [libraryEditAssessment, setLibraryEditAssessment] = useState<Assessment | null>(null)
+  const [libraryWeakTopicFilter, setLibraryWeakTopicFilter] = useState<{ topic: string; subject: string } | null>(null)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -783,6 +784,10 @@ export default function App() {
           <ProgressDashboard
             practiceAttempts={practiceAttempts}
             examAttempts={examAttempts}
+            onPracticeWeakTopic={(topic, subject) => {
+              setLibraryWeakTopicFilter({ topic, subject })
+              setView('library')
+            }}
           />
         ) : view === 'class' ? (
           <ClassDashboard
@@ -874,6 +879,7 @@ export default function App() {
             onPractice={handleStartPractice}
             onExam={handleStartExam}
             onShare={setShareAssessment}
+            weakTopicFilter={libraryWeakTopicFilter}
             editPanel={libraryEditAssessment ? (
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <div className="shrink-0 border-b border-stone-200 bg-white px-4 py-2 flex items-center gap-3">

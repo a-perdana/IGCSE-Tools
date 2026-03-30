@@ -2,6 +2,54 @@ import { useMemo } from 'react'
 import { TrendingUp, AlertTriangle, CheckCircle, BarChart2, Clock, Target } from 'lucide-react'
 import type { PracticeAttempt, ExamAttempt } from '../../lib/types'
 
+// ─── Syllabus objective accuracy computation ─────────────────────────────────
+
+interface ObjectiveStat {
+  objective: string   // e.g. "C4.1 – Define the term acid"
+  subject: string
+  awarded: number
+  total: number
+  accuracy: number
+}
+
+function computeObjectiveStats(
+  practiceAttempts: PracticeAttempt[],
+  examAttempts: ExamAttempt[],
+): ObjectiveStat[] {
+  const map: Record<string, { subject: string; awarded: number; total: number }> = {}
+
+  const allAttempts = [
+    ...practiceAttempts.map(a => ({ subject: a.subject, answers: a.answers, totalMarks: a.totalMarks, marksAwarded: a.marksAwarded })),
+    ...examAttempts.map(a => ({ subject: a.subject, answers: a.answers, totalMarks: a.totalMarks, marksAwarded: a.marksAwarded })),
+  ]
+
+  for (const attempt of allAttempts) {
+    for (const [, rec] of Object.entries(attempt.answers)) {
+      const obj = (rec as { syllabusObjective?: string }).syllabusObjective
+      if (!obj) continue
+      if (!map[obj]) map[obj] = { subject: attempt.subject, awarded: 0, total: 0 }
+      const marks = (rec as { marksAwarded: number }).marksAwarded ?? 0
+      // We don't have per-question totalMarks in answers; use isCorrect as proxy for 1 mark
+      const isCorrect = (rec as { isCorrect: boolean }).isCorrect
+      map[obj].awarded += marks
+      // Estimate total from isCorrect (1 question = at least 1 mark attempt)
+      // This is approximate — exact marks not stored per-answer
+      map[obj].total += isCorrect ? marks : Math.max(marks, 1)
+    }
+  }
+
+  return Object.entries(map)
+    .map(([objective, v]) => ({
+      objective,
+      subject: v.subject,
+      awarded: v.awarded,
+      total: v.total,
+      accuracy: v.total > 0 ? Math.round((v.awarded / v.total) * 100) : 0,
+    }))
+    .filter(o => o.total > 0)
+    .sort((a, b) => a.accuracy - b.accuracy)
+}
+
 // ─── Topic accuracy computation ──────────────────────────────────────────────
 
 interface TopicStat {
@@ -137,13 +185,20 @@ function AttemptRow({ attempt, type }: {
 interface Props {
   practiceAttempts: PracticeAttempt[]
   examAttempts: ExamAttempt[]
+  onPracticeWeakTopic?: (topic: string, subject: string) => void
 }
 
-export function ProgressDashboard({ practiceAttempts, examAttempts }: Props) {
+export function ProgressDashboard({ practiceAttempts, examAttempts, onPracticeWeakTopic }: Props) {
   const topicStats = useMemo(
     () => computeTopicStats(practiceAttempts, examAttempts),
     [practiceAttempts, examAttempts],
   )
+
+  const objectiveStats = useMemo(
+    () => computeObjectiveStats(practiceAttempts, examAttempts),
+    [practiceAttempts, examAttempts],
+  )
+  const weakObjectives = objectiveStats.filter(o => o.accuracy < 60).slice(0, 8)
 
   const weakTopics  = topicStats.filter(t => t.accuracy < 60)
   const strongTopics = topicStats.filter(t => t.accuracy >= 80)
@@ -255,7 +310,18 @@ export function ProgressDashboard({ practiceAttempts, examAttempts }: Props) {
                         <div key={t.topic} className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
                           <span className="text-xs text-red-700 flex-1 truncate">{t.topic}</span>
-                          <span className="text-xs font-bold text-red-600">{t.accuracy}%</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs font-bold text-red-600">{t.accuracy}%</span>
+                            {onPracticeWeakTopic && (
+                              <button
+                                onClick={() => onPracticeWeakTopic(t.topic, t.subject)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-700 hover:bg-red-300 transition-colors font-medium"
+                                title="Find assessments for this topic"
+                              >
+                                Practice →
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -282,6 +348,29 @@ export function ProgressDashboard({ practiceAttempts, examAttempts }: Props) {
               </div>
             )}
           </div>
+
+          {/* Left col: Syllabus objective weaknesses */}
+          {weakObjectives.length > 0 && (
+            <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                Weak Syllabus Objectives
+              </h3>
+              <div className="space-y-2">
+                {weakObjectives.map(o => (
+                  <div key={o.objective} className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-700 truncate" title={o.objective}>{o.objective}</p>
+                      <AccuracyBar pct={o.accuracy} color={topicColor(o.accuracy)} />
+                    </div>
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded shrink-0 ${topicBadgeColor(o.accuracy)}`}>
+                      {o.accuracy}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Right col: Recent Sessions */}
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 self-start">

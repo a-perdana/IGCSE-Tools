@@ -52,39 +52,57 @@ export function PracticeResults({
           const awarded = a?.marksAwarded ?? 0
           const correct = a?.isCorrect ?? false
           const attempted = a !== undefined
+          const notChecked = attempted && a.aiFeedback === 'Not checked — submitted without AI evaluation.'
 
           return (
             <div
               key={q.id}
               className={[
-                'flex items-center gap-3 px-4 py-3 rounded-lg border text-sm',
+                'flex flex-col gap-1.5 px-4 py-3 rounded-lg border text-sm',
                 !attempted
                   ? 'bg-slate-50 border-slate-200 text-slate-400'
-                  : correct
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : awarded > 0
-                      ? 'bg-amber-50 border-amber-200 text-amber-800'
-                      : 'bg-red-50 border-red-200 text-red-800',
+                  : notChecked
+                    ? 'bg-slate-50 border-slate-300 text-slate-500'
+                    : correct
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : awarded > 0
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-red-50 border-red-200 text-red-800',
               ].join(' ')}
             >
-              <span className={[
-                'flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0',
-                !attempted
-                  ? 'bg-slate-200 text-slate-500'
-                  : correct
-                    ? 'bg-emerald-500 text-white'
-                    : awarded > 0
-                      ? 'bg-amber-500 text-white'
-                      : 'bg-red-500 text-white',
-              ].join(' ')}>
-                {i + 1}
-              </span>
-              <span className="flex-1 truncate text-current opacity-80">
-                {q.text.slice(0, 60)}{q.text.length > 60 ? '…' : ''}
-              </span>
-              <span className="shrink-0 font-medium tabular-nums">
-                {attempted ? `${awarded}/${q.marks}` : `–/${q.marks}`}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className={[
+                  'flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0',
+                  !attempted
+                    ? 'bg-slate-200 text-slate-500'
+                    : notChecked
+                      ? 'bg-slate-300 text-slate-600'
+                      : correct
+                        ? 'bg-emerald-500 text-white'
+                        : awarded > 0
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-red-500 text-white',
+                ].join(' ')}>
+                  {i + 1}
+                </span>
+                <span className="flex-1 truncate text-current opacity-80">
+                  {q.text.slice(0, 60)}{q.text.length > 60 ? '…' : ''}
+                </span>
+                <span className="shrink-0 font-medium tabular-nums">
+                  {!attempted ? `–/${q.marks}` : notChecked ? `?/${q.marks}` : `${awarded}/${q.marks}`}
+                </span>
+              </div>
+              {notChecked && a.userAnswer && (
+                <p className="text-xs text-slate-400 pl-9 italic">
+                  Your answer: "{a.userAnswer.slice(0, 80)}{a.userAnswer.length > 80 ? '…' : ''}" — not AI-evaluated
+                </p>
+              )}
+              {attempted && !correct && !notChecked && q.type === 'mcq' && q.answer && (
+                <div className="pl-9 flex items-center gap-3 text-xs">
+                  <span className="text-red-600">Your answer: <span className="font-medium">{a.userAnswer.slice(0, 60)}</span></span>
+                  <span className="text-emerald-700">Correct: <span className="font-medium">{q.answer}</span></span>
+                </div>
+              )}
             </div>
           )
         })}

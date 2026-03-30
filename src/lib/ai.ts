@@ -1,7 +1,7 @@
 /**
  * Unified AI router — delegates to the correct provider based on config.provider.
  */
-import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, PracticeAnswerRecord } from './types'
+import type { QuestionItem, Assessment, AnalyzeFileResult, GenerationConfig, PracticeAnswerRecord, CriterionResult } from './types'
 import { parseJsonWithRecovery } from './json'
 
 import {
@@ -124,7 +124,11 @@ Respond with valid JSON ONLY — no markdown, no explanation outside the JSON:
 {
   "isCorrect": boolean,
   "marksAwarded": number,
-  "feedback": "string (1-3 sentences: what was right, what was missing, how to improve)"
+  "feedback": "string (1-3 sentences: what was right, what was missing, how to improve)",
+  "criteriaBreakdown": [
+    { "criterion": "brief description of mark-scheme point", "awarded": boolean },
+    ...one entry per available mark...
+  ]
 }
 
 Rules:
@@ -132,7 +136,8 @@ Rules:
 - Ignore spelling errors for scientific terms if the meaning is clear.
 - Be strict about command words: "State" needs a bare fact; "Explain" needs a mechanism; "Calculate" needs a numerical answer with correct units.
 - marksAwarded must be an integer between 0 and ${question.marks}.
-- isCorrect is true only if full marks are awarded.`
+- isCorrect is true only if full marks are awarded.
+- criteriaBreakdown must have exactly ${question.marks} entries, one per available mark.`
 
   const fallback: Omit<PracticeAnswerRecord, 'userAnswer'> = {
     isCorrect: false,
@@ -190,14 +195,79 @@ Rules:
     if (!parsed || typeof parsed !== 'object') return fallback
     const p = parsed as Record<string, unknown>
     const marksAwarded = Math.min(question.marks, Math.max(0, Math.round(Number(p.marksAwarded ?? 0))))
+    let criteriaBreakdown: CriterionResult[] | undefined
+    if (Array.isArray(p.criteriaBreakdown) && p.criteriaBreakdown.length > 0) {
+      criteriaBreakdown = (p.criteriaBreakdown as unknown[])
+        .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
+        .map(c => ({
+          criterion: typeof c.criterion === 'string' ? c.criterion : String(c.criterion ?? ''),
+          awarded: Boolean(c.awarded),
+        }))
+    }
     return {
       isCorrect: Boolean(p.isCorrect),
       marksAwarded,
       aiFeedback: typeof p.feedback === 'string' ? p.feedback : undefined,
+      criteriaBreakdown,
     }
   } catch (err) {
     console.error('checkPracticeAnswer error:', err)
     return fallback
+  }
+}
+
+export async function getQuestionHint(
+  subject: string,
+  question: QuestionItem,
+  model: string,
+  provider: GenerationConfig['provider'],
+  apiKey?: string,
+): Promise<string> {
+  const prompt = `You are a Cambridge IGCSE tutor for ${subject}.
+
+QUESTION (${question.marks} mark${question.marks !== 1 ? 's' : ''}, command word: ${question.commandWord}):
+${question.text}
+
+A student is stuck and needs a hint. Give a SHORT, helpful nudge (2-3 sentences) that:
+- Points them in the right direction WITHOUT revealing the answer
+- Reminds them of any key concept or command word expectation
+- Does NOT quote the mark scheme directly
+
+Respond with the hint text only — no JSON, no formatting, no preamble.`
+
+  try {
+    let rawText = ''
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 200 }),
+      })
+      if (!res.ok) throw new Error(`OpenAI error ${res.status}`)
+      const data = await res.json()
+      rawText = data.choices[0].message.content as string
+    } else if (provider === 'anthropic') {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey ?? '', 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, max_tokens: 200, messages: [{ role: 'user', content: prompt }] }),
+      })
+      if (!res.ok) throw new Error(`Anthropic error ${res.status}`)
+      const data = await res.json()
+      rawText = data.content[0].text as string
+    } else {
+      const { GoogleGenAI } = await import('@google/genai')
+      const ai = new GoogleGenAI({ apiKey: apiKey ?? '' })
+      const result = await ai.models.generateContent({
+        model,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { maxOutputTokens: 200 },
+      })
+      rawText = result.text ?? ''
+    }
+    return rawText.trim() || 'Think carefully about what the command word is asking for.'
+  } catch {
+    return 'Think carefully about what the command word is asking for.'
   }
 }
 

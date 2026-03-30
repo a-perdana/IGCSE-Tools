@@ -14,6 +14,7 @@ export interface ExamSession {
   isSaving: boolean
   autoSubmitted: boolean
   timeRemainingSeconds: number
+  showCountdownWarning: boolean              // true when ≤10 seconds remain
 }
 
 export function useExamMode(
@@ -38,6 +39,7 @@ export function useExamMode(
     isSaving: false,
     autoSubmitted: false,
     timeRemainingSeconds: timeLimitSeconds,
+    showCountdownWarning: false,
   })
 
   // ── countdown timer ──────────────────────────────────────────────────────
@@ -54,7 +56,8 @@ export function useExamMode(
           clearInterval(timerRef.current!)
           return { ...s, timeRemainingSeconds: 0 }
         }
-        return { ...s, timeRemainingSeconds: next }
+        const showCountdownWarning = next <= 10 && next > 0
+        return { ...s, timeRemainingSeconds: next, showCountdownWarning }
       })
     }, 1000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
@@ -95,13 +98,14 @@ export function useExamMode(
     const draftAnswers = session.draftAnswers
     const results: Record<string, ExamAnswerRecord> = {}
 
-    // Grade all questions sequentially (MCQ instant, others AI)
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i]
+    // Phase 1: Grade MCQ and empty answers instantly (client-side, no API needed)
+    let instantCount = 0
+    for (const q of questions) {
       const userAnswer = draftAnswers[q.id]?.trim() ?? ''
-
+      const syllabusObjective = q.syllabusObjective
       if (!userAnswer) {
-        results[q.id] = { userAnswer: '', isCorrect: false, marksAwarded: 0 }
+        results[q.id] = { userAnswer: '', isCorrect: false, marksAwarded: 0, syllabusObjective }
+        instantCount++
       } else if (q.type === 'mcq') {
         const correct = q.answer?.trim()
         const opts = q.options ?? []
@@ -112,19 +116,39 @@ export function useExamMode(
           (selectedIndex !== -1 && selectedIndex === correctIndex) ||
           (letterIndex !== -1 && selectedIndex === letterIndex) ||
           userAnswer.toLowerCase() === correct?.toLowerCase()
-        results[q.id] = { userAnswer, isCorrect, marksAwarded: isCorrect ? q.marks : 0 }
-      } else if (apiKey.trim()) {
-        try {
-          const res = await checkPracticeAnswer(assessment.subject, q, userAnswer, model, provider, apiKey)
-          results[q.id] = { userAnswer, ...res }
-        } catch {
-          results[q.id] = { userAnswer, isCorrect: false, marksAwarded: 0, aiFeedback: 'Could not grade.' }
-        }
-      } else {
-        results[q.id] = { userAnswer, isCorrect: false, marksAwarded: 0, aiFeedback: 'No API key — answer recorded but not graded.' }
+        results[q.id] = { userAnswer, isCorrect, marksAwarded: isCorrect ? q.marks : 0, syllabusObjective }
+        instantCount++
       }
+    }
+    setSession(s => ({ ...s, gradingProgress: instantCount }))
 
-      setSession(s => ({ ...s, gradingProgress: i + 1 }))
+    // Phase 2: Grade short_answer / structured in parallel (AI calls)
+    const aiQuestions = questions.filter(q => {
+      const userAnswer = draftAnswers[q.id]?.trim() ?? ''
+      return userAnswer && q.type !== 'mcq'
+    })
+
+    if (aiQuestions.length > 0) {
+      const aiResults = await Promise.all(
+        aiQuestions.map(async q => {
+          const userAnswer = draftAnswers[q.id]?.trim() ?? ''
+          const syllabusObjective = q.syllabusObjective
+          if (!apiKey.trim()) {
+            return { id: q.id, record: { userAnswer, isCorrect: false, marksAwarded: 0, aiFeedback: 'No API key — answer recorded but not graded.', syllabusObjective } as ExamAnswerRecord }
+          }
+          try {
+            const res = await checkPracticeAnswer(assessment.subject, q, userAnswer, model, provider, apiKey)
+            return { id: q.id, record: { userAnswer, ...res, syllabusObjective } as ExamAnswerRecord }
+          } catch {
+            return { id: q.id, record: { userAnswer, isCorrect: false, marksAwarded: 0, aiFeedback: 'Could not grade.', syllabusObjective } as ExamAnswerRecord }
+          }
+        })
+      )
+      // Merge AI results and update progress incrementally
+      for (const { id, record } of aiResults) {
+        results[id] = record
+      }
+      setSession(s => ({ ...s, gradingProgress: questions.length }))
     }
 
     const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
@@ -167,6 +191,10 @@ export function useExamMode(
     }
   }, [assessment, session.draftAnswers, apiKey, model, provider, timeLimitSeconds, onComplete, notify])
 
+  const dismissCountdownWarning = useCallback(() => {
+    setSession(s => ({ ...s, showCountdownWarning: false }))
+  }, [])
+
   const reset = useCallback(() => {
     startedAt.current = Date.now()
     setSession({
@@ -179,8 +207,9 @@ export function useExamMode(
       isSaving: false,
       autoSubmitted: false,
       timeRemainingSeconds: timeLimitSeconds,
+      showCountdownWarning: false,
     })
   }, [timeLimitSeconds])
 
-  return { session, setDraftAnswer, goToNext, goToPrev, goToQuestion, handleSubmit, reset }
+  return { session, setDraftAnswer, goToNext, goToPrev, goToQuestion, handleSubmit, reset, dismissCountdownWarning }
 }

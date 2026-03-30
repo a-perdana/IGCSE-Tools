@@ -19,7 +19,7 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null)
   const [questionOverrides, setQuestionOverrides] = useState<Record<string, Partial<QuestionItem>>>({})
 
-  const { session, setDraftAnswer, checkAnswer, goToNext, goToPrev, finishSession, reset } = usePractice(
+  const { session, setDraftAnswer, checkAnswer, goToNext, goToPrev, goToQuestion, finishSession, reset, getHint } = usePractice(
     assessment,
     provider,
     apiKey,
@@ -34,6 +34,7 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
   const currentQuestion = questions[session.currentIndex]
   const progress = session.checkedQuestions.size / Math.max(questions.length, 1)
   const allChecked = session.checkedQuestions.size === questions.length
+  const allAnswered = questions.every(q => (session.draftAnswers[q.id] ?? '').trim() !== '')
 
   function handleQuickSave(updates: Partial<QuestionItem>) {
     if (!editingQuestion) return
@@ -97,15 +98,23 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
               checkedResult={session.answers[currentQuestion.id]}
               isChecking={session.isChecking}
               checkError={session.checkError}
+              questions={questions}
               onAnswerChange={v => setDraftAnswer(currentQuestion.id, v)}
               onCheck={() => checkAnswer(currentQuestion.id)}
               onNext={goToNext}
               onPrev={goToPrev}
               canGoNext={session.currentIndex < questions.length - 1}
               canGoPrev={session.currentIndex > 0}
+              onGoTo={goToQuestion}
               onFinish={finishSession}
               isLastQuestion={session.currentIndex === questions.length - 1}
               allChecked={allChecked}
+              allAnswered={allAnswered}
+              allDraftAnswers={session.draftAnswers}
+              checkedQuestions={session.checkedQuestions}
+              hint={session.hints[currentQuestion.id]}
+              isHinting={session.isHinting}
+              onHint={() => getHint(currentQuestion.id)}
               onEdit={() => setEditingQuestion(currentQuestion)}
             />
           ) : null}
