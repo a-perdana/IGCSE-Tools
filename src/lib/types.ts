@@ -293,6 +293,75 @@ export interface PracticeAttempt {
   durationSeconds: number
 }
 
+// ─── Gamification ─────────────────────────────────────────────────────────────
+
+export type BadgeId =
+  | 'first_question'       // first question answered
+  | 'first_perfect'        // 100% on a session
+  | 'streak_3'             // 3-day streak
+  | 'streak_7'             // 7-day streak
+  | 'streak_30'            // 30-day streak
+  | 'questions_10'         // 10 questions answered total
+  | 'questions_50'         // 50 questions answered
+  | 'questions_100'        // 100 questions answered
+  | 'questions_500'        // 500 questions answered
+  | 'subject_master'       // 50+ questions in one subject
+  | 'daily_3'              // complete first daily challenge
+  | 'level_5'              // reach level 5
+  | 'level_10'             // reach level 10
+  | 'night_owl'            // answered questions after 22:00
+  | 'early_bird'           // answered questions before 07:00
+
+export interface BadgeDefinition {
+  id: BadgeId
+  name: string
+  description: string
+  emoji: string
+  xpReward: number
+}
+
+export const BADGE_DEFINITIONS: Record<BadgeId, BadgeDefinition> = {
+  first_question:  { id: 'first_question',  name: 'First Step',        description: 'Answer your first question',            emoji: '🎯', xpReward: 50  },
+  first_perfect:   { id: 'first_perfect',   name: 'Perfectionist',     description: 'Score 100% on a practice session',      emoji: '💎', xpReward: 200 },
+  streak_3:        { id: 'streak_3',        name: 'On a Roll',         description: 'Study 3 days in a row',                 emoji: '🔥', xpReward: 100 },
+  streak_7:        { id: 'streak_7',        name: 'Week Warrior',      description: 'Study 7 days in a row',                 emoji: '⚡', xpReward: 300 },
+  streak_30:       { id: 'streak_30',       name: 'Unstoppable',       description: 'Study 30 days in a row',                emoji: '🌟', xpReward: 1000 },
+  questions_10:    { id: 'questions_10',    name: 'Getting Started',   description: 'Answer 10 questions',                   emoji: '📝', xpReward: 50  },
+  questions_50:    { id: 'questions_50',    name: 'Halfway There',     description: 'Answer 50 questions',                   emoji: '📚', xpReward: 150 },
+  questions_100:   { id: 'questions_100',   name: 'Century',           description: 'Answer 100 questions',                  emoji: '💯', xpReward: 400 },
+  questions_500:   { id: 'questions_500',   name: 'Legend',            description: 'Answer 500 questions',                  emoji: '🏆', xpReward: 1000 },
+  subject_master:  { id: 'subject_master',  name: 'Subject Master',    description: 'Answer 50+ questions in one subject',   emoji: '🎓', xpReward: 300 },
+  daily_3:         { id: 'daily_3',         name: 'Daily Devotion',    description: 'Complete your first Daily Challenge',   emoji: '📅', xpReward: 100 },
+  level_5:         { id: 'level_5',         name: 'Rising Star',       description: 'Reach Level 5',                         emoji: '⭐', xpReward: 200 },
+  level_10:        { id: 'level_10',        name: 'Pro Learner',       description: 'Reach Level 10',                        emoji: '🚀', xpReward: 500 },
+  night_owl:       { id: 'night_owl',       name: 'Night Owl',         description: 'Study after 10 PM',                     emoji: '🦉', xpReward: 75  },
+  early_bird:      { id: 'early_bird',      name: 'Early Bird',        description: 'Study before 7 AM',                     emoji: '🌅', xpReward: 75  },
+}
+
+export interface UserProfile {
+  uid: string
+  xp: number
+  level: number
+  streak: number
+  longestStreak: number
+  lastActiveDate: string       // 'YYYY-MM-DD' in local time
+  totalQuestionsAnswered: number
+  totalMarksAwarded: number
+  totalMarksPossible: number
+  badges: BadgeId[]
+  subjectQuestionCounts: Record<string, number>  // subject → count
+  dailyChallengesCompleted: number
+  updatedAt: number            // Date.now()
+}
+
+export interface DailyChallenge {
+  date: string                 // 'YYYY-MM-DD'
+  questionIds: string[]        // 3 question IDs from user's bank
+  completedAt?: number         // Date.now() when done
+  marksAwarded?: number
+  totalMarks?: number
+}
+
 export interface SyllabusCache {
   resourceId: string;
   subject: string;

@@ -2,9 +2,11 @@ import React, { useMemo } from 'react'
 import {
   BookOpen, Brain, FileQuestion, ImageIcon, Wand2, Trophy,
   TrendingUp, Layers, ChevronRight, Zap, Upload, Flame,
-  Star, Target, BarChart2,
+  Star, Target, BarChart2, Medal, Calendar, CheckCircle2,
 } from 'lucide-react'
-import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt } from '../../lib/types'
+import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt, UserProfile, DailyChallenge, BadgeId } from '../../lib/types'
+import { BADGE_DEFINITIONS } from '../../lib/types'
+import { levelFromXP } from '../../hooks/useGamification'
 
 // ── Subject config ─────────────────────────────────────────────────────────────
 
@@ -35,19 +37,6 @@ function subjectCfg(subject: string) {
 
 function xpForAttempts(attempts: PracticeAttempt[]): number {
   return attempts.reduce((sum, a) => sum + (a.marksAwarded ?? 0) * 10, 0)
-}
-
-function levelFromXP(xp: number): { level: number; currentXP: number; nextXP: number } {
-  // Each level needs level*200 XP
-  let level = 1
-  let needed = 200
-  let remaining = xp
-  while (remaining >= needed) {
-    remaining -= needed
-    level++
-    needed = level * 200
-  }
-  return { level, currentXP: remaining, nextXP: needed }
 }
 
 function streakFromAttempts(attempts: PracticeAttempt[]): number {
@@ -223,7 +212,10 @@ export function Dashboard({
   practiceAttempts,
   currentUserId,
   currentUserName,
+  userProfile,
+  dailyChallenge,
   onNavigate,
+  onStartDailyChallenge,
 }: {
   assessments: Assessment[]
   questions: Question[]
@@ -233,7 +225,10 @@ export function Dashboard({
   practiceAttempts: PracticeAttempt[]
   currentUserId: string
   currentUserName: string
+  userProfile: UserProfile | null
+  dailyChallenge: DailyChallenge | null
   onNavigate: (view: 'main' | 'library' | 'diagrams') => void
+  onStartDailyChallenge: () => void
 }) {
   // ── Derived question data ────────────────────────────────────────────────────
   const { aiQuestions, examviewQuestions } = useMemo(() => {
@@ -287,14 +282,15 @@ export function Dashboard({
       .sort((a, b) => (b[1].ai + b[1].examview + b[1].pastPaper) - (a[1].ai + a[1].examview + a[1].pastPaper))
   }, [aiQuestions, examviewQuestions, importedQuestions, assessments])
 
-  // ── Gamification ─────────────────────────────────────────────────────────────
-  const totalXP = xpForAttempts(practiceAttempts)
-  const { level, currentXP, nextXP } = levelFromXP(totalXP)
-  const streak = streakFromAttempts(practiceAttempts)
+  // ── Gamification — prefer Firestore profile, fall back to computed ────────────
+  const profileXP = userProfile?.xp ?? xpForAttempts(practiceAttempts)
+  const { level, currentXP, nextXP } = levelFromXP(profileXP)
+  const streak = userProfile?.streak ?? streakFromAttempts(practiceAttempts)
 
-  const totalMarksAwarded = practiceAttempts.reduce((s, a) => s + a.marksAwarded, 0)
-  const totalMarksPossible = practiceAttempts.reduce((s, a) => s + a.totalMarks, 0)
+  const totalMarksAwarded = userProfile?.totalMarksAwarded ?? practiceAttempts.reduce((s, a) => s + a.marksAwarded, 0)
+  const totalMarksPossible = userProfile?.totalMarksPossible ?? practiceAttempts.reduce((s, a) => s + a.totalMarks, 0)
   const overallAccuracy = totalMarksPossible > 0 ? Math.round((totalMarksAwarded / totalMarksPossible) * 100) : null
+  const badges = userProfile?.badges ?? []
 
   // ── Leaderboard ───────────────────────────────────────────────────────────────
   const leaderboard = useMemo(() => {
@@ -360,7 +356,7 @@ export function Dashboard({
                 <HeroStatBadge
                   icon={<Star className="w-4 h-4" />}
                   label="Total XP"
-                  value={totalXP.toLocaleString()}
+                  value={profileXP.toLocaleString()}
                   color="bg-white/15 text-white"
                 />
                 {overallAccuracy !== null && (
@@ -372,9 +368,9 @@ export function Dashboard({
                   />
                 )}
                 <HeroStatBadge
-                  icon={<BookOpen className="w-4 h-4" />}
-                  label="Sessions"
-                  value={practiceAttempts.length}
+                  icon={<Medal className="w-4 h-4" />}
+                  label="Badges"
+                  value={badges.length}
                   color="bg-white/15 text-white"
                 />
               </div>
@@ -481,6 +477,82 @@ export function Dashboard({
             </div>
           )}
         </section>
+
+        {/* ── Daily Challenge + Badges row ─────────────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 anim-slide-up">
+
+          {/* Daily Challenge */}
+          <section className="bg-white/80 backdrop-blur rounded-3xl border border-white shadow-md p-5">
+            <SectionHeader
+              icon={<Calendar className="w-4 h-4 text-rose-400" />}
+              title="Daily Challenge"
+            />
+            {questions.length < 3 ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-2">📝</div>
+                <p className="text-sm text-slate-400">Generate at least 3 questions to unlock daily challenges.</p>
+              </div>
+            ) : dailyChallenge?.completedAt ? (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+                <p className="text-base font-black text-emerald-700">Done for today! 🎉</p>
+                <p className="text-sm text-slate-400">
+                  {dailyChallenge.marksAwarded ?? 0}/{dailyChallenge.totalMarks ?? 0} marks
+                </p>
+                <p className="text-xs text-slate-400">Come back tomorrow for a new challenge.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Answer <span className="font-black text-indigo-600">3 questions</span> from your library to earn
+                  <span className="font-black text-amber-500"> +150 XP bonus</span> today!
+                </p>
+                <div className="flex items-center gap-2">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="flex-1 h-2.5 rounded-full bg-slate-100" />
+                  ))}
+                </div>
+                <button
+                  onClick={onStartDailyChallenge}
+                  className="w-full py-3 rounded-2xl text-white font-black text-sm hover:opacity-90 transition-all shadow-md"
+                  style={{ background: 'linear-gradient(135deg,#f43f5e,#ec4899)' }}
+                >
+                  🎯 Start Challenge
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Badges */}
+          <section className="bg-white/80 backdrop-blur rounded-3xl border border-white shadow-md p-5">
+            <SectionHeader
+              icon={<Medal className="w-4 h-4 text-amber-500" />}
+              title={`Badges (${badges.length})`}
+            />
+            {badges.length === 0 ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-2">🏅</div>
+                <p className="text-sm text-slate-400">Complete sessions to unlock badges!</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {badges.map((id: BadgeId) => {
+                  const def = BADGE_DEFINITIONS[id]
+                  return (
+                    <div
+                      key={id}
+                      title={`${def.name}: ${def.description}`}
+                      className="flex flex-col items-center gap-0.5 p-2.5 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 cursor-default hover:scale-110 transition-transform"
+                    >
+                      <span className="text-2xl">{def.emoji}</span>
+                      <span className="text-[9px] font-bold text-indigo-600 text-center leading-tight max-w-[48px] truncate">{def.name}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        </div>
 
         {/* ── Bottom row ────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 anim-slide-up">

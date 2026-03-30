@@ -234,5 +234,17 @@ service cloud.firestore {
       // Student creates their own attempt
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
+
+    // ── User Gamification Profiles ────────────────────────────────────────────
+    // Each user owns their profile doc (keyed by uid).
+    match /userProfiles/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── Daily Challenges ──────────────────────────────────────────────────────
+    // Doc IDs are {uid}_{YYYY-MM-DD}. User can only read/write their own.
+    match /dailyChallenges/{docId} {
+      allow read, write: if isAuthenticated() && docId.matches(request.auth.uid + '_.*');
+    }
   }
 }

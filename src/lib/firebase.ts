@@ -24,7 +24,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem, UserProfile, DailyChallenge } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -1179,4 +1179,104 @@ export async function getTeacherAssignments(): Promise<SharedAssignment[]> {
 
 export async function deleteSharedAssignment(id: string): Promise<void> {
   await deleteDoc(doc(db, 'sharedAssignments', id))
+}
+
+// ─── Gamification ─────────────────────────────────────────────────────────────
+
+const DEFAULT_PROFILE: Omit<UserProfile, 'uid'> = {
+  xp: 0,
+  level: 1,
+  streak: 0,
+  longestStreak: 0,
+  lastActiveDate: '',
+  totalQuestionsAnswered: 0,
+  totalMarksAwarded: 0,
+  totalMarksPossible: 0,
+  badges: [],
+  subjectQuestionCounts: {},
+  dailyChallengesCompleted: 0,
+  updatedAt: 0,
+}
+
+/** Load the current user's gamification profile. Creates a default one if missing. */
+export async function getUserProfile(): Promise<UserProfile | null> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return null
+  try {
+    const snap = await getDoc(doc(db, 'userProfiles', uid))
+    if (snap.exists()) return { uid, ...snap.data() } as UserProfile
+    // First time — create default
+    const profile: UserProfile = { uid, ...DEFAULT_PROFILE, updatedAt: Date.now() }
+    await setDoc(doc(db, 'userProfiles', uid), stripUndefined(profile as unknown as Record<string, unknown>))
+    return profile
+  } catch (e) {
+    console.error('getUserProfile error', e)
+    return null
+  }
+}
+
+/** Overwrite the user's profile document. */
+export async function saveUserProfile(profile: UserProfile): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return
+  try {
+    await setDoc(
+      doc(db, 'userProfiles', uid),
+      stripUndefined({ ...profile, updatedAt: Date.now() } as unknown as Record<string, unknown>),
+    )
+  } catch (e) {
+    console.error('saveUserProfile error', e)
+  }
+}
+
+/** Partial update — merges into existing profile. */
+export async function updateUserProfile(patch: Partial<Omit<UserProfile, 'uid'>>): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return
+  try {
+    await updateDoc(doc(db, 'userProfiles', uid), stripUndefined({ ...patch, updatedAt: Date.now() } as Record<string, unknown>))
+  } catch (e) {
+    // Doc might not exist yet — use setDoc with merge
+    await setDoc(doc(db, 'userProfiles', uid), stripUndefined({ uid, ...DEFAULT_PROFILE, ...patch, updatedAt: Date.now() } as unknown as Record<string, unknown>))
+  }
+}
+
+/** Get or create today's daily challenge for the user. */
+export async function getDailyChallenge(
+  today: string,  // 'YYYY-MM-DD'
+  questionIds: string[],  // caller passes 3 random IDs
+): Promise<DailyChallenge> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return { date: today, questionIds }
+  const docId = `${uid}_${today}`
+  try {
+    const snap = await getDoc(doc(db, 'dailyChallenges', docId))
+    if (snap.exists()) return snap.data() as DailyChallenge
+    const challenge: DailyChallenge = { date: today, questionIds }
+    await setDoc(doc(db, 'dailyChallenges', docId), challenge)
+    return challenge
+  } catch (e) {
+    console.error('getDailyChallenge error', e)
+    return { date: today, questionIds }
+  }
+}
+
+/** Mark today's daily challenge as completed. */
+export async function completeDailyChallenge(
+  today: string,
+  marksAwarded: number,
+  totalMarks: number,
+): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return
+  const docId = `${uid}_${today}`
+  try {
+    await updateDoc(doc(db, 'dailyChallenges', docId), {
+      completedAt: Date.now(),
+      marksAwarded,
+      totalMarks,
+    })
+  } catch (e) {
+    console.error('completeDailyChallenge error', e)
+  }
 }

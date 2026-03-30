@@ -22,6 +22,9 @@ import { PracticeMode } from './components/PracticeMode'
 import { ExamMode } from './components/ExamMode'
 import { ProgressDashboard } from './components/ProgressDashboard'
 import { ClassDashboard, ShareAssessmentPanel } from './components/ClassMode'
+import { BadgeUnlockModal } from './components/BadgeUnlockModal'
+import { useGamification } from './hooks/useGamification'
+import { useDailyChallenge } from './hooks/useDailyChallenge'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
@@ -323,6 +326,8 @@ export default function App() {
   const library = useAssessments(user, notify)
   const resources = useResources(user, notify)
   const generation = useGeneration(notify, provider, currentApiKey || undefined, resources.updateGeminiUri)
+  const gamification = useGamification()
+  const dailyChallenge = useDailyChallenge()
 
   useEffect(() => {
     return onAuthStateChanged(auth, u => {
@@ -331,6 +336,7 @@ export default function App() {
       if (u) {
         library.loadAll()
         resources.loadResources(config.subject)
+        gamification.reload()
       } else if (wasLoggedIn) {
         // Clear API keys from localStorage only on real logout (not initial load)
         // so the next user doesn't see a previous user's keys.
@@ -366,6 +372,10 @@ export default function App() {
     if (user && view === 'dashboard') {
       getDiagramPool().then(setDiagramPool).catch(console.error)
       if (importedQuestions.length === 0 && !importedLoading) handleLoadImported()
+      // Load daily challenge once we have questions
+      if (library.questions.length >= 3) {
+        dailyChallenge.load(library.questions, importedQuestions)
+      }
     }
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -816,7 +826,27 @@ export default function App() {
             practiceAttempts={practiceAttempts}
             currentUserId={user.uid}
             currentUserName={user.displayName ?? user.email ?? ''}
+            userProfile={gamification.profile}
+            dailyChallenge={dailyChallenge.challenge}
             onNavigate={v => { setPreviousView(null); setView(v) }}
+            onStartDailyChallenge={() => {
+              // Pick first 3 available MCQ questions and open practice
+              const mcqs = library.questions.filter(q => q.type === 'mcq').slice(0, 3)
+              const pool = mcqs.length >= 3 ? mcqs : library.questions.slice(0, 3)
+              if (pool.length === 0) { notify('No questions in library yet', 'error'); return }
+              const fakeAssessment = {
+                id: `daily_${new Date().toISOString().slice(0, 10)}`,
+                subject: pool[0].subject ?? 'Mixed',
+                topic: 'Daily Challenge',
+                difficulty: 'Balanced',
+                questions: pool.map(q => ({ ...q })),
+                userId: user.uid,
+                folderId: undefined,
+                createdAt: null as any,
+              }
+              setPracticeAssessment(fakeAssessment)
+              setView('practice')
+            }}
           />
         ) : view === 'diagrams' ? (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -953,6 +983,7 @@ export default function App() {
             onComplete={(attempt) => {
               notify(`Practice complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks`, 'success')
               setPracticeAttempts(prev => [attempt, ...prev])
+              gamification.applyAttempt(attempt)
               setPracticeAssessment(null)
               setView('library')
             }}
@@ -1133,6 +1164,14 @@ export default function App() {
           assessment={shareAssessment}
           notify={notify}
           onClose={() => setShareAssessment(null)}
+        />
+      )}
+
+      {/* Badge unlock notification — shows one at a time */}
+      {gamification.newlyUnlockedBadges.length > 0 && (
+        <BadgeUnlockModal
+          badgeId={gamification.newlyUnlockedBadges[0]}
+          onDismiss={gamification.dismissBadge}
         />
       )}
 
