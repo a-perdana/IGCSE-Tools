@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Assessment, PracticeAttempt, GenerationConfig, QuestionItem } from '../../lib/types'
 import { usePractice } from '../../hooks/usePractice'
 import { PracticeQuestion } from './PracticeQuestion'
 import { PracticeResults } from './PracticeResults'
 import { QuickEditModal } from '../Library/modals'
+import { useMascot } from '../../hooks/useMascot'
 import { X } from 'lucide-react'
 
 interface Props {
@@ -11,14 +12,17 @@ interface Props {
   provider: GenerationConfig['provider']
   apiKey: string
   model: string
+  mascotLevel?: number
   onExit: () => void
   onComplete: (attempt: PracticeAttempt) => void
   notify: (msg: string, type: 'success' | 'error' | 'info') => void
 }
 
-export function PracticeMode({ assessment, provider, apiKey, model, onExit, onComplete, notify }: Props) {
+export function PracticeMode({ assessment, provider, apiKey, model, mascotLevel = 1, onExit, onComplete, notify }: Props) {
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null)
   const [questionOverrides, setQuestionOverrides] = useState<Record<string, Partial<QuestionItem>>>({})
+  const mascot = useMascot(null)
+  const prevAnswerCountRef = useRef(0)
 
   const { session, setDraftAnswer, checkAnswer, goToNext, goToPrev, goToQuestion, finishSession, reset, getHint } = usePractice(
     assessment,
@@ -28,6 +32,18 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
     onComplete,
     notify,
   )
+
+  // Trigger mascot mood when a new answer is checked
+  useEffect(() => {
+    const count = Object.keys(session.answers).length
+    if (count > prevAnswerCountRef.current) {
+      prevAnswerCountRef.current = count
+      const lastAnswer = Object.values(session.answers).at(-1)
+      if (lastAnswer) {
+        lastAnswer.isCorrect ? mascot.onCorrectAnswer() : mascot.onWrongAnswer()
+      }
+    }
+  }, [session.answers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const questions = assessment.questions.map(q =>
     questionOverrides[q.id] ? { ...q, ...questionOverrides[q.id] } : q
@@ -110,6 +126,8 @@ export function PracticeMode({ assessment, provider, apiKey, model, onExit, onCo
               isChecking={session.isChecking}
               checkError={session.checkError}
               questions={questions}
+              mascotLevel={mascotLevel}
+              mascotMood={mascot.mood}
               onAnswerChange={v => setDraftAnswer(currentQuestion.id, v)}
               onCheck={() => checkAnswer(currentQuestion.id)}
               onNext={goToNext}

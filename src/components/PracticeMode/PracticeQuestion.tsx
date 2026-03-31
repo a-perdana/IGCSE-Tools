@@ -2,6 +2,8 @@ import type { QuestionItem, PracticeAnswerRecord } from '../../lib/types'
 import { QMarkdown, OptionContent } from '../Library/modals'
 import { DiagramRenderer } from '../DiagramRenderer'
 import { Pencil, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MascotSVG } from '../Mascot/MascotSVG'
+import type { MascotMood } from '../Mascot/MascotSVG'
 
 const COMMAND_WORD_HINTS: Record<string, string> = {
   'State': 'Give a specific name, value or other brief answer — no explanation needed.',
@@ -73,6 +75,8 @@ interface Props {
   isHinting: boolean
   onHint: () => void
   onEdit?: () => void
+  mascotLevel?: number
+  mascotMood?: MascotMood
 }
 
 export function PracticeQuestion({
@@ -101,6 +105,8 @@ export function PracticeQuestion({
   isHinting,
   onHint,
   onEdit,
+  mascotLevel = 1,
+  mascotMood = 'idle',
 }: Props) {
   const isChecked = checkedResult !== undefined
   const canCheck = draftAnswer.trim() !== '' && !isChecking && !isChecked
@@ -113,6 +119,8 @@ export function PracticeQuestion({
 
         {/* Card header strip */}
         <div className="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between gap-3">
+          {/* Mini mascot */}
+          <MascotSVG level={mascotLevel} mood={mascotMood} size={48} animate={false} className="shrink-0 -ml-1" />
           <div className="flex items-center gap-2 flex-wrap">
             {/* Q number badge */}
             <div className="flex items-center justify-center w-8 h-8 rounded-xl font-black text-sm text-white shrink-0"

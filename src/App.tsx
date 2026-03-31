@@ -23,8 +23,10 @@ import { ExamMode } from './components/ExamMode'
 import { ProgressDashboard } from './components/ProgressDashboard'
 import { ClassDashboard, ShareAssessmentPanel } from './components/ClassMode'
 import { BadgeUnlockModal } from './components/BadgeUnlockModal'
+import { LevelUpModal } from './components/LevelUpModal'
 import { useGamification } from './hooks/useGamification'
 import { useDailyChallenge } from './hooks/useDailyChallenge'
+import { useMascot } from './hooks/useMascot'
 import { copyToClipboard } from './lib/clipboard'
 import { repairQuestionItem } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
@@ -328,6 +330,7 @@ export default function App() {
   const generation = useGeneration(notify, provider, currentApiKey || undefined, resources.updateGeminiUri)
   const gamification = useGamification()
   const dailyChallenge = useDailyChallenge()
+  const mascot = useMascot(gamification.profile)
 
   useEffect(() => {
     return onAuthStateChanged(auth, u => {
@@ -828,6 +831,7 @@ export default function App() {
             currentUserName={user.displayName ?? user.email ?? ''}
             userProfile={gamification.profile}
             dailyChallenge={dailyChallenge.challenge}
+            mascotMood={mascot.mood}
             onNavigate={v => { setPreviousView(null); setView(v) }}
             onStartDailyChallenge={() => {
               // Pick first 3 available MCQ questions and open practice
@@ -979,6 +983,7 @@ export default function App() {
             provider={provider}
             apiKey={currentApiKey}
             model={customModel.trim() || defaultModel}
+            mascotLevel={gamification.profile?.level ?? 1}
             onExit={() => { setPracticeAssessment(null); setView('library') }}
             onComplete={(attempt) => {
               notify(`Practice complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks`, 'success')
@@ -1172,6 +1177,15 @@ export default function App() {
         <BadgeUnlockModal
           badgeId={gamification.newlyUnlockedBadges[0]}
           onDismiss={gamification.dismissBadge}
+        />
+      )}
+
+      {/* Evolution animation — triggered when Edu levels up to a new form */}
+      {mascot.didEvolve && mascot.previousForm && (
+        <LevelUpModal
+          previousForm={mascot.previousForm}
+          newLevel={gamification.profile?.level ?? 1}
+          onDismiss={mascot.clearEvolution}
         />
       )}
 

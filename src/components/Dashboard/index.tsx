@@ -7,6 +7,8 @@ import {
 import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt, UserProfile, DailyChallenge, BadgeId } from '../../lib/types'
 import { BADGE_DEFINITIONS } from '../../lib/types'
 import { levelFromXP } from '../../hooks/useGamification'
+import { MascotCard } from '../Mascot/MascotCard'
+import type { MascotMood } from '../Mascot/MascotSVG'
 
 // ── Subject config ─────────────────────────────────────────────────────────────
 
@@ -214,6 +216,7 @@ export function Dashboard({
   currentUserName,
   userProfile,
   dailyChallenge,
+  mascotMood = 'idle',
   onNavigate,
   onStartDailyChallenge,
 }: {
@@ -227,6 +230,7 @@ export function Dashboard({
   currentUserName: string
   userProfile: UserProfile | null
   dailyChallenge: DailyChallenge | null
+  mascotMood?: MascotMood
   onNavigate: (view: 'main' | 'library' | 'diagrams') => void
   onStartDailyChallenge: () => void
 }) {
@@ -330,73 +334,80 @@ export function Dashboard({
           style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #a855f7 100%)' }}>
           <div className="px-6 pt-7 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-start gap-6">
-              {/* Welcome text */}
-              <div className="flex-1">
-                <p className="text-indigo-200 text-sm font-semibold mb-1">Welcome back 👋</p>
-                <h2 className="text-white text-2xl sm:text-3xl font-black leading-tight">
-                  {firstName}!
-                </h2>
-                {streak > 0 ? (
-                  <p className="text-indigo-200 text-sm mt-1 flex items-center gap-1.5">
-                    <Flame className="w-4 h-4 text-orange-300" />
-                    <span><span className="font-bold text-white">{streak}-day streak</span> — keep it up!</span>
-                  </p>
-                ) : (
-                  <p className="text-indigo-200 text-sm mt-1">Ready to study today?</p>
-                )}
 
-                {/* XP bar */}
-                <div className="mt-4 bg-white/10 rounded-2xl px-4 py-3">
-                  <XPBar currentXP={currentXP} nextXP={nextXP} level={level} />
-                </div>
+              {/* Mascot column */}
+              <div className="shrink-0 sm:w-[190px]">
+                <MascotCard
+                  profile={userProfile}
+                  mood={mascotMood}
+                  userName={currentUserName}
+                />
               </div>
 
-              {/* Quick stats row */}
-              <div className="flex flex-wrap sm:flex-col gap-2 sm:min-w-[180px]">
-                <HeroStatBadge
-                  icon={<Star className="w-4 h-4" />}
-                  label="Total XP"
-                  value={profileXP.toLocaleString()}
-                  color="bg-white/15 text-white"
-                />
-                {overallAccuracy !== null && (
+              {/* Right: welcome + stats */}
+              <div className="flex-1 flex flex-col gap-4">
+                <div>
+                  <p className="text-indigo-200 text-sm font-semibold mb-1">Welcome back 👋</p>
+                  <h2 className="text-white text-2xl sm:text-3xl font-black leading-tight">
+                    {firstName}!
+                  </h2>
+                  {streak > 0 ? (
+                    <p className="text-indigo-200 text-sm mt-1 flex items-center gap-1.5">
+                      <Flame className="w-4 h-4 text-orange-300" />
+                      <span><span className="font-bold text-white">{streak}-day streak</span> — keep it up!</span>
+                    </p>
+                  ) : (
+                    <p className="text-indigo-200 text-sm mt-1">Ready to study today?</p>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="flex flex-wrap gap-2">
                   <HeroStatBadge
-                    icon={<Target className="w-4 h-4" />}
-                    label="Accuracy"
-                    value={`${overallAccuracy}%`}
+                    icon={<Star className="w-4 h-4" />}
+                    label="Total XP"
+                    value={profileXP.toLocaleString()}
                     color="bg-white/15 text-white"
                   />
-                )}
-                <HeroStatBadge
-                  icon={<Medal className="w-4 h-4" />}
-                  label="Badges"
-                  value={badges.length}
-                  color="bg-white/15 text-white"
-                />
+                  {overallAccuracy !== null && (
+                    <HeroStatBadge
+                      icon={<Target className="w-4 h-4" />}
+                      label="Accuracy"
+                      value={`${overallAccuracy}%`}
+                      color="bg-white/15 text-white"
+                    />
+                  )}
+                  <HeroStatBadge
+                    icon={<Medal className="w-4 h-4" />}
+                    label="Badges"
+                    value={badges.length}
+                    color="bg-white/15 text-white"
+                  />
+                </div>
+
+                {/* Quick actions */}
+                <div className="flex flex-wrap gap-2 mt-auto">
+                  <button
+                    onClick={() => onNavigate('main')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-bold hover:bg-indigo-50 transition-colors shadow-sm"
+                  >
+                    <Wand2 className="w-4 h-4" /> Generate
+                  </button>
+                  <button
+                    onClick={() => onNavigate('library')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4" /> Library
+                  </button>
+                  <button
+                    onClick={() => onNavigate('diagrams')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                  >
+                    <ImageIcon className="w-4 h-4" /> Diagrams
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* Quick action strip */}
-          <div className="bg-white/10 px-6 py-3 flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => onNavigate('main')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-bold hover:bg-indigo-50 transition-colors shadow-sm"
-            >
-              <Wand2 className="w-4 h-4" /> Generate Questions
-            </button>
-            <button
-              onClick={() => onNavigate('library')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
-            >
-              <BookOpen className="w-4 h-4" /> My Library
-            </button>
-            <button
-              onClick={() => onNavigate('diagrams')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
-            >
-              <ImageIcon className="w-4 h-4" /> Diagrams
-            </button>
           </div>
         </div>
 
