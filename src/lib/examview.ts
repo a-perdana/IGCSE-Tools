@@ -154,8 +154,8 @@ export async function parseExamViewZip(file: File): Promise<ExamViewParseResult>
 
   // ── Load all four data files ───────────────────────────────────────────────
   const questionsXml = await loadText(zip, /questions\.dat$/)
-  const categoriesXml = await loadText(zip, /categories\.dat$/)
-  const itemCategoriesXml = await loadText(zip, /itemcategories\.dat$/)
+  const categoriesXml = await loadText(zip, /categories\.dat$/, false)
+  const itemCategoriesXml = await loadText(zip, /itemcategories\.dat$/, false)
 
   // ── Build category map: id → { title, type } ──────────────────────────────
   const catMap = new Map<string, { title: string; type: string }>()
@@ -268,8 +268,11 @@ export async function parseExamViewZip(file: File): Promise<ExamViewParseResult>
   return { sourceFile: file.name, questions, allImages }
 }
 
-async function loadText(zip: JSZip, pattern: RegExp): Promise<string> {
+async function loadText(zip: JSZip, pattern: RegExp, required = true): Promise<string> {
   const path = Object.keys(zip.files).find(p => pattern.test(p))
-  if (!path) throw new Error(`File matching ${pattern} not found in ZIP`)
+  if (!path) {
+    if (!required) return ''
+    throw new Error(`File matching ${pattern} not found in ZIP`)
+  }
   return zip.files[path].async('string')
 }

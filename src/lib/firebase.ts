@@ -24,7 +24,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem, UserProfile, DailyChallenge, IgcseRole } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem, UserProfile, DailyChallenge, IgcseRole, Classroom } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -1162,6 +1162,16 @@ export async function getAssignmentAttempts(assignmentId: string): Promise<Assig
   }
 }
 
+/** Fetch a single shared assignment by its Firestore document ID. */
+export async function getAssignmentById(id: string): Promise<SharedAssignment | null> {
+  try {
+    const snap = await getDoc(doc(db, 'sharedAssignments', id))
+    return snap.exists() ? ({ id: snap.id, ...snap.data() } as SharedAssignment) : null
+  } catch {
+    return null
+  }
+}
+
 /** Fetch all shared assignments created by the current teacher. */
 export async function getTeacherAssignments(): Promise<SharedAssignment[]> {
   const uid = auth.currentUser?.uid
@@ -1234,6 +1244,131 @@ export async function getWorkspaceConfig(): Promise<WorkspaceConfig> {
 
 export async function saveWorkspaceConfig(config: WorkspaceConfig): Promise<void> {
   await setDoc(WORKSPACE_CONFIG_DOC, { ...config, updatedAt: Date.now() }, { merge: true })
+}
+
+// ─── Classrooms ───────────────────────────────────────────────────────────────
+
+function generateClassCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = 'CLS-'
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)]
+  return code
+}
+
+export async function createClassroom(name: string): Promise<{ id: string; code: string }> {
+  const user = auth.currentUser
+  if (!user) throw new Error('Not authenticated')
+  const code = generateClassCode()
+  const payload: Record<string, unknown> = {
+    code,
+    name: name.trim(),
+    teacherId: user.uid,
+    teacherName: user.displayName ?? user.email ?? 'Teacher',
+    studentIds: [],
+    createdAt: serverTimestamp(),
+  }
+  const ref = await addDoc(collection(db, 'classrooms'), payload)
+  return { id: ref.id, code }
+}
+
+export async function getClassroomByCode(code: string): Promise<Classroom | null> {
+  const snap = await getDocs(
+    query(collection(db, 'classrooms'), where('code', '==', code.toUpperCase().trim()))
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() } as Classroom
+}
+
+export async function joinClassroom(classroomId: string): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  const ref = doc(db, 'classrooms', classroomId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Classroom not found')
+  const data = snap.data() as Classroom
+  if (!data.studentIds.includes(uid)) {
+    await updateDoc(ref, { studentIds: [...data.studentIds, uid] })
+  }
+}
+
+export async function leaveClassroom(classroomId: string): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('Not authenticated')
+  const ref = doc(db, 'classrooms', classroomId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return
+  const data = snap.data() as Classroom
+  await updateDoc(ref, { studentIds: data.studentIds.filter(id => id !== uid) })
+}
+
+export async function getTeacherClassrooms(): Promise<Classroom[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'classrooms'), where('teacherId', '==', uid), orderBy('createdAt', 'desc'))
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Classroom))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'classrooms')
+    return []
+  }
+}
+
+export async function getStudentClassrooms(): Promise<Classroom[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'classrooms'), where('studentIds', 'array-contains', uid))
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Classroom))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'classrooms')
+    return []
+  }
+}
+
+export async function deleteClassroom(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'classrooms', id))
+}
+
+/** Fetch all shared assignments visible to a student — directly joined + via classrooms. */
+export async function getStudentVisibleAssignments(classroomIds: string[]): Promise<SharedAssignment[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const directSnap = await getDocs(
+      query(collection(db, 'sharedAssignments'), where('studentIds', 'array-contains', uid))
+    )
+    const direct = directSnap.docs.map(d => ({ id: d.id, ...d.data() } as SharedAssignment))
+
+    if (classroomIds.length === 0) return direct
+
+    // Fetch assignments belonging to any of the student's classrooms (batch by 10 — Firestore 'in' limit)
+    const classroomAssignments: SharedAssignment[] = []
+    for (let i = 0; i < classroomIds.length; i += 10) {
+      const chunk = classroomIds.slice(i, i + 10)
+      const snap = await getDocs(
+        query(collection(db, 'sharedAssignments'), where('classroomId', 'in', chunk))
+      )
+      snap.docs.forEach(d => {
+        const a = { id: d.id, ...d.data() } as SharedAssignment
+        // Avoid duplicates with direct list
+        if (!direct.some(x => x.id === a.id)) classroomAssignments.push(a)
+      })
+    }
+
+    return [...direct, ...classroomAssignments].sort((a, b) => {
+      const ta = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0
+      const tb = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0
+      return tb - ta
+    })
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'sharedAssignments')
+    return []
+  }
 }
 
 // ─── Gamification ─────────────────────────────────────────────────────────────

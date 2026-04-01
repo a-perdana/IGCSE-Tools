@@ -328,6 +328,7 @@ export default function App() {
   const roleMenuRef = useRef<HTMLDivElement>(null)
   const [workspaceGeminiKey, setWorkspaceGeminiKey] = useState('')
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [practiceReturnView, setPracticeReturnView] = useState<'library' | 'class'>('library')
 
   const { notifications, notify, dismiss } = useNotifications()
   const { provider, setProvider, apiKeys, setApiKey, currentApiKey: userApiKey, customModel, setCustomModel, defaultModel } = useApiSettings()
@@ -383,6 +384,14 @@ export default function App() {
   useEffect(() => {
     if (user) resources.loadResources(config.subject)
   }, [config.subject, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch workspace key whenever user has no personal key set (e.g. after admin saves it)
+  useEffect(() => {
+    if (!user || userApiKey || provider !== 'gemini') return
+    getWorkspaceConfig().then(cfg => {
+      if (cfg.geminiKey) setWorkspaceGeminiKey(cfg.geminiKey)
+    }).catch(console.error)
+  }, [user, userApiKey, provider]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show onboarding modal for brand-new students (xp=0, not seen before)
   useEffect(() => {
@@ -524,6 +533,7 @@ export default function App() {
       notify('This assessment has no questions to practice.', 'error')
       return
     }
+    setPracticeReturnView('library')
     setPracticeAssessment(assessment)
     setView('practice')
   }, [notify])
@@ -987,6 +997,7 @@ export default function App() {
             apiKey={currentApiKey}
             model={customModel.trim() || defaultModel}
             notify={notify}
+            onStartPractice={a => { setPracticeReturnView('class'); setPracticeAssessment(a); setView('practice') }}
           />
         ) : view === 'dashboard' ? (
           <Dashboard
@@ -1154,13 +1165,13 @@ export default function App() {
             apiKey={currentApiKey}
             model={customModel.trim() || defaultModel}
             mascotLevel={gamification.profile?.level ?? 1}
-            onExit={() => { setPracticeAssessment(null); setView('library') }}
+            onExit={() => { setPracticeAssessment(null); setViewRaw(practiceReturnView) }}
             onComplete={(attempt) => {
               notify(`Practice complete! ${attempt.marksAwarded}/${attempt.totalMarks} marks`, 'success')
               setPracticeAttempts(prev => [attempt, ...prev])
               gamification.applyAttempt(attempt)
               setPracticeAssessment(null)
-              setView('library')
+              setViewRaw(practiceReturnView)
             }}
             notify={notify}
           />

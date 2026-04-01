@@ -204,6 +204,16 @@ export interface DiagramPoolEntry {
 
 // ─── Class / Shared Assignments ──────────────────────────────────────────────
 
+export interface Classroom {
+  id: string
+  code: string           // short join code e.g. "CLS-A1B2"
+  name: string           // e.g. "Year 10 Biology"
+  teacherId: string
+  teacherName: string
+  studentIds: string[]
+  createdAt: Timestamp
+}
+
 export interface SharedAssignment {
   id: string
   code: string              // short join code e.g. "BIO-4Q-X7K"
@@ -221,6 +231,7 @@ export interface SharedAssignment {
   expiresAt?: Timestamp     // optional expiry
   timeLimitSeconds?: number // if set, student is forced into exam mode
   studentIds: string[]      // uids of students who joined
+  classroomId?: string      // if set, all classroom members can see this assignment
 }
 
 export interface AssignmentAttempt {

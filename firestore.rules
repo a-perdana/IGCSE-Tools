@@ -276,5 +276,21 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdminRole();
     }
+
+    // ── Classrooms ────────────────────────────────────────────────────────────
+    // Teachers create classrooms; students join by code (update studentIds only).
+    match /classrooms/{classroomId} {
+      // Any authenticated user can read (needed for code-based lookup)
+      allow read: if isAuthenticated();
+      // Only teachers/admins can create
+      allow create: if isAuthenticated() && isTeacherOrAdmin() && request.resource.data.teacherId == request.auth.uid;
+      // Teacher can delete their own classroom
+      allow delete: if isAuthenticated() && resource.data.teacherId == request.auth.uid;
+      // Students can update only studentIds (join/leave); teachers can update freely
+      allow update: if isAuthenticated() && (
+        resource.data.teacherId == request.auth.uid ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentIds'])
+      );
+    }
   }
 }
