@@ -353,7 +353,13 @@ export function Dashboard({
                   <h2 className="text-white text-2xl sm:text-3xl font-black leading-tight">
                     {firstName}!
                   </h2>
-                  {streak > 0 ? (
+                  {(userRole === 'teacher' || userRole === 'admin') ? (
+                    <p className="text-indigo-200 text-sm mt-1">
+                      {assessmentCount > 0
+                        ? `${assessmentCount} assessment${assessmentCount !== 1 ? 's' : ''} · ${allTopics} topic${allTopics !== 1 ? 's' : ''} ready`
+                        : 'Generate your first assessment to get started.'}
+                    </p>
+                  ) : streak > 0 ? (
                     <p className="text-indigo-200 text-sm mt-1 flex items-center gap-1.5">
                       <Flame className="w-4 h-4 text-orange-300" />
                       <span><span className="font-bold text-white">{streak}-day streak</span> — keep it up!</span>
@@ -365,26 +371,51 @@ export function Dashboard({
 
                 {/* Stats */}
                 <div className="flex flex-wrap gap-2">
-                  <HeroStatBadge
-                    icon={<Star className="w-4 h-4" />}
-                    label="Total XP"
-                    value={profileXP.toLocaleString()}
-                    color="bg-white/15 text-white"
-                  />
-                  {overallAccuracy !== null && (
-                    <HeroStatBadge
-                      icon={<Target className="w-4 h-4" />}
-                      label="Accuracy"
-                      value={`${overallAccuracy}%`}
-                      color="bg-white/15 text-white"
-                    />
+                  {(userRole === 'teacher' || userRole === 'admin') ? (
+                    <>
+                      <HeroStatBadge
+                        icon={<Wand2 className="w-4 h-4" />}
+                        label="Assessments"
+                        value={assessmentCount}
+                        color="bg-white/15 text-white"
+                      />
+                      <HeroStatBadge
+                        icon={<FileQuestion className="w-4 h-4" />}
+                        label="Questions"
+                        value={totalQuestions}
+                        color="bg-white/15 text-white"
+                      />
+                      <HeroStatBadge
+                        icon={<Brain className="w-4 h-4" />}
+                        label="Topics"
+                        value={allTopics}
+                        color="bg-white/15 text-white"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <HeroStatBadge
+                        icon={<Star className="w-4 h-4" />}
+                        label="Total XP"
+                        value={profileXP.toLocaleString()}
+                        color="bg-white/15 text-white"
+                      />
+                      {overallAccuracy !== null && (
+                        <HeroStatBadge
+                          icon={<Target className="w-4 h-4" />}
+                          label="Accuracy"
+                          value={`${overallAccuracy}%`}
+                          color="bg-white/15 text-white"
+                        />
+                      )}
+                      <HeroStatBadge
+                        icon={<Medal className="w-4 h-4" />}
+                        label="Badges"
+                        value={badges.length}
+                        color="bg-white/15 text-white"
+                      />
+                    </>
                   )}
-                  <HeroStatBadge
-                    icon={<Medal className="w-4 h-4" />}
-                    label="Badges"
-                    value={badges.length}
-                    color="bg-white/15 text-white"
-                  />
                 </div>
 
                 {/* Quick actions — role-aware */}
@@ -440,6 +471,39 @@ export function Dashboard({
 
         {/* ── Quick stat cards ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 anim-slide-up">
+          {(userRole === 'teacher' || userRole === 'admin') ? (
+            <>
+              <QuickStatCard
+                icon={<Wand2 className="w-4 h-4 text-white" />}
+                label="Assessments"
+                value={assessmentCount}
+                sub={`${aiCount} AI questions`}
+                gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
+              />
+              <QuickStatCard
+                icon={<Upload className="w-4 h-4 text-white" />}
+                label="ExamView Qs"
+                value={examviewCount}
+                sub={examviewCount > 0 ? 'imported' : 'none yet'}
+                gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
+              />
+              <QuickStatCard
+                icon={<FileQuestion className="w-4 h-4 text-white" />}
+                label="Past Paper Qs"
+                value={pastPaperCount}
+                sub={pastPaperCount > 0 ? 'imported' : 'none yet'}
+                gradient="bg-gradient-to-br from-violet-500 to-purple-600"
+              />
+              <QuickStatCard
+                icon={<Brain className="w-4 h-4 text-white" />}
+                label="Topics"
+                value={allTopics}
+                sub={`${subjectStats.length} subject${subjectStats.length !== 1 ? 's' : ''}`}
+                gradient="bg-gradient-to-br from-pink-500 to-rose-600"
+              />
+            </>
+          ) : (
+          <>
           <QuickStatCard
             icon={<Wand2 className="w-4 h-4 text-white" />}
             label="AI Questions"
@@ -468,6 +532,8 @@ export function Dashboard({
             sub={`${subjectStats.length} subject${subjectStats.length !== 1 ? 's' : ''}`}
             gradient="bg-gradient-to-br from-pink-500 to-rose-600"
           />
+          </>
+          )}
         </div>
 
         {/* ── Subject cards ─────────────────────────────────────────────────────── */}

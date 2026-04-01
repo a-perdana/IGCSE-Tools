@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { Users, Copy, Check, Trash2, ChevronRight, BarChart2, Clock, Award, X, RefreshCw } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { Users, Copy, Check, Trash2, ChevronRight, BarChart2, Clock, Award, X, RefreshCw, BookCheck } from 'lucide-react'
 import type { Assessment, SharedAssignment, AssignmentAttempt, IgcseRole } from '../../lib/types'
 import {
   createSharedAssignment,
@@ -9,6 +9,7 @@ import {
   getAssignmentAttempts,
   getTeacherAssignments,
   deleteSharedAssignment,
+  getStudentAssignmentAttempts,
 } from '../../lib/firebase'
 import { ExamMode } from '../ExamMode'
 import type { ExamAttempt, GenerationConfig } from '../../lib/types'
@@ -409,6 +410,8 @@ export function ClassDashboard({
   const [activeAssignment, setActiveAssignment] = useState<SharedAssignment | null>(null)
   const [viewResultsFor, setViewResultsFor] = useState<SharedAssignment | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<SharedAssignment | null>(null)
+  const [myAttempts, setMyAttempts] = useState<AssignmentAttempt[] | null>(null)
+  const [loadingAttempts, setLoadingAttempts] = useState(false)
 
   const loadAssignments = useCallback(async () => {
     setLoadingAssignments(true)
@@ -420,8 +423,22 @@ export function ClassDashboard({
     }
   }, [])
 
+  const loadMyAttempts = useCallback(async () => {
+    setLoadingAttempts(true)
+    try {
+      const list = await getStudentAssignmentAttempts()
+      setMyAttempts(list)
+    } finally {
+      setLoadingAttempts(false)
+    }
+  }, [])
+
   // Load on mount
   useState(() => { loadAssignments() })
+
+  useEffect(() => {
+    if (userRole === 'student') loadMyAttempts()
+  }, [userRole]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteSharedAssignment(id)
@@ -547,6 +564,59 @@ export function ClassDashboard({
               <span className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">2. Click "Join Assignment"</span>
               <span className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">3. Complete the timed exam</span>
             </div>
+          </section>
+        )}
+
+        {/* Student: Past submissions */}
+        {userRole === 'student' && (
+          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <BookCheck className="w-4 h-4 text-blue-500" /> My Submissions
+              </h3>
+              <button
+                onClick={loadMyAttempts}
+                disabled={loadingAttempts}
+                className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${loadingAttempts ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            {loadingAttempts ? (
+              <div className="flex items-center gap-2 text-slate-400 text-xs py-4 justify-center">
+                <RefreshCw className="w-3 h-3 animate-spin" /> Loading…
+              </div>
+            ) : myAttempts && myAttempts.length > 0 ? (
+              <div className="space-y-2">
+                {myAttempts.map(a => {
+                  const pct = a.totalMarks > 0 ? Math.round((a.marksAwarded / a.totalMarks) * 100) : 0
+                  const completedAt = (a as any).completedAt
+                  const date = completedAt
+                    ? new Date(typeof completedAt === 'number' ? completedAt : completedAt.toMillis?.() ?? Date.now()).toLocaleDateString()
+                    : ''
+                  return (
+                    <div key={a.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{a.subject} · {a.topic}</p>
+                        <p className="text-xs text-slate-400">Code: <span className="font-mono">{a.assignmentCode}</span>{date ? ` · ${date}` : ''}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-bold ${pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
+                          {pct}%
+                        </p>
+                        <p className="text-[10px] text-slate-400">{a.marksAwarded}/{a.totalMarks} marks</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <BookCheck className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                <p className="text-sm text-slate-400">No submissions yet.</p>
+                <p className="text-xs text-slate-300 mt-1">Join an assignment to get started.</p>
+              </div>
+            )}
           </section>
         )}
       </div>

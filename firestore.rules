@@ -256,14 +256,25 @@ service cloud.firestore {
 
     // ── User Gamification Profiles ────────────────────────────────────────────
     // Each user owns their profile doc (keyed by uid).
+    // Admin can list all profiles and update any user's role.
     match /userProfiles/{userId} {
       allow read, write: if isOwner(userId);
+      allow list: if isAdminRole();
+      allow update: if isAdminRole();
     }
 
     // ── Daily Challenges ──────────────────────────────────────────────────────
     // Doc IDs are {uid}_{YYYY-MM-DD}. User can only read/write their own.
     match /dailyChallenges/{docId} {
       allow read, write: if isAuthenticated() && docId.matches(request.auth.uid + '_.*');
+    }
+
+    // ── Workspace Config ──────────────────────────────────────────────────────
+    // Single doc (workspaceConfig/main) holding shared settings like a fallback Gemini key.
+    // Readable by all authenticated users; writable only by admins.
+    match /workspaceConfig/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdminRole();
     }
   }
 }

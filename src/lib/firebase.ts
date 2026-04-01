@@ -1181,6 +1181,61 @@ export async function deleteSharedAssignment(id: string): Promise<void> {
   await deleteDoc(doc(db, 'sharedAssignments', id))
 }
 
+/** Fetch all attempts submitted by the current student. */
+export async function getStudentAssignmentAttempts(): Promise<AssignmentAttempt[]> {
+  const uid = auth.currentUser?.uid
+  if (!uid) return []
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'assignmentAttempts'), where('userId', '==', uid), orderBy('completedAt', 'desc'))
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as AssignmentAttempt))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'assignmentAttempts')
+    return []
+  }
+}
+
+/** Admin: list all user profiles. Only callable by admins (enforced by Firestore rules). */
+export async function getAllUserProfiles(): Promise<UserProfile[]> {
+  try {
+    const snap = await getDocs(collection(db, 'userProfiles'))
+    return snap.docs.map(d => ({ uid: d.id, role_igcsetools: 'student', ...d.data() } as UserProfile))
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'userProfiles')
+    return []
+  }
+}
+
+/** Admin: set the role of any user by uid. */
+export async function setUserRoleById(uid: string, role: IgcseRole): Promise<void> {
+  await updateDoc(doc(db, 'userProfiles', uid), { role_igcsetools: role, updatedAt: Date.now() })
+}
+
+// ─── Workspace Config ─────────────────────────────────────────────────────────
+// Single doc: workspaceConfig/main — admin-writable, all-auth-readable.
+// Stores shared API key for users who haven't set their own.
+
+const WORKSPACE_CONFIG_DOC = doc(db, 'workspaceConfig', 'main')
+
+export interface WorkspaceConfig {
+  geminiKey?: string
+  updatedAt?: number
+}
+
+export async function getWorkspaceConfig(): Promise<WorkspaceConfig> {
+  try {
+    const snap = await getDoc(WORKSPACE_CONFIG_DOC)
+    return snap.exists() ? (snap.data() as WorkspaceConfig) : {}
+  } catch {
+    return {}
+  }
+}
+
+export async function saveWorkspaceConfig(config: WorkspaceConfig): Promise<void> {
+  await setDoc(WORKSPACE_CONFIG_DOC, { ...config, updatedAt: Date.now() }, { merge: true })
+}
+
 // ─── Gamification ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PROFILE: Omit<UserProfile, 'uid'> = {

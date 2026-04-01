@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
-import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard, TrendingUp, Users } from 'lucide-react'
+import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard, TrendingUp, Users, ChevronDown, GraduationCap, UserCog, Shield } from 'lucide-react'
 import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt, ExamAttempt, IgcseRole } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts, getExamAttempts, setUserRole } from './lib/firebase'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts, getExamAttempts, setUserRole, getWorkspaceConfig } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -22,6 +22,7 @@ import { PracticeMode } from './components/PracticeMode'
 import { ExamMode } from './components/ExamMode'
 import { ProgressDashboard } from './components/ProgressDashboard'
 import { ClassDashboard, ShareAssessmentPanel } from './components/ClassMode'
+import { AdminPanel } from './components/AdminPanel'
 import { BadgeUnlockModal } from './components/BadgeUnlockModal'
 import { LevelUpModal } from './components/LevelUpModal'
 import { useGamification } from './hooks/useGamification'
@@ -300,7 +301,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [pendingRole, setPendingRole] = useState<IgcseRole>('student')
-  const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam' | 'progress' | 'class'>('dashboard')
+  const [view, setViewRaw] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam' | 'progress' | 'class' | 'admin'>('dashboard')
   const [practiceAssessment, setPracticeAssessment] = useState<Assessment | null>(null)
   const [examAssessment, setExamAssessment] = useState<Assessment | null>(null)
   const [previousView, setPreviousView] = useState<'library' | null>(null)
@@ -323,15 +324,31 @@ export default function App() {
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showRoleMenu, setShowRoleMenu] = useState(false)
+  const roleMenuRef = useRef<HTMLDivElement>(null)
+  const [workspaceGeminiKey, setWorkspaceGeminiKey] = useState('')
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   const { notifications, notify, dismiss } = useNotifications()
-  const { provider, setProvider, apiKeys, setApiKey, currentApiKey, customModel, setCustomModel, defaultModel } = useApiSettings()
+  const { provider, setProvider, apiKeys, setApiKey, currentApiKey: userApiKey, customModel, setCustomModel, defaultModel } = useApiSettings()
+  // Use user's own key first; fall back to workspace key if user hasn't set one
+  const currentApiKey = userApiKey || (provider === 'gemini' ? workspaceGeminiKey : '')
   const library = useAssessments(user, notify)
   const resources = useResources(user, notify)
   const generation = useGeneration(notify, provider, currentApiKey || undefined, resources.updateGeminiUri)
   const gamification = useGamification()
   const dailyChallenge = useDailyChallenge()
   const mascot = useMascot(gamification.profile)
+
+  // Role-guarded view setter
+  const setView = useCallback((v: typeof view) => {
+    const role = gamification.profile?.role_igcsetools ?? 'student'
+    const teacherOnly: (typeof view)[] = ['main', 'library', 'diagrams']
+    const adminOnly: (typeof view)[] = ['admin']
+    if (role === 'student' && teacherOnly.includes(v)) return
+    if (role !== 'admin' && adminOnly.includes(v)) return
+    setViewRaw(v)
+  }, [gamification.profile?.role_igcsetools]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return onAuthStateChanged(auth, u => {
@@ -341,6 +358,10 @@ export default function App() {
         library.loadAll()
         resources.loadResources(config.subject)
         gamification.reload()
+        // Load workspace config (shared Gemini key set by admin)
+        getWorkspaceConfig().then(cfg => {
+          if (cfg.geminiKey) setWorkspaceGeminiKey(cfg.geminiKey)
+        }).catch(console.error)
         // Persist role chosen on login screen for new/first-time users
         import('./lib/firebase').then(({ getUserProfile }) =>
           getUserProfile().then(profile => {
@@ -363,6 +384,17 @@ export default function App() {
     if (user) resources.loadResources(config.subject)
   }, [config.subject, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Show onboarding modal for brand-new students (xp=0, not seen before)
+  useEffect(() => {
+    const profile = gamification.profile
+    if (!profile || !user) return
+    if (profile.role_igcsetools !== 'student') return
+    if (profile.xp !== 0) return
+    const key = `igcse_onboarded_${user.uid}`
+    if (localStorage.getItem(key)) return
+    setShowOnboarding(true)
+  }, [gamification.profile, user])
+
   useEffect(() => {
     if (user && (view === 'library' || view === 'dashboard')) library.loadAll()
   }, [view, user]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -379,6 +411,17 @@ export default function App() {
       getDiagramPool(config.subject).then(setDiagramPool).catch(console.error)
     }
   }, [config.subject, config.useDiagramPool, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showRoleMenu) return
+    const handler = (e: MouseEvent) => {
+      if (roleMenuRef.current && !roleMenuRef.current.contains(e.target as Node)) {
+        setShowRoleMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showRoleMenu])
 
   useEffect(() => {
     if (user && view === 'dashboard') {
@@ -798,6 +841,7 @@ export default function App() {
               { id: 'diagrams',  label: 'Diagrams', icon: <Sparkles className="w-3.5 h-3.5" />,        roles: ['teacher','admin'] as IgcseRole[] },
               { id: 'progress',  label: 'Progress', icon: <TrendingUp className="w-3.5 h-3.5" />,      roles: ['student','teacher','admin'] as IgcseRole[] },
               { id: 'class',     label: 'Class',    icon: <Users className="w-3.5 h-3.5" />,           roles: ['student','teacher','admin'] as IgcseRole[] },
+              { id: 'admin',     label: 'Admin',    icon: <Shield className="w-3.5 h-3.5" />,          roles: ['admin'] as IgcseRole[] },
             ]
             const tabs = allTabs.filter(t => t.roles.includes(userRole))
             return (
@@ -826,7 +870,7 @@ export default function App() {
           })()}
 
           {/* Right: user */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 relative">
             {user.photoURL ? (
               <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full ring-2 ring-indigo-200" />
             ) : (
@@ -834,20 +878,54 @@ export default function App() {
                 {(user.displayName?.[0] ?? '?').toUpperCase()}
               </div>
             )}
-            <div className="hidden md:flex flex-col items-start min-w-0 max-w-[110px]">
-              <span className="text-xs text-slate-600 font-semibold truncate w-full">{user.displayName}</span>
-              {gamification.profile && (
-                <span className={[
-                  'text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none',
-                  gamification.profile.role_igcsetools === 'admin'   ? 'bg-amber-100 text-amber-700' :
-                  gamification.profile.role_igcsetools === 'teacher' ? 'bg-indigo-100 text-indigo-700' :
-                  'bg-emerald-100 text-emerald-700',
-                ].join(' ')}>
-                  {gamification.profile.role_igcsetools === 'admin' ? 'Admin' :
-                   gamification.profile.role_igcsetools === 'teacher' ? 'Teacher' : 'Student'}
-                </span>
-              )}
-            </div>
+            {/* Role badge — clickable for non-admins to switch role */}
+            {gamification.profile && gamification.profile.role_igcsetools !== 'admin' && (
+              <div ref={roleMenuRef} className="relative hidden md:block">
+                <button
+                  onClick={() => setShowRoleMenu(v => !v)}
+                  className={[
+                    'flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none cursor-pointer hover:opacity-80 transition-opacity',
+                    gamification.profile.role_igcsetools === 'teacher' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700',
+                  ].join(' ')}
+                  title="Switch role"
+                >
+                  {gamification.profile.role_igcsetools === 'teacher' ? 'Teacher' : 'Student'}
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+                {showRoleMenu && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 min-w-[140px]">
+                    <button
+                      onClick={async () => {
+                        await setUserRole('student')
+                        gamification.reload()
+                        setShowRoleMenu(false)
+                        setViewRaw('dashboard')
+                        notify('Switched to Student', 'success')
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 text-left"
+                    >
+                      <GraduationCap className="w-3.5 h-3.5 text-emerald-600" /> Student
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await setUserRole('teacher')
+                        gamification.reload()
+                        setShowRoleMenu(false)
+                        notify('Switched to Teacher', 'success')
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 text-left"
+                    >
+                      <UserCog className="w-3.5 h-3.5 text-indigo-600" /> Teacher
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {gamification.profile?.role_igcsetools === 'admin' && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none bg-amber-100 text-amber-700 hidden md:inline">
+                Admin
+              </span>
+            )}
             <button
               onClick={() => setShowDeleteModal(true)}
               className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
@@ -876,7 +954,22 @@ export default function App() {
         )}
 
         {/* Main content */}
-        {view === 'progress' ? (
+        {/* Safety net: redirect unauthorised views */}
+        {(() => {
+          const role = gamification.profile?.role_igcsetools ?? 'student'
+          if (role === 'student' && (['main', 'library', 'diagrams', 'admin'] as (typeof view)[]).includes(view)) {
+            setViewRaw('dashboard')
+          } else if (role !== 'admin' && view === 'admin') {
+            setViewRaw('dashboard')
+          }
+          return null
+        })()}
+        {view === 'admin' ? (
+          <AdminPanel
+            currentUserId={user.uid}
+            notify={notify}
+          />
+        ) : view === 'progress' ? (
           <ProgressDashboard
             practiceAttempts={practiceAttempts}
             examAttempts={examAttempts}
@@ -1248,6 +1341,47 @@ export default function App() {
           notify={notify}
           onClose={() => setShareAssessment(null)}
         />
+      )}
+
+      {/* Onboarding modal — shown once for brand-new students */}
+      {showOnboarding && user && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl mx-auto"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}>
+              <BookOpen className="w-7 h-7 text-white" />
+            </div>
+            <div className="text-center">
+              <h2 className="text-lg font-black text-slate-800 mb-1">Welcome to IGCSE Tools!</h2>
+              <p className="text-sm text-slate-500">
+                Your teacher will share a <strong>join code</strong> with you.
+                Head to the <strong>Class</strong> tab to enter it and start your first assignment.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  localStorage.setItem(`igcse_onboarded_${user.uid}`, '1')
+                  setShowOnboarding(false)
+                  setView('class')
+                }}
+                className="w-full py-3 rounded-2xl text-white text-sm font-bold"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}
+              >
+                Go to Class tab
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.setItem(`igcse_onboarded_${user.uid}`, '1')
+                  setShowOnboarding(false)
+                }}
+                className="w-full py-2 rounded-2xl text-slate-500 text-sm hover:bg-slate-50"
+              >
+                Explore on my own
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Badge unlock notification — shows one at a time */}
