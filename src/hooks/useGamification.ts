@@ -78,6 +78,7 @@ export interface GamificationState {
 
 const EMPTY_PROFILE: UserProfile = {
   uid: '',
+  role_igcsetools: 'student',
   xp: 0,
   level: 1,
   streak: 0,

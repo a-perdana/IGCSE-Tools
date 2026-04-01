@@ -43,6 +43,20 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Check if the caller has admin or teacher role by reading their userProfile.
+    // Used to gate workspace-level operations.
+    function callerRole() {
+      return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role_igcsetools;
+    }
+
+    function isTeacherOrAdmin() {
+      return isAuthenticated() && callerRole() in ['teacher', 'admin'];
+    }
+
+    function isAdminRole() {
+      return isAuthenticated() && callerRole() == 'admin';
+    }
+
     function isValidAssessment(data) {
       return hasOnlyAllowedFields(['subject', 'topic', 'difficulty', 'questions', 'code', 'userId', 'createdAt', 'folderId', 'isPublic', 'preparedBy']) &&
              data.subject is string && data.subject.size() > 0 && data.subject.size() < 100 &&
@@ -193,10 +207,10 @@ service cloud.firestore {
 
     // ── Diagram pool ─────────────────────────────────────────────────────────
     // Metadata for diagrams extracted from imported questions.
-    // Written by Admin SDK; readable by all authenticated users.
+    // Readable by all authenticated users; only teachers/admins can write.
     match /diagramPool/{dId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isTeacherOrAdmin();
     }
 
     // ── Practice attempts ────────────────────────────────────────────────────
@@ -229,8 +243,13 @@ service cloud.firestore {
     // ── Assignment Attempts ───────────────────────────────────────────────────
     // Students write their own attempt; teacher can read all attempts for their assignment.
     match /assignmentAttempts/{attemptId} {
-      // Student can read/delete their own attempt
-      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Student can read/delete their own attempt;
+      // Teacher/admin can read attempts for assignments they created (checked via sharedAssignment doc)
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isTeacherOrAdmin()
+      );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
       // Student creates their own attempt
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }

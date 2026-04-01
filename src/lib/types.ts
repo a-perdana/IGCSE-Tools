@@ -338,8 +338,11 @@ export const BADGE_DEFINITIONS: Record<BadgeId, BadgeDefinition> = {
   early_bird:      { id: 'early_bird',      name: 'Early Bird',        description: 'Study before 7 AM',                     emoji: '🌅', xpReward: 75  },
 }
 
+export type IgcseRole = 'student' | 'teacher' | 'admin'
+
 export interface UserProfile {
   uid: string
+  role_igcsetools: IgcseRole   // 'student' | 'teacher' | 'admin'
   xp: number
   level: number
   streak: number

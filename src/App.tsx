@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { BookOpen, LogIn, LogOut, Library as LibraryIcon, FilePlus, AlertTriangle, X, KeyRound, RefreshCw, Minus, Sparkles, Trash2, ChevronLeft, Wand2, LayoutDashboard, TrendingUp, Users } from 'lucide-react'
-import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt, ExamAttempt } from './lib/types'
-import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts, getExamAttempts } from './lib/firebase'
+import type { AIError, ImportedQuestion, DiagramPoolEntry, DiagramCategory, PracticeAttempt, ExamAttempt, IgcseRole } from './lib/types'
+import { auth, signInWithGoogle, logout, deleteUserData, getImportedQuestions, updateImportedQuestion, getDiagramPool, updateDiagramPoolEntry, addDiagramPoolEntry, deleteDiagramPoolEntry, uploadDiagramImage, getPracticeAttempts, getExamAttempts, setUserRole } from './lib/firebase'
 import { IGCSE_SUBJECTS, IGCSE_TOPICS, DIFFICULTY_LEVELS } from './lib/gemini'
 import { Timestamp } from 'firebase/firestore'
 import type { GenerationConfig, Assessment, Question, QuestionItem } from './lib/types'
@@ -299,6 +299,7 @@ function DeleteAccountModal({ onConfirm, onClose, isDeleting }: {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [pendingRole, setPendingRole] = useState<IgcseRole>('student')
   const [view, setView] = useState<'dashboard' | 'main' | 'library' | 'diagrams' | 'practice' | 'exam' | 'progress' | 'class'>('dashboard')
   const [practiceAssessment, setPracticeAssessment] = useState<Assessment | null>(null)
   const [examAssessment, setExamAssessment] = useState<Assessment | null>(null)
@@ -340,6 +341,14 @@ export default function App() {
         library.loadAll()
         resources.loadResources(config.subject)
         gamification.reload()
+        // Persist role chosen on login screen for new/first-time users
+        import('./lib/firebase').then(({ getUserProfile }) =>
+          getUserProfile().then(profile => {
+            if (!profile || profile.role_igcsetools === 'student') {
+              setUserRole(pendingRole).catch(console.error)
+            }
+          })
+        ).catch(console.error)
       } else if (wasLoggedIn) {
         // Clear API keys from localStorage only on real logout (not initial load)
         // so the next user doesn't see a previous user's keys.
@@ -684,6 +693,11 @@ export default function App() {
     : null
 
   if (!user) {
+    const roleOptions: { id: IgcseRole; label: string; desc: string; icon: string }[] = [
+      { id: 'student', label: 'Student',  desc: 'Practice & track my progress',     icon: '🎓' },
+      { id: 'teacher', label: 'Teacher',  desc: 'Generate & assign assessments',    icon: '📋' },
+      { id: 'admin',   label: 'Admin',    desc: 'Manage workspace & users',         icon: '🛡️' },
+    ]
     return (
       <div className="min-h-screen flex items-center justify-center p-4"
         style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 50%, #fdf4ff 100%)' }}>
@@ -694,15 +708,56 @@ export default function App() {
             <BookOpen className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-3xl font-black text-slate-800 mb-2">IGCSE Tools</h1>
-          <p className="text-slate-500 mb-8 text-sm leading-relaxed">
-            AI-powered Cambridge IGCSE assessment platform.<br />Practice smarter. Level up faster.
+          <p className="text-slate-500 mb-6 text-sm leading-relaxed">
+            AI-powered Cambridge IGCSE assessment platform<br />for teachers, students, and institutions.
           </p>
+
+          {/* Feature highlights */}
+          <div className="grid grid-cols-3 gap-2 mb-6 text-xs text-slate-500">
+            <div className="bg-white/70 rounded-xl p-2.5 flex flex-col items-center gap-1">
+              <span className="text-lg">✨</span>
+              <span className="font-semibold">AI Generation</span>
+              <span className="text-slate-400">For teachers</span>
+            </div>
+            <div className="bg-white/70 rounded-xl p-2.5 flex flex-col items-center gap-1">
+              <span className="text-lg">📊</span>
+              <span className="font-semibold">Progress</span>
+              <span className="text-slate-400">For students</span>
+            </div>
+            <div className="bg-white/70 rounded-xl p-2.5 flex flex-col items-center gap-1">
+              <span className="text-lg">🏫</span>
+              <span className="font-semibold">Class Mode</span>
+              <span className="text-slate-400">Share & assign</span>
+            </div>
+          </div>
+
+          {/* Role selection */}
+          <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">I am a…</p>
+          <div className="flex gap-2 mb-5">
+            {roleOptions.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setPendingRole(r.id)}
+                className={[
+                  'flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-2xl border-2 text-xs font-bold transition-all',
+                  pendingRole === r.id
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-300',
+                ].join(' ')}
+              >
+                <span className="text-xl">{r.icon}</span>
+                <span>{r.label}</span>
+                <span className="text-[10px] font-normal text-slate-400 leading-tight">{r.desc}</span>
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={signInWithGoogle}
             className="w-full px-6 py-3.5 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 hover:opacity-90 transition-all shadow-xl"
             style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
           >
-            <LogIn className="w-5 h-5" /> Sign in with Google
+            <LogIn className="w-5 h-5" /> Continue with Google
           </button>
           <p className="mt-4 text-xs text-slate-400">Free to use · No credit card required</p>
         </div>
@@ -734,34 +789,41 @@ export default function App() {
           </div>
 
           {/* Centre: pill nav */}
-          <nav className="flex items-center gap-1 mx-auto bg-slate-100 rounded-2xl p-1">
-            {([
-              { id: 'dashboard', label: 'Home',     icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
-              { id: 'main',      label: 'Generate', icon: <Wand2 className="w-3.5 h-3.5" /> },
-              { id: 'library',   label: 'Library',  icon: <LibraryIcon className="w-3.5 h-3.5" /> },
-              { id: 'diagrams',  label: 'Diagrams', icon: <Sparkles className="w-3.5 h-3.5" /> },
-              { id: 'progress',  label: 'Progress', icon: <TrendingUp className="w-3.5 h-3.5" /> },
-              { id: 'class',     label: 'Class',    icon: <Users className="w-3.5 h-3.5" /> },
-            ] as const).map(tab => {
-              const active = view === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => { setPreviousView(null); setView(tab.id as typeof view) }}
-                  className={[
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all',
-                    active
-                      ? 'text-white shadow-md'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/60',
-                  ].join(' ')}
-                  style={active ? { background: 'linear-gradient(135deg,#6366f1,#a855f7)' } : {}}
-                >
-                  {tab.icon}
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </button>
-              )
-            })}
-          </nav>
+          {(() => {
+            const userRole = gamification.profile?.role_igcsetools ?? 'student'
+            const allTabs = [
+              { id: 'dashboard', label: 'Home',     icon: <LayoutDashboard className="w-3.5 h-3.5" />, roles: ['student','teacher','admin'] as IgcseRole[] },
+              { id: 'main',      label: 'Generate', icon: <Wand2 className="w-3.5 h-3.5" />,           roles: ['teacher','admin'] as IgcseRole[] },
+              { id: 'library',   label: 'Library',  icon: <LibraryIcon className="w-3.5 h-3.5" />,     roles: ['teacher','admin'] as IgcseRole[] },
+              { id: 'diagrams',  label: 'Diagrams', icon: <Sparkles className="w-3.5 h-3.5" />,        roles: ['teacher','admin'] as IgcseRole[] },
+              { id: 'progress',  label: 'Progress', icon: <TrendingUp className="w-3.5 h-3.5" />,      roles: ['student','teacher','admin'] as IgcseRole[] },
+              { id: 'class',     label: 'Class',    icon: <Users className="w-3.5 h-3.5" />,           roles: ['student','teacher','admin'] as IgcseRole[] },
+            ]
+            const tabs = allTabs.filter(t => t.roles.includes(userRole))
+            return (
+              <nav className="flex items-center gap-1 mx-auto bg-slate-100 rounded-2xl p-1">
+                {tabs.map(tab => {
+                  const active = view === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setPreviousView(null); setView(tab.id as typeof view) }}
+                      className={[
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all',
+                        active
+                          ? 'text-white shadow-md'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-white/60',
+                      ].join(' ')}
+                      style={active ? { background: 'linear-gradient(135deg,#6366f1,#a855f7)' } : {}}
+                    >
+                      {tab.icon}
+                      <span className="hidden sm:inline">{tab.label}</span>
+                    </button>
+                  )
+                })}
+              </nav>
+            )
+          })()}
 
           {/* Right: user */}
           <div className="flex items-center gap-1.5 shrink-0">
@@ -772,7 +834,20 @@ export default function App() {
                 {(user.displayName?.[0] ?? '?').toUpperCase()}
               </div>
             )}
-            <span className="text-xs text-slate-500 font-semibold hidden md:block max-w-[100px] truncate">{user.displayName}</span>
+            <div className="hidden md:flex flex-col items-start min-w-0 max-w-[110px]">
+              <span className="text-xs text-slate-600 font-semibold truncate w-full">{user.displayName}</span>
+              {gamification.profile && (
+                <span className={[
+                  'text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none',
+                  gamification.profile.role_igcsetools === 'admin'   ? 'bg-amber-100 text-amber-700' :
+                  gamification.profile.role_igcsetools === 'teacher' ? 'bg-indigo-100 text-indigo-700' :
+                  'bg-emerald-100 text-emerald-700',
+                ].join(' ')}>
+                  {gamification.profile.role_igcsetools === 'admin' ? 'Admin' :
+                   gamification.profile.role_igcsetools === 'teacher' ? 'Teacher' : 'Student'}
+                </span>
+              )}
+            </div>
             <button
               onClick={() => setShowDeleteModal(true)}
               className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
@@ -814,6 +889,7 @@ export default function App() {
           <ClassDashboard
             assessments={library.assessments}
             currentUser={{ uid: user.uid, displayName: user.displayName, email: user.email }}
+            userRole={gamification.profile?.role_igcsetools ?? 'student'}
             provider={provider}
             apiKey={currentApiKey}
             model={customModel.trim() || defaultModel}
@@ -830,6 +906,7 @@ export default function App() {
             currentUserId={user.uid}
             currentUserName={user.displayName ?? user.email ?? ''}
             userProfile={gamification.profile}
+            userRole={gamification.profile?.role_igcsetools ?? 'student'}
             dailyChallenge={dailyChallenge.challenge}
             mascotMood={mascot.mood}
             onNavigate={v => { setPreviousView(null); setView(v) }}
@@ -1065,6 +1142,7 @@ export default function App() {
             apiSettingsOpen={apiSettingsOpen}
             onApiSettingsOpenChange={setApiSettingsOpen}
             diagramPoolCount={diagramPool.length}
+            userRole={gamification.profile?.role_igcsetools ?? 'teacher'}
           />
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <AssessmentView

@@ -49,6 +49,7 @@ interface Props {
   apiSettingsOpen?: boolean
   onApiSettingsOpenChange?: (open: boolean) => void
   diagramPoolCount?: number
+  userRole?: 'student' | 'teacher' | 'admin'
 }
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
@@ -78,6 +79,7 @@ export function Sidebar({
   provider, onProviderChange, apiKeys, onApiKeyChange, customModel, onCustomModelChange,
   apiSettingsOpen, onApiSettingsOpenChange,
   diagramPoolCount,
+  userRole = 'teacher',
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(true)
@@ -545,8 +547,8 @@ export function Sidebar({
           })}
         </div>
 
-        {/* API Settings */}
-        <div className="border-t border-stone-200 pt-3">
+        {/* API Settings — hidden for students (they use workspace key or have no generation access) */}
+        {userRole !== 'student' && <div className="border-t border-stone-200 pt-3">
           <button
             onClick={toggleSettings}
             className="flex items-center justify-between w-full text-xs font-medium text-stone-600 mb-2"
@@ -652,6 +654,7 @@ export function Sidebar({
             </div>
           )}
         </div>
+        }
       </div>}
     </div>
   )

@@ -24,7 +24,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem, UserProfile, DailyChallenge } from './types'
+import type { Assessment, Question, Folder, Resource, ResourceType, SyllabusCache, PastPaperCache, ImportedQuestion, DiagramPoolEntry, PracticeAttempt, ExamAttempt, SharedAssignment, AssignmentAttempt, QuestionItem, UserProfile, DailyChallenge, IgcseRole } from './types'
 import type { ExamViewQuestion, ExamViewImage } from './examview'
 
 /** Remove undefined values from an object shallowly (Firestore rejects undefined). */
@@ -1184,6 +1184,7 @@ export async function deleteSharedAssignment(id: string): Promise<void> {
 // ─── Gamification ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PROFILE: Omit<UserProfile, 'uid'> = {
+  role_igcsetools: 'student',
   xp: 0,
   level: 1,
   streak: 0,
@@ -1198,13 +1199,21 @@ const DEFAULT_PROFILE: Omit<UserProfile, 'uid'> = {
   updatedAt: 0,
 }
 
+/** Set or update the role for the current user. */
+export async function setUserRole(role: IgcseRole): Promise<void> {
+  await updateUserProfile({ role_igcsetools: role })
+}
+
 /** Load the current user's gamification profile. Creates a default one if missing. */
 export async function getUserProfile(): Promise<UserProfile | null> {
   const uid = auth.currentUser?.uid
   if (!uid) return null
   try {
     const snap = await getDoc(doc(db, 'userProfiles', uid))
-    if (snap.exists()) return { uid, ...snap.data() } as UserProfile
+    if (snap.exists()) {
+      const data = snap.data()
+      return { uid, role_igcsetools: 'student', ...data } as UserProfile
+    }
     // First time — create default
     const profile: UserProfile = { uid, ...DEFAULT_PROFILE, updatedAt: Date.now() }
     await setDoc(doc(db, 'userProfiles', uid), stripUndefined(profile as unknown as Record<string, unknown>))

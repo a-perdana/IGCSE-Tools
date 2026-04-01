@@ -4,7 +4,7 @@ import {
   TrendingUp, Layers, ChevronRight, Zap, Upload, Flame,
   Star, Target, BarChart2, Medal, Calendar, CheckCircle2,
 } from 'lucide-react'
-import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt, UserProfile, DailyChallenge, BadgeId } from '../../lib/types'
+import type { Assessment, Question, ImportedQuestion, DiagramPoolEntry, Resource, PracticeAttempt, UserProfile, DailyChallenge, BadgeId, IgcseRole } from '../../lib/types'
 import { BADGE_DEFINITIONS } from '../../lib/types'
 import { levelFromXP } from '../../hooks/useGamification'
 import { MascotCard } from '../Mascot/MascotCard'
@@ -215,6 +215,7 @@ export function Dashboard({
   currentUserId,
   currentUserName,
   userProfile,
+  userRole = 'student',
   dailyChallenge,
   mascotMood = 'idle',
   onNavigate,
@@ -229,9 +230,10 @@ export function Dashboard({
   currentUserId: string
   currentUserName: string
   userProfile: UserProfile | null
+  userRole?: IgcseRole
   dailyChallenge: DailyChallenge | null
   mascotMood?: MascotMood
-  onNavigate: (view: 'main' | 'library' | 'diagrams') => void
+  onNavigate: (view: 'main' | 'library' | 'diagrams' | 'progress' | 'class') => void
   onStartDailyChallenge: () => void
 }) {
   // ── Derived question data ────────────────────────────────────────────────────
@@ -385,26 +387,51 @@ export function Dashboard({
                   />
                 </div>
 
-                {/* Quick actions */}
+                {/* Quick actions — role-aware */}
                 <div className="flex flex-wrap gap-2 mt-auto">
-                  <button
-                    onClick={() => onNavigate('main')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-bold hover:bg-indigo-50 transition-colors shadow-sm"
-                  >
-                    <Wand2 className="w-4 h-4" /> Generate
-                  </button>
-                  <button
-                    onClick={() => onNavigate('library')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
-                  >
-                    <BookOpen className="w-4 h-4" /> Library
-                  </button>
-                  <button
-                    onClick={() => onNavigate('diagrams')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
-                  >
-                    <ImageIcon className="w-4 h-4" /> Diagrams
-                  </button>
+                  {(userRole === 'teacher' || userRole === 'admin') ? (
+                    <>
+                      <button
+                        onClick={() => onNavigate('main')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-bold hover:bg-indigo-50 transition-colors shadow-sm"
+                      >
+                        <Wand2 className="w-4 h-4" /> Generate
+                      </button>
+                      <button
+                        onClick={() => onNavigate('library')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                      >
+                        <BookOpen className="w-4 h-4" /> Library
+                      </button>
+                      <button
+                        onClick={() => onNavigate('class')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                      >
+                        <ImageIcon className="w-4 h-4" /> Class
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={onStartDailyChallenge}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-bold hover:bg-indigo-50 transition-colors shadow-sm"
+                      >
+                        <Star className="w-4 h-4" /> Daily Challenge
+                      </button>
+                      <button
+                        onClick={() => onNavigate('progress')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                      >
+                        <TrendingUp className="w-4 h-4" /> Progress
+                      </button>
+                      <button
+                        onClick={() => onNavigate('class')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 text-white text-sm font-semibold hover:bg-white/30 transition-colors"
+                      >
+                        <BookOpen className="w-4 h-4" /> My Classes
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -470,21 +497,36 @@ export function Dashboard({
                   pastPaperCount={stats.pastPaper}
                   topicCount={stats.topics.size}
                   accuracy={subjectAccuracy[subject] ?? null}
-                  onNavigate={() => onNavigate('library')}
+                  onNavigate={() => (userRole === 'teacher' || userRole === 'admin') ? onNavigate('library') : onNavigate('progress')}
                 />
               ))}
             </div>
           ) : (
             <div className="rounded-3xl border-2 border-dashed border-indigo-200 bg-white/60 p-10 text-center anim-pop">
               <div className="text-5xl mb-3">📚</div>
-              <p className="text-slate-500 font-semibold">No questions yet.</p>
-              <p className="text-slate-400 text-sm mt-1">Generate your first assessment to get started!</p>
-              <button
-                onClick={() => onNavigate('main')}
-                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold hover:opacity-90 transition-opacity shadow-md"
-              >
-                <Wand2 className="w-4 h-4" /> Generate Now
-              </button>
+              {(userRole === 'teacher' || userRole === 'admin') ? (
+                <>
+                  <p className="text-slate-500 font-semibold">No questions yet.</p>
+                  <p className="text-slate-400 text-sm mt-1">Generate your first assessment to get started!</p>
+                  <button
+                    onClick={() => onNavigate('main')}
+                    className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold hover:opacity-90 transition-opacity shadow-md"
+                  >
+                    <Wand2 className="w-4 h-4" /> Generate Now
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-slate-500 font-semibold">No activity yet.</p>
+                  <p className="text-slate-400 text-sm mt-1">Join a class or complete a practice session to see your progress here.</p>
+                  <button
+                    onClick={() => onNavigate('class')}
+                    className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold hover:opacity-90 transition-opacity shadow-md"
+                  >
+                    <BookOpen className="w-4 h-4" /> Browse Classes
+                  </button>
+                </>
+              )}
             </div>
           )}
         </section>
