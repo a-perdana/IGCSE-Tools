@@ -233,7 +233,7 @@ export function Dashboard({
   userRole?: IgcseRole
   dailyChallenge: DailyChallenge | null
   mascotMood?: MascotMood
-  onNavigate: (view: 'main' | 'library' | 'diagrams' | 'progress' | 'class') => void
+  onNavigate: (view: 'main' | 'library' | 'diagrams' | 'progress' | 'class' | 'admin') => void
   onStartDailyChallenge: () => void
 }) {
   // ── Derived question data ────────────────────────────────────────────────────

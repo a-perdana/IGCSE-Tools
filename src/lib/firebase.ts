@@ -1265,13 +1265,24 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   if (!uid) return null
   try {
     const snap = await getDoc(doc(db, 'userProfiles', uid))
+    const authUser = auth.currentUser
+    const displayName = authUser?.displayName ?? undefined
+    const email = authUser?.email ?? undefined
     if (snap.exists()) {
       const data = snap.data()
+      // Keep displayName/email fresh in case they changed
+      const patch: Record<string, unknown> = {}
+      if (displayName && data.displayName !== displayName) patch.displayName = displayName
+      if (email && data.email !== email) patch.email = email
+      if (Object.keys(patch).length > 0) {
+        updateDoc(doc(db, 'userProfiles', uid), patch).catch(console.error)
+      }
       return { uid, role_igcsetools: 'student', ...data } as UserProfile
     }
     // First time — create default
     const profile: UserProfile = { uid, ...DEFAULT_PROFILE, updatedAt: Date.now() }
-    await setDoc(doc(db, 'userProfiles', uid), stripUndefined(profile as unknown as Record<string, unknown>))
+    const payload = stripUndefined({ ...(profile as unknown as Record<string, unknown>), displayName, email })
+    await setDoc(doc(db, 'userProfiles', uid), payload)
     return profile
   } catch (e) {
     console.error('getUserProfile error', e)
