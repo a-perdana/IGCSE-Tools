@@ -9,7 +9,7 @@ import { DiagramRenderer } from '../DiagramRenderer'
 import { exportToPDF } from '../../lib/pdf'
 import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
-import { repairQuestionItem } from '../../lib/sanitize'
+import { repairQuestionItem, migrateExamViewOptions } from '../../lib/sanitize'
 import { getDiagramPool } from '../../lib/firebase'
 import { OptionContent } from '../Library/modals'
 
@@ -363,7 +363,11 @@ export function AssessmentView({
   const [diagramEditTab, setDiagramEditTab] = useState<'tikz' | 'gallery'>('tikz')
   const [showGalleryPicker, setShowGalleryPicker] = useState(false)
 
-  const renderedQuestions = assessment ? assessment.questions.map(repairQuestionItem) : []
+  const renderedQuestions = assessment ? assessment.questions.map(q => {
+    const repaired = repairQuestionItem(q)
+    const migrated = migrateExamViewOptions(repaired)
+    return migrated ? { ...repaired, ...migrated } : repaired
+  }) : []
   const totalQuestionPages = Math.max(1, Math.ceil(renderedQuestions.length / QUESTIONS_PER_PAGE))
   const safeQuestionPage = Math.min(questionPage, totalQuestionPages)
   const questionStart = (safeQuestionPage - 1) * QUESTIONS_PER_PAGE
@@ -870,7 +874,7 @@ export function AssessmentView({
                     )}
                     <DiagramRenderer spec={q.diagram} onError={err => setDiagramErrors(prev => ({ ...prev, [q.id]: err }))} />
                     <QuestionMarkdown content={q.text} />
-                    {q.type === 'mcq' && q.options && q.options.length > 0 && !/\n\n\*\*[A-D]\*\*\s+/.test(q.text) && !/\n[A-D]\)\n/.test(q.text) && (
+                    {q.type === 'mcq' && q.options && q.options.length > 0 && (
                       <div className="mt-3 space-y-1.5">
                         {q.options.map((opt, i) => {
                           const letter = String.fromCharCode(65 + i)

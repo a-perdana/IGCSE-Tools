@@ -217,8 +217,8 @@ export function migrateExamViewOptions(q: QuestionItem): Partial<QuestionItem> |
   // Step 2: detect embedded options in q.text — two known formats:
   //   "**A** ..."  (bold markdown, from importedToQuestionItem old format)
   //   "A)\n..."    (letter-paren, from some ExamView raw imports)
-  const EMBED_BOLD_RE = /\n\n\*\*[A-D]\*\*\s+/
-  const EMBED_PAREN_RE = /\n[A-D]\)\n/
+  const EMBED_BOLD_RE = /\n\*\*[A-D]\*\*/
+  const EMBED_PAREN_RE = /\n[A-D][).]\s/
   const hasEmbedded = EMBED_BOLD_RE.test(q.text) || EMBED_PAREN_RE.test(q.text)
 
   if (!hasEmbedded) {
