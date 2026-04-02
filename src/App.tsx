@@ -1097,6 +1097,7 @@ export default function App() {
             onTogglePublicFolder={library.togglePublicFolder}
             selectedFolderId={selectedFolderId}
             onSelectFolder={setSelectedFolderId}
+            onImportDone={library.loadAll}
             onCreateAssessmentFromQuestions={handleCreateAssessmentFromQuestions}
             onAddQuestionsToAssessment={handleAddQuestionsToAssessment}
             onUpdateQuestion={library.updateQuestion}

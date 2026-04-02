@@ -46,6 +46,7 @@ interface Props {
   onExam?: (assessment: Assessment) => void
   onShare?: (assessment: Assessment) => void
   onNewAssessment?: () => void
+  onImportDone?: () => void
   /** When set, renders this panel in place of the main content (keeps left sidebar). */
   editPanel?: React.ReactNode
   /** Pre-fill the assessment search with a topic from the Progress Dashboard. */
@@ -133,6 +134,7 @@ export function Library({
   onExam,
   onShare,
   onNewAssessment,
+  onImportDone,
   editPanel,
   importedQuestions = [],
   importedLoading = false,
@@ -1530,7 +1532,7 @@ export function Library({
         <ExamViewImportModal
           folders={folders}
           onClose={() => setShowExamViewImport(false)}
-          onDone={() => { setShowExamViewImport(false); setBankView('questions') }}
+          onDone={() => { setShowExamViewImport(false); setBankView('questions'); onImportDone?.() }}
         />
       )}
 
