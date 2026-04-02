@@ -66,6 +66,9 @@ export interface Question extends QuestionItem {
   createdAt: Timestamp;
   isPublic?: boolean;
   preparedBy?: string;
+  source?: 'examview' | string;
+  sourceId?: string;
+  sourceFile?: string;
 }
 
 export interface Folder {

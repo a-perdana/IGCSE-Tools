@@ -11,6 +11,7 @@ import { preprocessLatex } from '../../lib/latex'
 import { RichEditor } from '../RichEditor'
 import { repairQuestionItem } from '../../lib/sanitize'
 import { getDiagramPool } from '../../lib/firebase'
+import { OptionContent } from '../Library/modals'
 
 interface Props {
   assessment: Assessment | null
@@ -869,6 +870,20 @@ export function AssessmentView({
                     )}
                     <DiagramRenderer spec={q.diagram} onError={err => setDiagramErrors(prev => ({ ...prev, [q.id]: err }))} />
                     <QuestionMarkdown content={q.text} />
+                    {q.type === 'mcq' && q.options && q.options.length > 0 && (
+                      <div className="mt-3 space-y-1.5">
+                        {q.options.map((opt, i) => {
+                          const letter = String.fromCharCode(65 + i)
+                          const isCorrect = q.answer?.trim().toUpperCase() === letter
+                          return (
+                            <div key={i} className={`flex items-start gap-2 px-3 py-1.5 rounded-lg text-sm border ${isCorrect && !studentMode ? 'bg-emerald-50 border-emerald-300 font-medium text-emerald-800' : 'bg-stone-50 border-stone-200 text-stone-700'}`}>
+                              <span className={`font-bold shrink-0 ${isCorrect && !studentMode ? 'text-emerald-700' : 'text-stone-400'}`}>{letter}</span>
+                              <OptionContent opt={opt} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                     {onRepairQuestion && onUpdateQuestion && !studentMode && (
                       <div className="mt-1 flex justify-end">
                         <button

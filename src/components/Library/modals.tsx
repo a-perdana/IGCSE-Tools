@@ -41,21 +41,9 @@ export function OptionContent({ opt }: { opt: string }) {
 // ─── Helper: ImportedQuestion → Question ─────────────────────────────────────
 
 export function importedToQuestionItem(iq: ImportedQuestion): Question {
-  const letterLabels = ['A', 'B', 'C', 'D']
-  // If any option is an image markdown ("![](<url>)"), don't embed options into
-  // q.text — they will be rendered separately via OptionContent which handles
-  // image URLs without running preprocessLatex over them.
-  const hasImageOptions = iq.options.some(o => MCQ_IMAGE_RE.test(o.trim()))
-  const optionsText = hasImageOptions
-    ? ''
-    : iq.options
-        .map((o, i) => `**${letterLabels[i]}** ${o}`)
-        .filter(Boolean)
-        .join('\n\n')
-
-  const fullText = optionsText
-    ? `${iq.questionText}\n\n${optionsText}`
-    : iq.questionText
+  // Always keep options separate — never embed into q.text.
+  // OptionContent handles image URLs and mixed content correctly.
+  const fullText = iq.questionText
 
   const diagram: RasterSpec | undefined =
     iq.hasImage && iq.imageURL
@@ -583,7 +571,7 @@ export function QuestionPreviewModal({
                     return (
                       <div key={i} className={`flex items-start gap-2 px-3 py-1.5 rounded-lg text-sm border ${isCorrect ? 'bg-emerald-50 border-emerald-300 font-medium text-emerald-800' : 'bg-stone-50 border-stone-200 text-stone-700'}`}>
                         <span className={`font-bold shrink-0 ${isCorrect ? 'text-emerald-700' : 'text-stone-400'}`}>{letter}</span>
-                        <QMarkdown content={opt} />
+                        <OptionContent opt={opt} />
                       </div>
                     )
                   })}
@@ -809,7 +797,7 @@ function QuestionCard({ q, index }: { q: QuestionItem; index: number }) {
                 {q.options.map((opt, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
                     <span className="font-semibold shrink-0 text-stone-500">{['A','B','C','D'][i]}.</span>
-                    <QMarkdown content={opt} />
+                    <OptionContent opt={opt} />
                   </div>
                 ))}
               </div>

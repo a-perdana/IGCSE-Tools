@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { Folder as FolderIcon, Trash2, Plus, Library as LibraryIcon, Pencil, X, Check, Eye, FilePlus, FolderPlus, Loader2, Calendar, Globe, RefreshCw, BookOpen, List, LayoutGrid, Upload, ChevronRight, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Assessment, Question, Folder, ImportedQuestion } from '../../lib/types'
 import { cleanExamViewPlaceholders } from '../../lib/firebase'
+import { migrateExamViewOptions } from '../../lib/sanitize'
 import {
   QMarkdown,
   importedToQuestionItem,
@@ -152,6 +153,7 @@ export function Library({
   const [renameFolderValue, setRenameFolderValue] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null)
+  const [fixingOptionIds, setFixingOptionIds] = useState<Set<string>>(new Set())
   const [addToAssessmentId, setAddToAssessmentId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -430,6 +432,17 @@ export function Library({
     onAddQuestionsToAssessment(addToAssessmentId, selectedQuestions)
     setSelectedIds(new Set())
     setAddToAssessmentId('')
+  }
+
+  const handleFixOptions = async (q: Question) => {
+    const updates = migrateExamViewOptions(q)
+    if (!updates) return
+    setFixingOptionIds(prev => new Set(prev).add(q.id))
+    try {
+      await onUpdateQuestion(q.id, updates as Partial<Question>)
+    } finally {
+      setFixingOptionIds(prev => { const s = new Set(prev); s.delete(q.id); return s })
+    }
   }
 
   const renderFolderRow = (folder: (typeof folders)[0], depth: number, siblings: (typeof folders)[0][], rootSubject?: string): React.ReactNode => {
@@ -1283,6 +1296,16 @@ export function Library({
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
+                      {q.source === 'examview' && q.type === 'mcq' && q.userId === currentUserId && (
+                        <button
+                          onClick={e => { e.stopPropagation(); void handleFixOptions(q) }}
+                          disabled={fixingOptionIds.has(q.id)}
+                          className="p-1 text-stone-400 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40"
+                          title="Fix option layout (migrate from embedded text to separate options)"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${fixingOptionIds.has(q.id) ? 'animate-spin text-amber-500' : ''}`} />
+                        </button>
+                      )}
                       {q.userId === currentUserId && (
                         <button
                           onClick={e => { e.stopPropagation(); onTogglePublicQuestion(q.id, !q.isPublic) }}

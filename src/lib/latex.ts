@@ -8,9 +8,10 @@ const BARE_LATEX_RE = /(\\(?:frac|sqrt|sum|int|prod|lim|infty|partial|Delta|alph
  */
 export function preprocessLatex(text: string): string {
   // Step -1: unwrap image markdown wrapped in dollar signs by the import process.
-  // "$![](url)$" → "![](url)" so remarkGfm can render them as <img> tags
-  // without the $ signs causing KaTeX to try to parse the URL as math.
-  text = text.replace(/\$!\[([^\]]*)\]\(([^)]+)\)\$/g, '![$1]($2)')
+  // "$![](url)$" → "![](url)"
+  // "$![](url) a.\nb.$" → "![](url) a.\nb."  (image + trailing text, same $ delimiters)
+  // Prevents KaTeX from trying to parse the Firebase Storage URL as math.
+  text = text.replace(/\$(!\[[^\]]*\]\([^)]+\)[^$]*)\$/g, '$1')
 
   // Step 0: escape currency dollar signs so they don't get parsed as LaTeX math delimiters.
   // Uses HTML entity &#36; (renders as $) instead of \$ (shows backslash in some renderers).

@@ -194,6 +194,60 @@ export function repairQuestionItem<T extends QuestionItem>(q: T): T {
   } as T;
 }
 
+/**
+ * Migrates an ExamView-imported MCQ question from the old format where options
+ * were embedded in q.text ("**A** ...\n\n**B** ...") to the new format where
+ * options live in q.options separately.
+ *
+ * Also strips dollar-sign wrappers from image URLs in options:
+ *   "$![](url) a.\nb.$" → "![](url) a.\nb."
+ *
+ * Returns null if the question doesn't need migration (already clean).
+ */
+export function migrateExamViewOptions(q: QuestionItem): Partial<QuestionItem> | null {
+  if (q.type !== 'mcq') return null
+
+  const letterLabels = ['A', 'B', 'C', 'D']
+
+  // Step 1: clean dollar-wrapped image URLs in existing options
+  const cleanedOptions = (q.options ?? []).map(opt =>
+    opt.replace(/^\$(!\[[^\]]*\]\([^)]+\)[^$]*)\$$/, '$1').trim()
+  )
+
+  // Step 2: check if q.text has embedded options ("**A** ...\n\n**B** ...")
+  const hasEmbedded = /\n\n\*\*[A-D]\*\*\s+/.test(q.text)
+  if (!hasEmbedded) {
+    // Only needed if options had dollar wrappers
+    const optionsChanged = cleanedOptions.some((o, i) => o !== (q.options ?? [])[i])
+    return optionsChanged ? { options: cleanedOptions } : null
+  }
+
+  // Step 3: split q.text at the first embedded option marker
+  const splitIdx = q.text.search(/\n\n\*\*[A-D]\*\*\s+/)
+  const cleanText = q.text.substring(0, splitIdx).trim()
+
+  // Step 4: extract options from embedded block
+  const embeddedBlock = q.text.substring(splitIdx)
+  const extractedOptions: string[] = []
+  const optRegex = /\*\*([A-D])\*\*\s+([\s\S]*?)(?=\n\n\*\*[A-D]\*\*|$)/g
+  let m
+  while ((m = optRegex.exec(embeddedBlock)) !== null) {
+    const letter = m[1]
+    const idx = letterLabels.indexOf(letter)
+    if (idx >= 0) extractedOptions[idx] = m[2].trim()
+  }
+
+  // Fill any gaps with cleaned existing options (fallback)
+  const mergedOptions = letterLabels.map((_, i) =>
+    extractedOptions[i] ?? cleanedOptions[i] ?? ''
+  ).filter((_, i) => i < 4)
+
+  return {
+    text: cleanText,
+    options: mergedOptions,
+  }
+}
+
 /** Deterministic short hash from a seed string — no Math.random(). */
 function deterministicId(seed: string): string {
   let h = 2166136261;
