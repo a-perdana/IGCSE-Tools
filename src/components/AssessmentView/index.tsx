@@ -870,7 +870,7 @@ export function AssessmentView({
                     )}
                     <DiagramRenderer spec={q.diagram} onError={err => setDiagramErrors(prev => ({ ...prev, [q.id]: err }))} />
                     <QuestionMarkdown content={q.text} />
-                    {q.type === 'mcq' && q.options && q.options.length > 0 && !/\n\n\*\*[A-D]\*\*\s+/.test(q.text) && (
+                    {q.type === 'mcq' && q.options && q.options.length > 0 && !/\n\n\*\*[A-D]\*\*\s+/.test(q.text) && !/\n[A-D]\)\n/.test(q.text) && (
                       <div className="mt-3 space-y-1.5">
                         {q.options.map((opt, i) => {
                           const letter = String.fromCharCode(65 + i)

@@ -214,8 +214,13 @@ export function migrateExamViewOptions(q: QuestionItem): Partial<QuestionItem> |
     opt.replace(/^\$(!\[[^\]]*\]\([^)]+\)[^$]*)\$$/, '$1').trim()
   )
 
-  // Step 2: check if q.text has embedded options ("**A** ...\n\n**B** ...")
-  const hasEmbedded = /\n\n\*\*[A-D]\*\*\s+/.test(q.text)
+  // Step 2: detect embedded options in q.text — two known formats:
+  //   "**A** ..."  (bold markdown, from importedToQuestionItem old format)
+  //   "A)\n..."    (letter-paren, from some ExamView raw imports)
+  const EMBED_BOLD_RE = /\n\n\*\*[A-D]\*\*\s+/
+  const EMBED_PAREN_RE = /\n[A-D]\)\n/
+  const hasEmbedded = EMBED_BOLD_RE.test(q.text) || EMBED_PAREN_RE.test(q.text)
+
   if (!hasEmbedded) {
     // Only needed if options had dollar wrappers
     const optionsChanged = cleanedOptions.some((o, i) => o !== (q.options ?? [])[i])
@@ -223,18 +228,32 @@ export function migrateExamViewOptions(q: QuestionItem): Partial<QuestionItem> |
   }
 
   // Step 3: split q.text at the first embedded option marker
-  const splitIdx = q.text.search(/\n\n\*\*[A-D]\*\*\s+/)
+  const boldIdx = q.text.search(EMBED_BOLD_RE)
+  const parenIdx = q.text.search(EMBED_PAREN_RE)
+  const splitIdx = boldIdx >= 0 && parenIdx >= 0
+    ? Math.min(boldIdx, parenIdx)
+    : boldIdx >= 0 ? boldIdx : parenIdx
   const cleanText = q.text.substring(0, splitIdx).trim()
 
   // Step 4: extract options from embedded block
   const embeddedBlock = q.text.substring(splitIdx)
   const extractedOptions: string[] = []
-  const optRegex = /\*\*([A-D])\*\*\s+([\s\S]*?)(?=\n\n\*\*[A-D]\*\*|$)/g
+
+  // Try bold format first: **A** content\n\n**B** ...
+  const boldOptRegex = /\*\*([A-D])\*\*\s+([\s\S]*?)(?=\n\n\*\*[A-D]\*\*|$)/g
   let m
-  while ((m = optRegex.exec(embeddedBlock)) !== null) {
-    const letter = m[1]
-    const idx = letterLabels.indexOf(letter)
+  while ((m = boldOptRegex.exec(embeddedBlock)) !== null) {
+    const idx = letterLabels.indexOf(m[1])
     if (idx >= 0) extractedOptions[idx] = m[2].trim()
+  }
+
+  // If bold format found nothing, try paren format: A)\ncontent\n\nB)\n...
+  if (extractedOptions.length === 0) {
+    const parenOptRegex = /([A-D])\)\n([\s\S]*?)(?=\n[A-D]\)\n|$)/g
+    while ((m = parenOptRegex.exec(embeddedBlock)) !== null) {
+      const idx = letterLabels.indexOf(m[1])
+      if (idx >= 0) extractedOptions[idx] = m[2].trim()
+    }
   }
 
   // Fill any gaps with cleaned existing options (fallback)
