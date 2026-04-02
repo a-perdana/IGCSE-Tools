@@ -29,7 +29,7 @@ import { useGamification } from './hooks/useGamification'
 import { useDailyChallenge } from './hooks/useDailyChallenge'
 import { useMascot } from './hooks/useMascot'
 import { copyToClipboard } from './lib/clipboard'
-import { repairQuestionItem } from './lib/sanitize'
+import { repairQuestionItem, migrateExamViewOptions } from './lib/sanitize'
 import { regenerateDiagramsForQuestions, repairQuestionText } from './lib/gemini'
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -625,19 +625,25 @@ export default function App() {
   }, [notify])
 
   const handleCreateAssessmentFromQuestions = useCallback((questions: Question[]) => {
+    // Migrate any old embedded-option questions so options don't render twice
+    const migratedQuestions = questions.map(q => {
+      const updates = migrateExamViewOptions(q)
+      return updates ? { ...q, ...updates } : q
+    })
     const assessment: Assessment = {
       id: crypto.randomUUID(),
-      subject: questions[0]?.subject ?? 'Mixed',
+      subject: migratedQuestions[0]?.subject ?? 'Mixed',
       topic: 'Custom Selection',
-      difficulty: questions[0]?.difficulty ?? 'Mixed',
-      questions,
+      difficulty: migratedQuestions[0]?.difficulty ?? 'Mixed',
+      questions: migratedQuestions,
       userId: '',
+      folderId: selectedFolderId ?? undefined,
       createdAt: Timestamp.now(),
     }
     generation.setGeneratedAssessment(assessment)
     setPreviousView('library')
     setView('main')
-  }, [generation])
+  }, [generation, selectedFolderId])
 
   const handleAddQuestionsToAssessment = useCallback(async (assessmentId: string, newQuestions: Question[]) => {
     const target = library.assessments.find(a => a.id === assessmentId)
