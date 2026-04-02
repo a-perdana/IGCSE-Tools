@@ -483,18 +483,30 @@ export default function App() {
   const handleSave = useCallback(async () => {
     const assessment = generation.generatedAssessment
     if (!assessment) return
+
+    // Migrate embedded options and strip Firestore-incompatible fields
+    // (createdAt Timestamp, userId, assessmentId) from embedded questions
+    const cleanQuestions = assessment.questions.map(q => {
+      const migrated = migrateExamViewOptions(q)
+      const base = migrated ? { ...q, ...migrated } : { ...q }
+      // Remove fields that don't belong in embedded assessment questions
+      const { createdAt: _ca, userId: _uid, assessmentId: _aid, ...clean } = base as any
+      return clean
+    })
+    const cleanAssessment = { ...assessment, questions: cleanQuestions }
+
     const alreadySaved = library.assessments.some(a => a.id === assessment.id)
     if (alreadySaved) {
       await library.updateAssessment(assessment.id, {
-        questions: assessment.questions,
+        questions: cleanQuestions,
         topic: assessment.topic,
         subject: assessment.subject,
         difficulty: assessment.difficulty,
       })
       notify('Assessment updated', 'success')
     } else {
-      const savedId = await library.saveAssessment(assessment)
-      if (savedId) generation.setGeneratedAssessment({ ...assessment, id: savedId })
+      const savedId = await library.saveAssessment(cleanAssessment)
+      if (savedId) generation.setGeneratedAssessment({ ...cleanAssessment, id: savedId })
     }
   }, [generation, library, notify])
 
