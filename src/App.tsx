@@ -1084,6 +1084,7 @@ export default function App() {
             onUpdateQuestion={library.updateQuestion}
             currentUserId={user.uid}
             currentUserName={user.displayName ?? user.email ?? 'Unknown'}
+            isAdmin={gamification.profile?.role_igcsetools === 'admin'}
             onTogglePublicAssessment={(id, isPublic) => library.togglePublicAssessment(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
             onTogglePublicQuestion={(id, isPublic) => library.togglePublicQuestion(id, isPublic, user.displayName ?? user.email ?? 'Unknown')}
             importedQuestions={importedQuestions}

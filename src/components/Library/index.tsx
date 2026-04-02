@@ -38,6 +38,7 @@ interface Props {
   onUpdateQuestion: (id: string, updates: Partial<Question>) => void
   currentUserId: string
   currentUserName: string
+  isAdmin?: boolean
   onTogglePublicAssessment: (id: string, isPublic: boolean) => void
   onTogglePublicQuestion: (id: string, isPublic: boolean) => void
   onRegenerateDiagram?: (question: Question) => Promise<void>
@@ -125,7 +126,7 @@ export function Library({
   selectedFolderId, onSelectFolder,
   onCreateAssessmentFromQuestions, onAddQuestionsToAssessment,
   onUpdateQuestion,
-  currentUserId, currentUserName,
+  currentUserId, currentUserName, isAdmin,
   onTogglePublicAssessment, onTogglePublicQuestion,
   onRegenerateDiagram,
   onPractice,
@@ -143,6 +144,7 @@ export function Library({
   const ASSESSMENTS_PER_PAGE = 12
   const IMPORTED_PER_PAGE = 25
   const [bankView, setBankView] = useState<'assessments' | 'questions' | 'pastpapers'>('questions')
+  const canEdit = (ownerId: string) => ownerId === currentUserId || !!isAdmin
   const [assessmentLayout, setAssessmentLayout] = useState<'list' | 'gallery'>('gallery')
   const [questionLayout, setQuestionLayout] = useState<'list' | 'gallery'>('gallery')
   const [importedLayout, setImportedLayout] = useState<'list' | 'gallery'>('gallery')
@@ -463,7 +465,7 @@ export function Library({
       ;[newSiblings[idx], newSiblings[idx + delta]] = [newSiblings[idx + delta], newSiblings[idx]]
       onReorderFolders(newSiblings.map(s => s.id))
     }
-    const isOwnerFolder = folder.userId === currentUserId
+    const isOwnerFolder = canEdit(folder.userId)
     const isDirectlyPublic = !!folder.isPublic
     const isEffectivelyPublic = effectivePublicByFolder[folder.id] ?? false
     const isInheritedPublic = isEffectivelyPublic && !isDirectlyPublic
@@ -914,7 +916,7 @@ export function Library({
           {bankView === 'assessments' && (
             <div className={assessmentLayout === 'gallery' ? 'grid grid-cols-2 lg:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-3'}>
               {pagedAssessments.map(a => {
-                const isGlobal = a.userId !== currentUserId && a.isPublic
+                const isGlobal = !canEdit(a.userId) && a.isPublic
                 const sc = subjectColors(a.subject)
                 if (assessmentLayout === 'gallery') {
                   return (
@@ -940,7 +942,7 @@ export function Library({
                                   <span className={`font-mono text-[10px] border px-1.5 py-0.5 rounded ${sc.codeBg} ${sc.codeText} ${sc.codeBorder}`}>{a.code}</span>
                                 )}
                               </div>
-                              {a.userId === currentUserId && (
+                              {canEdit(a.userId) && (
                                 <button onClick={e => { e.stopPropagation(); onTogglePublicAssessment(a.id, !a.isPublic) }}
                                   className={`p-0.5 rounded ${a.isPublic ? 'text-emerald-600' : 'text-stone-300'}`}>
                                   <Globe className="w-3 h-3" />
@@ -954,7 +956,7 @@ export function Library({
                               <div className="flex gap-1">
                                 <button onClick={() => setViewAssessment(a)} className="p-1 text-stone-400 hover:text-blue-600" title="View questions"><Eye className="w-3 h-3" /></button>
                                 <button onClick={() => onSelect(a)} className="p-1 text-stone-400 hover:text-emerald-600" title="Open in editor"><Pencil className="w-3 h-3" /></button>
-                                {a.userId === currentUserId && (
+                                {canEdit(a.userId) && (
                                   <button onClick={() => setConfirmDelete({ type: 'assessment', id: a.id, label: a.topic + (a.code ? ` (${a.code})` : '') })} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                 )}
                               </div>
@@ -1020,7 +1022,7 @@ export function Library({
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-stone-800">{a.topic}</span>
-                            {a.userId === currentUserId && (
+                            {canEdit(a.userId) && (
                               <button
                                 onClick={e => { e.stopPropagation(); onTogglePublicAssessment(a.id, !a.isPublic) }}
                                 className={`p-1 rounded ${a.isPublic ? 'text-emerald-600 hover:text-emerald-700' : 'text-stone-300 hover:text-stone-500'}`}
@@ -1032,7 +1034,7 @@ export function Library({
                           </div>
                           <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap">
                             <span>{a.difficulty} · {a.questions.length}q</span>
-                            {a.userId !== currentUserId && a.isPublic && a.preparedBy && (
+                            {!canEdit(a.userId) && a.isPublic && a.preparedBy && (
                               <span className="text-xs text-emerald-600">by {a.preparedBy}</span>
                             )}
                             <span className="flex items-center gap-1 text-stone-400">
@@ -1060,7 +1062,7 @@ export function Library({
                       >
                         <Pencil className="w-3 h-3" /> Edit
                       </button>
-                      {a.userId === currentUserId && (
+                      {canEdit(a.userId) && (
                         <>
                           <button onClick={() => { setRenamingId(a.id); setRenameValue(a.topic) }} className="p-1 text-stone-400 hover:text-stone-600" title="Rename"><Pencil className="w-3.5 h-3.5" /></button>
                           <select
@@ -1135,7 +1137,7 @@ export function Library({
             <div className={questionLayout === 'gallery' ? 'grid grid-cols-2 lg:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-2'}>
               {pagedQuestions.map(q => {
                 const isSelected = selectedIds.has(q.id)
-                const isGlobal = q.userId !== currentUserId && q.isPublic
+                const isGlobal = !canEdit(q.userId) && q.isPublic
                 const sc = subjectColors(q.subject)
                 const displayCode = q.code || autoCode(q)
                 const isAiGenerated = !(q as any).source
@@ -1174,7 +1176,7 @@ export function Library({
                             <button onClick={() => setPreviewQuestion(q)} className="p-1 text-stone-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Preview">
                               <Eye className="w-3 h-3" />
                             </button>
-                            {q.userId === currentUserId && (
+                            {canEdit(q.userId) && (
                               <button onClick={e => { e.stopPropagation(); onTogglePublicQuestion(q.id, !q.isPublic) }}
                                 className={`p-0.5 rounded ${q.isPublic ? 'text-emerald-600' : 'text-stone-300'}`}>
                                 <Globe className="w-3 h-3" />
@@ -1202,7 +1204,7 @@ export function Library({
                             <span className="text-[10px] px-1 py-0.5 rounded bg-stone-100 text-stone-500 truncate max-w-[100px]" title={q.topic}>{q.topic}</span>
                           )}
                         </div>
-                        {q.userId === currentUserId && (
+                        {canEdit(q.userId) && (
                           <div className="flex items-center gap-1 mt-2 pt-2 border-t border-stone-100" onClick={e => e.stopPropagation()}>
                             <select
                               value={q.folderId ?? ''}
@@ -1281,7 +1283,7 @@ export function Library({
                         {q.topic && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 truncate max-w-[160px]" title={q.topic}>{q.topic}</span>
                         )}
-                        {q.userId !== currentUserId && q.isPublic && q.preparedBy && (
+                        {!canEdit(q.userId) && q.isPublic && q.preparedBy && (
                           <span className="ml-1 text-emerald-600">by {q.preparedBy}</span>
                         )}
                       </div>
@@ -1296,7 +1298,7 @@ export function Library({
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      {q.source === 'examview' && q.type === 'mcq' && q.userId === currentUserId && (
+                      {q.source === 'examview' && q.type === 'mcq' && canEdit(q.userId) && (
                         <button
                           onClick={e => { e.stopPropagation(); void handleFixOptions(q) }}
                           disabled={fixingOptionIds.has(q.id)}
@@ -1306,7 +1308,7 @@ export function Library({
                           <RefreshCw className={`w-3.5 h-3.5 ${fixingOptionIds.has(q.id) ? 'animate-spin text-amber-500' : ''}`} />
                         </button>
                       )}
-                      {q.userId === currentUserId && (
+                      {canEdit(q.userId) && (
                         <button
                           onClick={e => { e.stopPropagation(); onTogglePublicQuestion(q.id, !q.isPublic) }}
                           className={`p-1 rounded ${q.isPublic ? 'text-emerald-600 hover:text-emerald-700' : 'text-stone-300 hover:text-stone-500'}`}
@@ -1315,7 +1317,7 @@ export function Library({
                           <Globe className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {q.userId === currentUserId && (
+                      {canEdit(q.userId) && (
                         <>
                           <select
                             value={q.folderId ?? ''}
