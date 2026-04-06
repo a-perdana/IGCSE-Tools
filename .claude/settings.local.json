@@ -18,7 +18,24 @@
       "Bash(gcloud auth:*)",
       "Bash(gcloud config:*)",
       "Bash(gcloud iam:*)",
-      "Bash(firebase deploy:*)"
+      "Bash(firebase deploy:*)",
+      "Bash(dir \"C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Mathematics\")",
+      "Bash(dir \"C:\\\\Users\\\\maliu\\\\Desktop\\\\IGCSE Mathematics\\\\Algebra\")",
+      "Bash(soffice --headless --convert-to docx \"C:\\\\Users\\\\maliu\\\\Desktop\\\\Quadratics Examples.doc\" --outdir \"C:\\\\Users\\\\maliu\\\\Desktop\"\")",
+      "Bash(soffice --headless --convert-to docx '/c/Users/maliu/Desktop/Quadratics Examples.doc' --outdir '/c/Users/maliu/Desktop/')",
+      "Bash(pandoc '/c/Users/maliu/Desktop/Quadratics Examples.doc' -o '/c/Users/maliu/Desktop/quadratics.md')",
+      "Read(//c/Users/maliu/Desktop/**)",
+      "Bash(powershell -Command \"$word = New-Object -ComObject Word.Application; $word.Visible = $false; $doc = $word.Documents.Open\\(''C:\\\\Users\\\\maliu\\\\Desktop\\\\Quadratics Examples.doc''\\); $doc.SaveAs\\([ref]''C:\\\\Users\\\\maliu\\\\Desktop\\\\Quadratics Examples.docx'', [ref]16\\); $doc.Close\\(\\); $word.Quit\\(\\); Write-Output ''Done''\")",
+      "Bash(unzip -l \"Pre Algebra Chapter 0.zip\")",
+      "Bash(unzip -p \"Pre Algebra Chapter 0.zip\" imsmanifest.xml)",
+      "Bash(unzip -p \"Pre Algebra Chapter 0.zip\" 00001_questions.dat)",
+      "Bash(unzip -p \"C:\\\\Users\\\\maliu\\\\Desktop\\\\Pre Algebra Chapter 0.zip\" 00001_questions.dat)",
+      "Bash(ls \"C:/Users/maliu/Desktop/\"*.zip)",
+      "Bash(ls /c/Users/maliu/Desktop/*.zip)",
+      "Bash(ls ~/Desktop/*.zip)",
+      "Bash(find ~/Desktop -name *.zip)",
+      "Bash(npm install:*)",
+      "Bash(python3 -:*)"
     ]
   }
 }
