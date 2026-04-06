@@ -11,3 +11,4 @@ scripts/import/*-sa.json
 scripts/import/*.json
 latex-renderer/
 keys/
+.claude/
