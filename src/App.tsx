@@ -778,9 +778,9 @@ export default function App() {
             style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed,#a855f7)' }}>
             <BookOpen className="w-9 h-9 text-white" />
           </div>
-          <h1 className="text-3xl font-black text-slate-800 mb-2">IGCSE Tools</h1>
+          <h1 className="text-3xl font-black text-slate-800 mb-2">EASE Studio</h1>
           <p className="text-slate-500 mb-6 text-sm leading-relaxed">
-            AI-powered Cambridge IGCSE assessment platform<br />for teachers, students, and institutions.
+            AI-assisted Cambridge item authoring<br />for the Eduversal Academic Board.
           </p>
 
           {/* Feature highlights */}
@@ -848,7 +848,7 @@ export default function App() {
               style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}>
               <BookOpen className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="text-sm font-black text-slate-800 hidden sm:block">IGCSE Tools</span>
+            <span className="text-sm font-black text-slate-800 hidden sm:block">EASE Studio</span>
             {view === 'main' && previousView === 'library' && (
               <button
                 onClick={() => { setPreviousView(null); setView('library') }}
@@ -1300,9 +1300,9 @@ export default function App() {
         <footer className="shrink-0 min-h-0 border-t border-stone-200 bg-stone-50 px-4 py-2 flex items-center justify-between text-xs text-stone-400 z-10">
           <div className="flex items-center gap-2">
             <BookOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span className="font-medium text-stone-500">IGCSE Tools</span>
+            <span className="font-medium text-stone-500">EASE Studio</span>
             <span className="hidden sm:inline text-stone-300">·</span>
-            <span className="hidden sm:inline">Cambridge Assessment Designer</span>
+            <span className="hidden sm:inline">Cambridge item authoring — Checkpoint · IGCSE · AS & A Level</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
@@ -1383,7 +1383,7 @@ export default function App() {
               <BookOpen className="w-7 h-7 text-white" />
             </div>
             <div className="text-center">
-              <h2 className="text-lg font-black text-slate-800 mb-1">Welcome to IGCSE Tools!</h2>
+              <h2 className="text-lg font-black text-slate-800 mb-1">Welcome to EASE Studio!</h2>
               <p className="text-sm text-slate-500">
                 Your teacher will share a <strong>join code</strong> with you.
                 Head to the <strong>Class</strong> tab to enter it and start your first assignment.

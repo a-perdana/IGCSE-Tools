@@ -1,5 +1,5 @@
 /**
- * Edu — the IGCSE Tools mascot.
+ * Edu — the EASE Studio mascot.
  *
  * 4 evolution forms driven by level:
  *   Sprout   (1–4)   — tiny, round, curious

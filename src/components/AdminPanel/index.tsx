@@ -89,7 +89,7 @@ export function AdminPanel({
             <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <Shield className="w-5 h-5 text-amber-500" /> Admin Panel
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">Manage user roles across IGCSE Tools.</p>
+            <p className="text-xs text-slate-400 mt-0.5">Manage user roles across EASE Studio.</p>
           </div>
           <button
             onClick={load}

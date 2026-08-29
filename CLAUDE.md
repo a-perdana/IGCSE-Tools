@@ -1,8 +1,23 @@
-# IGCSE Tools — App Instructions
+# EASE Studio — App Instructions
+
+> **Renamed 2026-08-29** (was "IGCSE Tools"). The Firebase project id stays `igcse-tools` —
+> Firebase project ids are permanent and `authDomain` / `storageBucket` derive from it. It is an
+> internal identifier, never shown to users. The monorepo directory and GitHub repo names are
+> renamed separately; until then paths in this file still read `IGCSE Tools`.
 
 ## What This Is
 
-A React + TypeScript SPA for generating Cambridge IGCSE exam-quality assessments using AI (Gemini, OpenAI, Anthropic). Teachers upload past papers and syllabuses as reference, configure subject/topic/difficulty, and the app generates syllabus-aligned questions with mark schemes.
+A React + TypeScript SPA where the Eduversal **Academic Board** drafts Cambridge assessment
+**items** — question, mark scheme, and diagram — with AI assistance (Gemini, OpenAI, Anthropic).
+Specialists upload past papers and syllabuses as reference, configure stage/subject/topic/difficulty,
+and the app generates syllabus-aligned questions with mark schemes for human review.
+
+**Scope (set 2026-08-29):** an *authoring* surface for the Academic Board. It does not deliver
+assessments to students and writes to no grading record — delivery is Students Hub, scheduling is
+Teachers Hub, and the formal item banks (`chapter_test_items`, `ease_items`, `practice_questions`)
+live in Central Hub on a different Firebase project. The student-facing surfaces this app still
+carries (practice runner, exam runner, gamification, classrooms) duplicate Students Hub and are
+being retired — do not build on them.
 
 ---
 
