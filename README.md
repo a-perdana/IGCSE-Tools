@@ -1,5 +1,10 @@
 # EASE Studio
 
+> **🗄 ARCHIVED 2026-10-02.** Eduversal no longer develops or uses EASE Studio (decision: Alif
+> Perdana). Students Hub now runs on questions Eduversal writes directly in Central Hub
+> `/practice-bank-admin`. At archive time the `igcse-tools` Firebase project held 2 user profiles
+> and its newest content dated from April 2026. The code and data are kept as they are for reference.
+
 AI-assisted Cambridge **item authoring** studio for the Eduversal Academic Board.
 
 Subject Specialists use it to draft assessment items — question, mark scheme, and diagram —

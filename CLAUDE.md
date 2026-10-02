@@ -1,5 +1,10 @@
 # EASE Studio — App Instructions
 
+> **🗄 ARCHIVED 2026-10-02.** Eduversal no longer develops or uses EASE Studio (decision: Alif
+> Perdana). Students Hub now runs on questions Eduversal writes directly in Central Hub
+> `/practice-bank-admin`. At archive time the `igcse-tools` Firebase project held 2 user profiles
+> and its newest content dated from April 2026. The code and data are kept as they are for reference.
+
 > **Renamed 2026-09-01** (was "IGCSE Tools"). The Firebase project id stays `igcse-tools` —
 > Firebase project ids are permanent and `authDomain` / `storageBucket` derive from it. It is an
 > internal identifier, never shown to users. The monorepo directory and GitHub repo names are
